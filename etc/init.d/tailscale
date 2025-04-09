@@ -1,0 +1,146 @@
+#!/bin/sh /etc/rc.common
+
+
+USE_PROCD=1
+START=99
+STOP=1
+
+# --- Configuration ---
+# Directories and Files
+TAILSCALE_BIN_DIR="/opt/tailscale"
+TAILSCALE_CONF_DIR="/etc/tailscale"
+TAILSCALE_STATE_FILE="/etc/config/tailscaled.state"
+# Executables (Wrappers)
+TAILSCALE_WRAPPER_BIN="/usr/bin/tailscaled"
+TAILSCALE_CLI_WRAPPER_BIN="/usr/bin/tailscale" # Added for clarity if needed elsewhere
+TAILSCALE_UPDATE_CHECK_SCRIPT="/usr/bin/tailscale_update_check"
+# Procd instance name (optional but good practice)
+PROCD_INSTANCE_NAME="tailscale"
+# Log Tag
+LOG_TAG="tailscale_init"
+
+# --- Helper Functions ---
+log_info() { echo "$1"; logger -t "$LOG_TAG" -p daemon.info "$1"; }
+log_error() { echo "Error: $1" >&2; logger -t "$LOG_TAG" -p daemon.error "Error: $1"; }
+log_warn() { echo "Warning: $1"; logger -t "$LOG_TAG" -p daemon.warn "Warning: $1"; }
+
+# --- Service Functions ---
+setup_update_cron() {
+    if [ ! -x "$TAILSCALE_UPDATE_CHECK_SCRIPT" ]; then
+        log_warn "Update check script $TAILSCALE_UPDATE_CHECK_SCRIPT not found or not executable. Skipping cron setup."
+        return 1
+    fi
+
+    # Check if cron job already exists (more robust check)
+    # Using grep -Fq for fixed string and quiet operation
+    if ! crontab -l -u root 2>/dev/null | grep -Fq "$TAILSCALE_UPDATE_CHECK_SCRIPT"; then
+        log_info "Adding Tailscale auto-update cron job."
+        # Add job for 3:30 AM local time
+        (crontab -l -u root 2>/dev/null; echo "30 3 * * * $TAILSCALE_UPDATE_CHECK_SCRIPT") | crontab -u root -
+        # Restart cron service if possible (check if service exists first)
+        if [ -x /etc/init.d/cron ]; then
+            /etc/init.d/cron restart >/dev/null 2>&1 || log_warn "Failed to restart cron service."
+        fi
+    fi
+    return 0 # Indicate success or job already exists
+}
+
+start_service() {
+  log_info "Starting Tailscale service..."
+
+  # Ensure necessary directories exist
+  mkdir -p "$TAILSCALE_BIN_DIR"
+  mkdir -p "$TAILSCALE_CONF_DIR"
+
+  # Setup auto-update cron job
+  setup_update_cron
+  
+  # Check if binary exists before starting
+  TAILSCALED_BIN="${TAILSCALE_BIN_DIR}/tailscaled"
+  TAILSCALE_BIN="${TAILSCALE_BIN_DIR}/tailscale"
+  
+  if [ ! -f "$TAILSCALED_BIN" ] || [ ! -f "$TAILSCALE_BIN" ]; then
+    log_info "======================================================================"
+    log_info "Tailscale binaries not found. First-time installation will begin."
+    log_info "This may take a while depending on your internet connection."
+    log_info "======================================================================"
+  fi
+
+  # Check network connectivity (optional, can be blocking)
+  wait_for_network() {
+    local timeout=60  # Reduced timeout for faster boot if network is down
+    local elapsed=0
+    local ping_target="223.5.5.5" # Or 1.1.1.1, or gateway IP
+
+    log_info "Checking network connectivity (ping ${ping_target})..."
+    while [ $elapsed -lt $timeout ]; do
+      # Use -W 1 for 1 second timeout per ping
+      if ping -c 1 -W 1 ${ping_target} > /dev/null 2>&1; then
+        log_info "Network is connected."
+        return 0
+      fi
+      sleep 3 # Check every 3 seconds
+      elapsed=$((elapsed + 3))
+    done
+    log_warn "Network connectivity check timed out after ${timeout} seconds."
+    return 1 # Indicate network down or unreachable target
+  }
+
+  # Wait for network (optional, remove if not needed or adjust behavior)
+  # If wait_for_network fails, we log a warning but continue,
+  # tailscaled might handle offline state itself.
+  wait_for_network || log_warn "Continuing startup despite network check failure."
+
+  # Check if the wrapper script exists and is executable
+  if [ ! -x "$TAILSCALE_WRAPPER_BIN" ]; then
+      log_error "Tailscale wrapper $TAILSCALE_WRAPPER_BIN not found or not executable!"
+      return 1 # Critical error, cannot start
+  fi
+
+  # Configure procd service
+  procd_open_instance "$PROCD_INSTANCE_NAME"
+  # **Crucially, command points to the wrapper script**
+  procd_set_param command "$TAILSCALE_WRAPPER_BIN"
+
+  # Append arguments for the actual tailscaled binary via the wrapper
+  # These arguments MUST be understood and passed correctly by the wrapper script
+  # (Our current wrapper passes "$@" which handles this)
+  procd_append_param command --port 41641 # Example port
+  procd_append_param command --state "$TAILSCALE_STATE_FILE"
+  procd_append_param command --statedir "$TAILSCALE_CONF_DIR"
+  # Add any other necessary tailscaled flags here
+  # e.g., procd_append_param command --tun userspace-networking # If needed
+
+  procd_set_param respawn # Automatically restart if it crashes
+  # Set respawn thresholds (e.g., 5 times in 60 seconds)
+  # procd_set_param respawn ${threshold:-3600} ${timeout:-5} ${retry:-5}
+
+  procd_set_param stdout 1 # Redirect stdout to syslog
+  procd_set_param stderr 1 # Redirect stderr to syslog
+
+  procd_close_instance
+  log_info "Tailscale service configured with procd."
+}
+
+stop_service() {
+  log_info "Stopping Tailscale service..."
+
+  # Check if the wrapper script exists and is executable
+  if [ ! -x "$TAILSCALE_WRAPPER_BIN" ]; then
+      log_warn "Tailscale wrapper $TAILSCALE_WRAPPER_BIN not found or not executable. Cannot perform clean shutdown."
+      # We might still try to ask procd to stop the instance if it knows about it
+      # but the --cleanup command won't run.
+      # Alternatively, just let procd handle the stop via signal.
+      return 1 # Indicate potential issue
+  fi
+
+  # Ask the running daemon to perform cleanup via the wrapper
+  # The wrapper script needs to correctly pass the --cleanup flag
+  # Timeout added to prevent hanging forever if cleanup fails
+  log_info "Executing cleanup via wrapper..."
+  timeout 10s "$TAILSCALE_WRAPPER_BIN" --cleanup || log_warn "Cleanup command timed out or failed."
+
+  # Procd should handle sending SIGTERM/SIGKILL to the process started via procd_open_instance
+  # The explicit cleanup call above is Tailscale specific.
+  log_info "Tailscale service stop requested."
+}

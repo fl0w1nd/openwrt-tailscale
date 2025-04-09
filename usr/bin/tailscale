@@ -1,0 +1,36 @@
+#!/bin/sh
+
+set -e
+
+# binary storage directory
+BIN_DIR="/opt/tailscale"
+CLI_BIN="${BIN_DIR}/tailscale"
+
+# only create the directory if it doesn't exist
+if [ ! -f "$CLI_BIN" ]; then
+    echo "======================================================================"
+    echo "Tailscale CLI binary not found at $CLI_BIN."
+    echo "Starting initial download process - please wait, this may take a while"
+    echo "======================================================================"
+
+    # Directly execute the download script (not in background) to show progress
+    /usr/bin/tailscale_update_check --download-only
+    
+    # Verify download was successful
+    if [ ! -f "$CLI_BIN" ]; then
+        echo "======================================================================"
+        echo "Error: Initial download failed. Cannot run tailscale CLI."
+        echo "Please check your network connection and try again."
+        echo "For detailed logs, run: logread | grep tailscale_update" 
+        echo "======================================================================"
+        exit 1
+    fi
+    
+    echo "======================================================================"
+    echo "Tailscale binary downloaded successfully!"
+    echo "Continuing with CLI command execution..."
+    echo "======================================================================"
+fi
+
+# execute the CLI binary with the provided arguments
+exec "$CLI_BIN" "$@"
