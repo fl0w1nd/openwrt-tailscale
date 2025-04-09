@@ -31,18 +31,16 @@ This is an auto-updating Tailscale installation script for OpenWrt routers. It p
    ssh root@192.168.1.1  # Replace with your router's IP
    ```
 
-2. Clone this repository or download the files:
+2. download
    ```
-   cd /tmp
-   git clone https://github.com/yourusername/openwrt-tailscale.git
+   wget -O /tmp/openwrt-tailscale-v0.10.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/download/v0.10/openwrt-tailscale-v0.10.tar.gz
    ```
    
 3. Copy the files to their proper locations:
    ```
-   cp -r /tmp/openwrt-tailscale/usr/bin/* /usr/bin/
-   cp -r /tmp/openwrt-tailscale/etc/init.d/* /etc/init.d/
-   chmod +x /usr/bin/tailscale /usr/bin/tailscaled /usr/bin/tailscale_update_check
-   chmod +x /etc/init.d/tailscale
+   tar -xzvf /tmp/openwrt-tailscale-v0.10.tar.gz -C /
+
+   chmod 755 /usr/bin/tailscale_update_check
    ```
 
 4. Enable and start the Tailscale service:
@@ -152,18 +150,16 @@ See the [LICENSE](LICENSE) file for details.
    ssh root@192.168.1.1  # 替换为您路由器的 IP
    ```
 
-2. 克隆此仓库或下载文件：
+2. 下载文件：
    ```
-   cd /tmp
-   git clone https://github.com/yourusername/openwrt-tailscale.git
+   wget -O /tmp/openwrt-tailscale-v0.10.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/download/v0.10/openwrt-tailscale-v0.10.tar.gz
    ```
    
 3. 将文件复制到正确的位置：
    ```
-   cp -r /tmp/openwrt-tailscale/usr/bin/* /usr/bin/
-   cp -r /tmp/openwrt-tailscale/etc/init.d/* /etc/init.d/
-   chmod +x /usr/bin/tailscale /usr/bin/tailscaled /usr/bin/tailscale_update_check
-   chmod +x /etc/init.d/tailscale
+   tar -xzvf /tmp/openwrt-tailscale-v0.10.tar.gz -C /
+   
+   chmod 755 /usr/bin/tailscale_update_check
    ```
 
 4. 启用并启动 Tailscale 服务：
