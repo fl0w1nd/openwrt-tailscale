@@ -32,10 +32,9 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
    ssh root@192.168.1.1
    ```
 
-2. Download and extract:
+2. Download the manager script:
    ```sh
-   wget -O /tmp/openwrt-tailscale.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/latest/download/openwrt-tailscale.tar.gz
-   tar -xzf /tmp/openwrt-tailscale.tar.gz -C /
+   wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh
    chmod +x /usr/bin/tailscale-manager
    ```
 
@@ -203,10 +202,9 @@ See [LICENSE](LICENSE) file.
    ssh root@192.168.1.1
    ```
 
-2. 下载并解压：
+2. 下载管理脚本：
    ```sh
-   wget -O /tmp/openwrt-tailscale.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/latest/download/openwrt-tailscale.tar.gz
-   tar -xzf /tmp/openwrt-tailscale.tar.gz -C /
+   wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh
    chmod +x /usr/bin/tailscale-manager
    ```
 
