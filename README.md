@@ -6,15 +6,16 @@
 
 ## Overview
 
-This is an auto-updating Tailscale installation script for OpenWrt routers. It provides a streamlined way to install and maintain Tailscale on OpenWrt systems with automatic updates and proper integration with the OpenWrt init system.
+This is an auto-updating Tailscale installation manager for OpenWrt routers. It provides a streamlined way to install and maintain Tailscale with proper integration with the OpenWrt procd system.
 
 ## Features
 
-- **On-Demand Binary Download**: Automatically downloads the appropriate Tailscale binaries for your device architecture
-- **Auto-Updates**: Includes a scheduled update checker that keeps Tailscale up to date
-- **OpenWrt Integration**: Properly integrates with OpenWrt's init system (procd)
-- **Minimal Footprint**: Installs binaries to `/opt/tailscale` to avoid issues with storage constraints
-- **Convenient Wrappers**: Provides wrapper scripts that ensure binaries are downloaded when needed
+- **Interactive Installer**: Menu-driven installation with clear options
+- **Dual Storage Modes**: Choose between persistent (`/opt/tailscale`) or RAM (`/tmp/tailscale`)
+- **Auto-Updates**: Daily cron job keeps Tailscale up to date
+- **OpenWrt Integration**: Full UCI configuration and procd service management
+- **Network-Aware Startup**: Retry logic for environments with delayed network (e.g., OpenClash)
+- **Complete Lifecycle**: Install, update, uninstall, and status check in one script
 
 ## Installation
 
@@ -22,102 +23,153 @@ This is an auto-updating Tailscale installation script for OpenWrt routers. It p
 
 - OpenWrt router with internet access
 - SSH access to your router
-- At least 50MB of free space
+- At least 50MB of free space (for persistent mode)
 
-### Installation Steps
+### Quick Install
 
 1. SSH into your OpenWrt router:
-   ```
-   ssh root@192.168.1.1  # Replace with your router's IP
-   ```
-
-2. download
-   ```
-   wget -O /tmp/openwrt-tailscale-v0.10.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/download/v0.10/openwrt-tailscale-v0.10.tar.gz
-   ```
-   
-3. Copy the files to their proper locations:
-   ```
-   tar -xzvf /tmp/openwrt-tailscale-v0.10.tar.gz -C /
-
-   chmod 755 /usr/bin/tailscale_update_check
+   ```sh
+   ssh root@192.168.1.1
    ```
 
-4. Enable and start the Tailscale service:
-   ```
-   /etc/init.d/tailscale enable
-   /etc/init.d/tailscale start
+2. Download and extract:
+   ```sh
+   wget -O /tmp/openwrt-tailscale.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/latest/download/openwrt-tailscale.tar.gz
+   tar -xzf /tmp/openwrt-tailscale.tar.gz -C /
+   chmod +x /usr/bin/tailscale-manager
    ```
 
-5. Wait for the initial download to complete. This may take several minutes depending on your internet connection speed.
-
-6. Log in to your Tailscale account:
+3. Run the interactive installer:
+   ```sh
+   tailscale-manager
    ```
+
+4. Follow the prompts to:
+   - Choose storage mode (Persistent or RAM)
+   - Download and install Tailscale
+   - Start the service
+
+5. Connect to your Tailscale network:
+   ```sh
    tailscale up
    ```
-   
-   Follow the authentication link provided.
 
 ## Usage
 
-### Basic Commands
+### Interactive Menu
 
-- **Start Tailscale:** `/etc/init.d/tailscale start`
-- **Stop Tailscale:** `/etc/init.d/tailscale stop`
-- **Start on boot:** `/etc/init.d/tailscale enable`
-- **Check status:** `tailscale status`
-- **Manual update check:** `/usr/bin/tailscale_update_check`
+Run `tailscale-manager` without arguments for the interactive menu:
 
-### Tailscale Configuration
-
-For more detailed Tailscale configuration options, refer to the official [Tailscale documentation](https://tailscale.com/kb/).
-
-Common configurations:
 ```
-# Allow subnet routing
-tailscale up --advertise-routes=192.168.1.0/24
+=============================================
+  OpenWRT Tailscale Manager v2.0
+=============================================
 
-# Exit node configuration
-tailscale up --advertise-exit-node
+  1) Install Tailscale
+  2) Update Tailscale
+  3) Uninstall Tailscale
+  4) Check Status
+  5) View Logs
 
-# Connect with specific tags (requires Tailscale ACLs)
-tailscale up --hostname=openwrt-router --advertise-tags=tag:router
+  0) Exit
 ```
 
-## Troubleshooting
+### Command Line
 
-### Check logs
-```
-logread | grep tailscale
-```
-
-### Check service status
-```
-service tailscale status
+```sh
+tailscale-manager install      # Install Tailscale
+tailscale-manager update       # Update to latest version
+tailscale-manager uninstall    # Remove Tailscale
+tailscale-manager status       # Show current status
+tailscale-manager help         # Show help
 ```
 
-### Manual restart
+### Service Commands
+
+```sh
+/etc/init.d/tailscale start    # Start service
+/etc/init.d/tailscale stop     # Stop service
+/etc/init.d/tailscale restart  # Restart service
+/etc/init.d/tailscale enable   # Enable at boot
+/etc/init.d/tailscale disable  # Disable at boot
 ```
+
+### Tailscale Commands
+
+```sh
+tailscale status                              # Check connection
+tailscale up --advertise-routes=192.168.1.0/24  # Subnet routing
+tailscale up --advertise-exit-node            # Exit node
+```
+
+## Storage Modes
+
+| Mode | Location | Pros | Cons |
+|------|----------|------|------|
+| **Persistent** | `/opt/tailscale` | Fast boot, works offline | Uses ~50MB disk |
+| **RAM** | `/tmp/tailscale` | Saves disk space | Re-downloads on boot |
+
+## Configuration
+
+Settings are stored in UCI format at `/etc/config/tailscale`:
+
+```
+config tailscale 'settings'
+    option enabled '1'
+    option port '41641'
+    option storage_mode 'persistent'
+    option bin_dir '/opt/tailscale'
+    option state_file '/etc/config/tailscaled.state'
+    option statedir '/etc/tailscale'
+    option fw_mode 'nftables'
+```
+
+Edit with:
+```sh
+uci set tailscale.settings.port=12345
+uci commit tailscale
 /etc/init.d/tailscale restart
 ```
 
-### Force binary download
-If you need to force a new download of the Tailscale binaries:
-```
-rm -rf /opt/tailscale
-/usr/bin/tailscale_update_check --download-only
+## Logs
+
+```sh
+# Manager logs
+cat /var/log/tailscale-manager.log
+
+# Service logs
+cat /var/log/tailscale.log
+
+# System logs
+logread | grep tailscale
 ```
 
-## How It Works
+## Network Startup Behavior
 
-1. The `tailscale` and `tailscaled` wrapper scripts check if the actual binaries exist in `/opt/tailscale/`
-2. If not, they trigger the download script (`tailscale_update_check`) to get the latest version
-3. The init.d script properly integrates with OpenWrt's procd system
-4. A cron job is set up to check for updates daily at 3:30 AM
+For users with proxy tools like OpenClash, the service uses a smart retry strategy:
+
+1. **Immediate attempt** on service start
+2. **10 retries** at 30-second intervals if network unavailable
+3. **Total wait time**: Up to 5 minutes
+4. **Logs**: All retries are logged for troubleshooting
+
+## Uninstallation
+
+```sh
+tailscale-manager uninstall
+```
+
+This removes:
+- Tailscale binaries
+- Init scripts and symlinks
+- Configuration files
+- Cron jobs
+
+State file (`/etc/config/tailscaled.state`) is preserved. Remove manually for a clean uninstall.
 
 ## License
 
-See the [LICENSE](LICENSE) file for details.
+See [LICENSE](LICENSE) file.
 
 ---
 
@@ -125,115 +177,82 @@ See the [LICENSE](LICENSE) file for details.
 
 ## 概述
 
-这是一个用于 OpenWrt 路由器的 Tailscale 自动更新安装脚本。它提供了一种简化的方式来在 OpenWrt 系统上安装和维护 Tailscale，具有自动更新功能并与 OpenWrt 的初始化系统正确集成。
+这是一个用于 OpenWrt 路由器的 Tailscale 自动更新安装管理器。提供交互式安装界面，支持多种存储模式和完整的生命周期管理。
 
 ## 特点
 
-- **按需二进制下载**：自动下载适合您设备架构的 Tailscale 二进制文件
-- **自动更新**：包含一个计划任务，保持 Tailscale 始终为最新版本
-- **OpenWrt 集成**：与 OpenWrt 的初始化系统 (procd) 正确集成
-- **占用空间小**：将二进制文件安装到 `/opt/tailscale` 以避免存储空间限制问题
-- **便捷的包装脚本**：提供确保在需要时下载二进制文件的包装脚本
+- **交互式安装器**：菜单驱动，选项清晰
+- **双存储模式**：持久化 (`/opt/tailscale`) 或内存 (`/tmp/tailscale`)
+- **自动更新**：每日定时任务保持最新版本
+- **OpenWrt 集成**：完整 UCI 配置和 procd 服务管理
+- **网络感知启动**：针对延迟网络环境（如 OpenClash）的重试逻辑
+- **完整生命周期**：安装、更新、卸载、状态检查一体化
 
 ## 安装
 
 ### 前提条件
 
-- 能够访问互联网的 OpenWrt 路由器
-- 对路由器的 SSH 访问权限
-- 至少 50MB 的可用空间
+- 可访问互联网的 OpenWrt 路由器
+- SSH 访问权限
+- 至少 50MB 可用空间（持久化模式）
 
-### 安装步骤
+### 快速安装
 
-1. SSH 登录到您的 OpenWrt 路由器：
-   ```
-   ssh root@192.168.1.1  # 替换为您路由器的 IP
-   ```
-
-2. 下载文件：
-   ```
-   wget -O /tmp/openwrt-tailscale-v0.10.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/download/v0.10/openwrt-tailscale-v0.10.tar.gz
-   ```
-   
-3. 将文件复制到正确的位置：
-   ```
-   tar -xzvf /tmp/openwrt-tailscale-v0.10.tar.gz -C /
-   
-   chmod 755 /usr/bin/tailscale_update_check
+1. SSH 登录路由器：
+   ```sh
+   ssh root@192.168.1.1
    ```
 
-4. 启用并启动 Tailscale 服务：
-   ```
-   /etc/init.d/tailscale enable
-   /etc/init.d/tailscale start
+2. 下载并解压：
+   ```sh
+   wget -O /tmp/openwrt-tailscale.tar.gz https://github.com/fl0w1nd/openwrt-tailscale/releases/latest/download/openwrt-tailscale.tar.gz
+   tar -xzf /tmp/openwrt-tailscale.tar.gz -C /
+   chmod +x /usr/bin/tailscale-manager
    ```
 
-5. 等待初始下载完成。这可能需要几分钟，取决于您的互联网连接速度。
-
-6. 登录到您的 Tailscale 账户：
+3. 运行交互式安装器：
+   ```sh
+   tailscale-manager
    ```
+
+4. 连接到 Tailscale 网络：
+   ```sh
    tailscale up
    ```
-   
-   按照提供的认证链接进行操作。
 
 ## 使用方法
 
-### 基本命令
+### 命令行
 
-- **启动 Tailscale：** `/etc/init.d/tailscale start`
-- **停止 Tailscale：** `/etc/init.d/tailscale stop`
-- **开机启动：** `/etc/init.d/tailscale enable`
-- **检查状态：** `tailscale status`
-- **手动检查更新：** `/usr/bin/tailscale_update_check`
-
-### Tailscale 配置
-
-有关更详细的 Tailscale 配置选项，请参阅官方 [Tailscale 文档](https://tailscale.com/kb/)。
-
-常见配置：
-```
-# 允许子网路由
-tailscale up --advertise-routes=192.168.1.0/24
-
-# 出口节点配置
-tailscale up --advertise-exit-node
-
-# 使用特定标签连接（需要 Tailscale ACLs）
-tailscale up --hostname=openwrt-router --advertise-tags=tag:router
+```sh
+tailscale-manager install      # 安装
+tailscale-manager update       # 更新
+tailscale-manager uninstall    # 卸载
+tailscale-manager status       # 状态
 ```
 
-## 故障排除
+## 存储模式
 
-### 检查日志
-```
-logread | grep tailscale
-```
+| 模式 | 位置 | 优点 | 缺点 |
+|------|------|------|------|
+| **持久化** | `/opt/tailscale` | 启动快，离线可用 | 占用 ~50MB 硬盘 |
+| **内存** | `/tmp/tailscale` | 节省硬盘空间 | 每次启动需重新下载 |
 
-### 检查服务状态
-```
-service tailscale status
-```
+## 网络启动行为
 
-### 手动重启
-```
-/etc/init.d/tailscale restart
-```
+针对使用 OpenClash 等代理工具的用户，服务采用智能重试策略：
 
-### 强制二进制文件下载
-如果您需要强制重新下载 Tailscale 二进制文件：
-```
-rm -rf /opt/tailscale
-/usr/bin/tailscale_update_check --download-only
-```
+1. **立即尝试**启动
+2. 网络不可用时，**每 30 秒重试一次**，最多 **10 次**
+3. **总等待时间**：最多 5 分钟
+4. 所有重试记录到日志以便排查
 
-## 工作原理
+## 卸载
 
-1. `tailscale` 和 `tailscaled` 包装脚本会检查实际的二进制文件是否存在于 `/opt/tailscale/`
-2. 如果不存在，它们会触发下载脚本 (`tailscale_update_check`) 获取最新版本
-3. init.d 脚本正确集成了 OpenWrt 的 procd 系统
-4. 设置了一个定时任务，每天凌晨 3:30 检查更新
+```sh
+tailscale-manager uninstall
+```
 
 ## 许可证
 
-详细信息请查看 [LICENSE](LICENSE) 文件。
+详见 [LICENSE](LICENSE) 文件。

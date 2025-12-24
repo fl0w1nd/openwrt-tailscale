@@ -1,146 +1,242 @@
 #!/bin/sh /etc/rc.common
 
+# OpenWRT Tailscale Init Script
+# Managed by tailscale-manager v2.0
 
 USE_PROCD=1
 START=99
 STOP=1
 
-# --- Configuration ---
-# Directories and Files
-TAILSCALE_BIN_DIR="/opt/tailscale"
-TAILSCALE_CONF_DIR="/etc/tailscale"
-TAILSCALE_STATE_FILE="/etc/config/tailscaled.state"
-# Executables (Wrappers)
-TAILSCALE_WRAPPER_BIN="/usr/bin/tailscaled"
-TAILSCALE_CLI_WRAPPER_BIN="/usr/bin/tailscale" # Added for clarity if needed elsewhere
-TAILSCALE_UPDATE_CHECK_SCRIPT="/usr/bin/tailscale_update_check"
-# Procd instance name (optional but good practice)
-PROCD_INSTANCE_NAME="tailscale"
-# Log Tag
-LOG_TAG="tailscale_init"
+LOG_TAG="tailscale"
+LOG_FILE="/var/log/tailscale.log"
 
-# --- Helper Functions ---
-log_info() { echo "$1"; logger -t "$LOG_TAG" -p daemon.info "$1"; }
-log_error() { echo "Error: $1" >&2; logger -t "$LOG_TAG" -p daemon.error "Error: $1"; }
-log_warn() { echo "Warning: $1"; logger -t "$LOG_TAG" -p daemon.warn "Warning: $1"; }
+# ============================================================================
+# Logging
+# ============================================================================
 
-# --- Service Functions ---
-setup_update_cron() {
-    if [ ! -x "$TAILSCALE_UPDATE_CHECK_SCRIPT" ]; then
-        log_warn "Update check script $TAILSCALE_UPDATE_CHECK_SCRIPT not found or not executable. Skipping cron setup."
-        return 1
-    fi
-
-    # Check if cron job already exists (more robust check)
-    # Using grep -Fq for fixed string and quiet operation
-    if ! crontab -l -u root 2>/dev/null | grep -Fq "$TAILSCALE_UPDATE_CHECK_SCRIPT"; then
-        log_info "Adding Tailscale auto-update cron job."
-        # Add job for 3:30 AM local time
-        (crontab -l -u root 2>/dev/null; echo "30 3 * * * $TAILSCALE_UPDATE_CHECK_SCRIPT") | crontab -u root -
-        # Restart cron service if possible (check if service exists first)
-        if [ -x /etc/init.d/cron ]; then
-            /etc/init.d/cron restart >/dev/null 2>&1 || log_warn "Failed to restart cron service."
-        fi
-    fi
-    return 0 # Indicate success or job already exists
+log_msg() {
+    local level="$1"
+    local msg="$2"
+    local ts=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$ts] [$level] $msg" >> "$LOG_FILE"
+    logger -t "$LOG_TAG" -p "daemon.${level}" "$msg"
 }
 
-start_service() {
-  log_info "Starting Tailscale service..."
+# ============================================================================
+# Configuration
+# ============================================================================
 
-  # Ensure necessary directories exist
-  mkdir -p "$TAILSCALE_BIN_DIR"
-  mkdir -p "$TAILSCALE_CONF_DIR"
+load_config() {
+    config_load tailscale
+    config_get ENABLED settings enabled 1
+    config_get PORT settings port 41641
+    config_get STORAGE_MODE settings storage_mode persistent
+    config_get BIN_DIR settings bin_dir /opt/tailscale
+    config_get STATE_FILE settings state_file /etc/config/tailscaled.state
+    config_get STATE_DIR settings statedir /etc/tailscale
+    config_get FW_MODE settings fw_mode nftables
+    config_get LOG_STDOUT settings log_stdout 1
+    config_get LOG_STDERR settings log_stderr 1
+}
 
-  # Setup auto-update cron job
-  setup_update_cron
-  
-  # Check if binary exists before starting
-  TAILSCALED_BIN="${TAILSCALE_BIN_DIR}/tailscaled"
-  TAILSCALE_BIN="${TAILSCALE_BIN_DIR}/tailscale"
-  
-  if [ ! -f "$TAILSCALED_BIN" ] || [ ! -f "$TAILSCALE_BIN" ]; then
-    log_info "======================================================================"
-    log_info "Tailscale binaries not found. First-time installation will begin."
-    log_info "This may take a while depending on your internet connection."
-    log_info "======================================================================"
-  fi
+# ============================================================================
+# Helper Functions
+# ============================================================================
 
-  # Check network connectivity (optional, can be blocking)
-  wait_for_network() {
-    local timeout=60  # Reduced timeout for faster boot if network is down
-    local elapsed=0
-    local ping_target="223.5.5.5" # Or 1.1.1.1, or gateway IP
+# Check if tailscaled binary exists and is executable
+check_binary() {
+    [ -x "${BIN_DIR}/tailscaled" ]
+}
 
-    log_info "Checking network connectivity (ping ${ping_target})..."
-    while [ $elapsed -lt $timeout ]; do
-      # Use -W 1 for 1 second timeout per ping
-      if ping -c 1 -W 1 ${ping_target} > /dev/null 2>&1; then
-        log_info "Network is connected."
+# Detect architecture for downloading
+get_arch() {
+    local arch=$(uname -m)
+    case "$arch" in
+        x86_64) echo "amd64" ;;
+        aarch64) echo "arm64" ;;
+        armv7l|armv7) echo "arm" ;;
+        mips)
+            if echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+                echo "mipsle"
+            else
+                echo "mips"
+            fi
+            ;;
+        mips64)
+            if echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+                echo "mips64le"
+            else
+                echo "mips64"
+            fi
+            ;;
+        i686|i386) echo "386" ;;
+        riscv64) echo "riscv64" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Download binaries for RAM mode
+download_for_ram_mode() {
+    local api_url="https://pkgs.tailscale.com/stable/?mode=json"
+    local download_base="https://pkgs.tailscale.com/stable"
+    
+    local arch=$(get_arch)
+    if [ -z "$arch" ]; then
+        log_msg "error" "Unsupported architecture: $(uname -m)"
+        return 1
+    fi
+    
+    log_msg "info" "RAM mode: Fetching latest version..."
+    local version=$(wget -qO- "$api_url" 2>/dev/null | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+    
+    if [ -z "$version" ]; then
+        log_msg "error" "Failed to get latest version from API"
+        return 1
+    fi
+    
+    local filename="tailscale_${version}_${arch}.tgz"
+    local url="${download_base}/${filename}"
+    local tmp_dir="/tmp/tailscale_download_$$"
+    local tarball="/tmp/${filename}"
+    
+    log_msg "info" "Downloading Tailscale v${version} for ${arch}..."
+    
+    if ! wget -q -O "$tarball" "$url" 2>/dev/null; then
+        log_msg "error" "Download failed from $url"
+        rm -f "$tarball"
+        return 1
+    fi
+    
+    log_msg "info" "Extracting to ${BIN_DIR}..."
+    mkdir -p "$tmp_dir" "$BIN_DIR"
+    
+    if ! tar xzf "$tarball" -C "$tmp_dir" 2>/dev/null; then
+        log_msg "error" "Extraction failed"
+        rm -f "$tarball"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+    
+    local extracted_dir="${tmp_dir}/tailscale_${version}_${arch}"
+    mv "${extracted_dir}/tailscaled" "${BIN_DIR}/tailscaled"
+    mv "${extracted_dir}/tailscale" "${BIN_DIR}/tailscale"
+    chmod +x "${BIN_DIR}/tailscaled" "${BIN_DIR}/tailscale"
+    echo "$version" > "${BIN_DIR}/version"
+    
+    # Update symlinks
+    ln -sf "${BIN_DIR}/tailscale" /usr/bin/tailscale
+    ln -sf "${BIN_DIR}/tailscaled" /usr/bin/tailscaled
+    
+    rm -f "$tarball"
+    rm -rf "$tmp_dir"
+    
+    log_msg "info" "Successfully downloaded Tailscale v${version}"
+    return 0
+}
+
+# Wait for network with retry logic
+# Immediate attempt, then 10 retries with 30s intervals
+wait_for_network() {
+    local max_retries=10
+    local retry_interval=30
+    local retry=0
+    
+    log_msg "info" "Checking network connectivity..."
+    
+    # Immediate first attempt
+    if ping -c 1 -W 3 223.5.5.5 >/dev/null 2>&1 || \
+       ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log_msg "info" "Network is reachable"
         return 0
-      fi
-      sleep 3 # Check every 3 seconds
-      elapsed=$((elapsed + 3))
+    fi
+    
+    log_msg "warn" "Network not immediately available, starting retry loop..."
+    
+    while [ $retry -lt $max_retries ]; do
+        retry=$((retry + 1))
+        log_msg "info" "Network check retry ${retry}/${max_retries}, waiting ${retry_interval}s..."
+        sleep $retry_interval
+        
+        if ping -c 1 -W 3 223.5.5.5 >/dev/null 2>&1 || \
+           ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+            log_msg "info" "Network is now reachable after retry ${retry}"
+            return 0
+        fi
     done
-    log_warn "Network connectivity check timed out after ${timeout} seconds."
-    return 1 # Indicate network down or unreachable target
-  }
+    
+    log_msg "error" "Network not reachable after ${max_retries} retries (total wait: $((max_retries * retry_interval))s)"
+    return 1
+}
 
-  # Wait for network (optional, remove if not needed or adjust behavior)
-  # If wait_for_network fails, we log a warning but continue,
-  # tailscaled might handle offline state itself.
-  wait_for_network || log_warn "Continuing startup despite network check failure."
+# ============================================================================
+# Service Functions
+# ============================================================================
 
-  # Check if the wrapper script exists and is executable
-  if [ ! -x "$TAILSCALE_WRAPPER_BIN" ]; then
-      log_error "Tailscale wrapper $TAILSCALE_WRAPPER_BIN not found or not executable!"
-      return 1 # Critical error, cannot start
-  fi
-
-  # Configure procd service
-  procd_open_instance "$PROCD_INSTANCE_NAME"
-  # **Crucially, command points to the wrapper script**
-  procd_set_param command "$TAILSCALE_WRAPPER_BIN"
-
-  # Append arguments for the actual tailscaled binary via the wrapper
-  # These arguments MUST be understood and passed correctly by the wrapper script
-  # (Our current wrapper passes "$@" which handles this)
-  procd_append_param command --port 41641 # Example port
-  procd_append_param command --state "$TAILSCALE_STATE_FILE"
-  procd_append_param command --statedir "$TAILSCALE_CONF_DIR"
-  # Add any other necessary tailscaled flags here
-  # e.g., procd_append_param command --tun userspace-networking # If needed
-
-  procd_set_param respawn # Automatically restart if it crashes
-  # Set respawn thresholds (e.g., 5 times in 60 seconds)
-  # procd_set_param respawn ${threshold:-3600} ${timeout:-5} ${retry:-5}
-
-  procd_set_param stdout 1 # Redirect stdout to syslog
-  procd_set_param stderr 1 # Redirect stderr to syslog
-
-  procd_close_instance
-  log_info "Tailscale service configured with procd."
+start_service() {
+    load_config
+    
+    if [ "$ENABLED" = "0" ]; then
+        log_msg "info" "Tailscale is disabled in config"
+        return 0
+    fi
+    
+    log_msg "info" "Starting Tailscale service..."
+    
+    # Ensure state directory exists
+    mkdir -p "$STATE_DIR"
+    
+    # For RAM mode, download binaries if needed
+    if [ "$STORAGE_MODE" = "ram" ]; then
+        if ! check_binary; then
+            log_msg "info" "RAM mode: binaries not present, downloading..."
+            if ! download_for_ram_mode; then
+                log_msg "error" "Failed to download binaries for RAM mode"
+                return 1
+            fi
+        fi
+    fi
+    
+    # Check binary exists
+    if ! check_binary; then
+        log_msg "error" "tailscaled binary not found at ${BIN_DIR}/tailscaled"
+        log_msg "info" "Please run: tailscale-manager install"
+        return 1
+    fi
+    
+    # Wait for network (with retry logic)
+    if ! wait_for_network; then
+        log_msg "warn" "Network not available, but starting tailscaled anyway (it may retry internally)"
+    fi
+    
+    # Cleanup before start
+    "${BIN_DIR}/tailscaled" --cleanup 2>/dev/null || true
+    
+    # Start with procd
+    procd_open_instance tailscale
+    procd_set_param command "${BIN_DIR}/tailscaled"
+    procd_set_param env TS_DEBUG_FIREWALL_MODE="$FW_MODE"
+    procd_append_param command --port "$PORT"
+    procd_append_param command --state "$STATE_FILE"
+    procd_append_param command --statedir "$STATE_DIR"
+    procd_set_param respawn 3600 5 5
+    procd_set_param stdout "$LOG_STDOUT"
+    procd_set_param stderr "$LOG_STDERR"
+    procd_close_instance
+    
+    log_msg "info" "Tailscale service started successfully"
 }
 
 stop_service() {
-  log_info "Stopping Tailscale service..."
+    load_config
+    log_msg "info" "Stopping Tailscale service..."
+    
+    if check_binary; then
+        "${BIN_DIR}/tailscaled" --cleanup 2>/dev/null || true
+    fi
+    
+    log_msg "info" "Tailscale service stopped"
+}
 
-  # Check if the wrapper script exists and is executable
-  if [ ! -x "$TAILSCALE_WRAPPER_BIN" ]; then
-      log_warn "Tailscale wrapper $TAILSCALE_WRAPPER_BIN not found or not executable. Cannot perform clean shutdown."
-      # We might still try to ask procd to stop the instance if it knows about it
-      # but the --cleanup command won't run.
-      # Alternatively, just let procd handle the stop via signal.
-      return 1 # Indicate potential issue
-  fi
-
-  # Ask the running daemon to perform cleanup via the wrapper
-  # The wrapper script needs to correctly pass the --cleanup flag
-  # Timeout added to prevent hanging forever if cleanup fails
-  log_info "Executing cleanup via wrapper..."
-  timeout 10s "$TAILSCALE_WRAPPER_BIN" --cleanup || log_warn "Cleanup command timed out or failed."
-
-  # Procd should handle sending SIGTERM/SIGKILL to the process started via procd_open_instance
-  # The explicit cleanup call above is Tailscale specific.
-  log_info "Tailscale service stop requested."
+service_triggers() {
+    procd_add_reload_trigger "tailscale"
 }
