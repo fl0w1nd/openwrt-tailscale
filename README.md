@@ -13,6 +13,7 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
 - **Interactive Installer**: Menu-driven installation with clear options
 - **Small Binary Support**: Compressed binaries (~10MB) optimized for embedded devices
 - **Dual Storage Modes**: Choose between persistent (`/opt/tailscale`) or RAM (`/tmp/tailscale`)
+- **Subnet Routing Setup**: Automatic network interface and firewall configuration
 - **Auto-Updates**: Daily cron job keeps Tailscale up to date
 - **OpenWrt Integration**: Full UCI configuration and procd service management
 - **Network-Aware Startup**: Retry logic for environments with delayed network (e.g., OpenClash)
@@ -90,6 +91,7 @@ Run `tailscale-manager` without arguments for the interactive menu:
   3) Uninstall Tailscale
   4) Check Status
   5) View Logs
+  6) Setup Subnet Routing
 
   0) Exit
 ```
@@ -97,11 +99,12 @@ Run `tailscale-manager` without arguments for the interactive menu:
 ### Command Line
 
 ```sh
-tailscale-manager install      # Install Tailscale
-tailscale-manager update       # Update to latest version
-tailscale-manager uninstall    # Remove Tailscale
-tailscale-manager status       # Show current status
-tailscale-manager help         # Show help
+tailscale-manager install        # Install Tailscale
+tailscale-manager update         # Update to latest version
+tailscale-manager uninstall      # Remove Tailscale
+tailscale-manager status         # Show current status
+tailscale-manager setup-firewall # Configure subnet routing
+tailscale-manager help           # Show help
 ```
 
 ### Service Commands
@@ -120,6 +123,44 @@ tailscale-manager help         # Show help
 tailscale status                              # Check connection
 tailscale up --advertise-routes=192.168.1.0/24  # Subnet routing
 tailscale up --advertise-exit-node            # Exit node
+```
+
+## Subnet Routing Setup
+
+To access your local network from other Tailscale devices, you need to configure the `tailscale0` interface:
+
+### Automatic Setup
+
+During installation, you'll be prompted to configure subnet routing. You can also run it later:
+
+```sh
+tailscale-manager setup-firewall
+```
+
+This will:
+1. **Create network interface** (required): Binds `tailscale0` to OpenWrt's network subsystem
+2. **Create firewall zone** (optional): Adds `tailscale` zone with forwarding rules to `lan`
+
+> **Note**: In most cases, only the network interface is needed. The firewall zone is for stricter configurations.
+
+### Manual Setup via LuCI
+
+If you prefer to configure manually:
+
+1. Go to **Network → Interfaces → Add new interface**
+2. Name: `tailscale`, Protocol: `Unmanaged`, Device: `tailscale0`
+3. (Optional) Go to **Network → Firewall → Add zone**
+4. Name: `tailscale`, Input/Output/Forward: `accept`
+5. Add forwarding rules between `tailscale` and `lan`
+
+### Using Subnet Routing
+
+```sh
+# Advertise your local subnet
+tailscale up --advertise-routes=192.168.1.0/24
+
+# Then approve in Tailscale Admin Console:
+# https://login.tailscale.com/admin/machines
 ```
 
 ## Storage Modes
@@ -185,6 +226,7 @@ This removes:
 - Init scripts and symlinks
 - Configuration files
 - Cron jobs
+- Network interface and firewall zone (if configured)
 
 State file (`/etc/config/tailscaled.state`) is preserved. Remove manually for a clean uninstall.
 
@@ -205,6 +247,7 @@ See [LICENSE](LICENSE) file.
 - **交互式安装器**：菜单驱动，选项清晰
 - **小二进制支持**：压缩二进制文件（约 10MB），专为嵌入式设备优化
 - **双存储模式**：持久化 (`/opt/tailscale`) 或内存 (`/tmp/tailscale`)
+- **子网路由配置**：自动配置网络接口和防火墙
 - **自动更新**：每日定时任务保持最新版本
 - **OpenWrt 集成**：完整 UCI 配置和 procd 服务管理
 - **网络感知启动**：针对延迟网络环境（如 OpenClash）的重试逻辑
@@ -271,10 +314,39 @@ See [LICENSE](LICENSE) file.
 ### 命令行
 
 ```sh
-tailscale-manager install      # 安装
-tailscale-manager update       # 更新
-tailscale-manager uninstall    # 卸载
-tailscale-manager status       # 状态
+tailscale-manager install        # 安装
+tailscale-manager update         # 更新
+tailscale-manager uninstall      # 卸载
+tailscale-manager status         # 状态
+tailscale-manager setup-firewall # 配置子网路由
+```
+
+## 子网路由配置
+
+要从其他 Tailscale 设备访问本地网络，需要配置 `tailscale0` 接口：
+
+### 自动配置
+
+安装时会提示是否配置子网路由。也可以之后运行：
+
+```sh
+tailscale-manager setup-firewall
+```
+
+这将：
+1. **创建网络接口**（必需）：将 `tailscale0` 绑定到 OpenWrt 网络子系统
+2. **创建防火墙区域**（可选）：添加 `tailscale` 区域和与 `lan` 的转发规则
+
+> **注意**：大多数情况下，只需要创建网络接口即可。防火墙区域用于更严格的配置。
+
+### 使用子网路由
+
+```sh
+# 公开本地子网
+tailscale up --advertise-routes=192.168.1.0/24
+
+# 然后在 Tailscale 管理控制台批准：
+# https://login.tailscale.com/admin/machines
 ```
 
 ## 存储模式
