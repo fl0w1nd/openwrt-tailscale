@@ -143,34 +143,63 @@ jobs:
           VERSION="${{ needs.check-version.outputs.version }}"
           git clone --depth 1 --branch "$VERSION" https://github.com/tailscale/tailscale.git tailscale-src
 
-      - name: Build combined binary
+      - name: Build combined binary (static)
         run: |
           cd tailscale-src
           
           VERSION="${{ needs.check-version.outputs.version }}"
           VERSION="${VERSION#v}"  # Remove 'v' prefix
           
+          # CGO_ENABLED=0 ensures pure Go static binary (no glibc dependency)
+          # This is critical for OpenWrt which uses musl libc
+          CGO_ENABLED=0 \
           GOOS=${{ matrix.goos }} \
           GOARCH=${{ matrix.goarch }} \
           ${{ matrix.goarm && format('GOARM={0}', matrix.goarm) }} \
           go build \
+            -trimpath \
             -o ../tailscale.combined \
-            -tags 'ts_include_cli' \
+            -tags 'ts_include_cli,netgo,osusergo' \
             -ldflags "-s -w -X tailscale.com/version.longStamp=${VERSION} -X tailscale.com/version.shortStamp=${VERSION}" \
             ./cmd/tailscaled
+
+      - name: Verify binary is statically linked
+        run: |
+          echo "=== File info ==="
+          file tailscale.combined
+          
+          echo ""
+          echo "=== Checking for dynamic linker (must be empty for OpenWrt compatibility) ==="
+          if readelf -l tailscale.combined 2>/dev/null | grep -q 'interpreter'; then
+            echo "ERROR: Binary has PT_INTERP (requires dynamic loader like ld-linux)"
+            echo "This will NOT work on OpenWrt (musl libc)!"
+            readelf -l tailscale.combined | grep -A1 'interpreter' || true
+            exit 1
+          else
+            echo "OK: No interpreter found - binary is statically linked"
+          fi
+          
+          echo ""
+          echo "=== ldd check ==="
+          ldd tailscale.combined 2>&1 || echo "(expected: not a dynamic executable)"
 
       - name: Compress with UPX
         run: |
           echo "Size before compression:"
           ls -lh tailscale.combined
           
-          # Use standard UPX compression (NOT LZMA)
-          # LZMA compression can cause compatibility issues on some embedded systems
-          if upx --best tailscale.combined 2>/dev/null; then
-            echo "UPX compression successful"
+          # Use LZMA compression for best size reduction
+          # (LZMA is safe now that we've ensured static linking)
+          if upx --best --lzma tailscale.combined; then
+            echo "UPX LZMA compression successful"
+          elif upx --best tailscale.combined; then
+            echo "UPX standard compression successful (LZMA failed)"
           else
             echo "UPX compression failed, keeping uncompressed"
           fi
+          
+          # Verify compressed binary integrity
+          upx -t tailscale.combined
           
           echo "Size after compression:"
           ls -lh tailscale.combined
