@@ -381,6 +381,267 @@ remove_symlinks() {
 }
 
 # ============================================================================
+# Firewall Detection and Subnet Routing Configuration
+# ============================================================================
+
+# Detect firewall backend (fw3 or fw4)
+detect_firewall_backend() {
+    if [ -x /sbin/fw4 ]; then
+        echo "fw4"
+    elif [ -x /sbin/fw3 ]; then
+        echo "fw3"
+    elif command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then
+        echo "fw4"
+    elif command -v iptables >/dev/null 2>&1; then
+        echo "fw3"
+    else
+        echo "unknown"
+    fi
+}
+
+# Check if firewall package is available
+check_firewall_available() {
+    [ -f /etc/config/firewall ] && [ -x /etc/init.d/firewall ]
+}
+
+# Check if network interface already exists
+check_interface_exists() {
+    local iface="$1"
+    uci -q get "network.${iface}" >/dev/null 2>&1
+}
+
+# Check if firewall zone already exists
+check_zone_exists() {
+    local zone_name="$1"
+    local idx=0
+    while uci -q get "firewall.@zone[${idx}]" >/dev/null 2>&1; do
+        if [ "$(uci -q get firewall.@zone[${idx}].name)" = "$zone_name" ]; then
+            return 0
+        fi
+        idx=$((idx + 1))
+    done
+    return 1
+}
+
+# Check if forwarding rule exists
+check_forwarding_exists() {
+    local src="$1"
+    local dest="$2"
+    local idx=0
+    while uci -q get "firewall.@forwarding[${idx}]" >/dev/null 2>&1; do
+        local f_src=$(uci -q get "firewall.@forwarding[${idx}].src")
+        local f_dest=$(uci -q get "firewall.@forwarding[${idx}].dest")
+        if [ "$f_src" = "$src" ] && [ "$f_dest" = "$dest" ]; then
+            return 0
+        fi
+        idx=$((idx + 1))
+    done
+    return 1
+}
+
+# Setup network interface for tailscale0 (Step 1 - Required)
+setup_tailscale_interface() {
+    if check_interface_exists "tailscale"; then
+        log_info "Network interface 'tailscale' already exists, skipping"
+        return 0
+    fi
+    
+    log_info "Creating network interface 'tailscale'..."
+    
+    uci set network.tailscale=interface
+    uci set network.tailscale.proto='none'
+    uci set network.tailscale.device='tailscale0'
+    
+    if ! uci commit network; then
+        log_error "Failed to commit network configuration"
+        return 1
+    fi
+    
+    log_info "Network interface 'tailscale' created"
+    return 0
+}
+
+# Setup firewall zone for tailscale (Step 2 - Optional, for stricter systems)
+setup_tailscale_firewall_zone() {
+    if ! check_firewall_available; then
+        log_warn "Firewall configuration not available, skipping zone setup"
+        return 1
+    fi
+    
+    local fw_backend=$(detect_firewall_backend)
+    log_info "Detected firewall backend: ${fw_backend}"
+    
+    # Create zone if not exists
+    if check_zone_exists "tailscale"; then
+        log_info "Firewall zone 'tailscale' already exists, skipping"
+    else
+        log_info "Creating firewall zone 'tailscale'..."
+        
+        uci add firewall zone >/dev/null
+        uci set firewall.@zone[-1].name='tailscale'
+        uci add_list firewall.@zone[-1].network='tailscale'
+        uci set firewall.@zone[-1].input='ACCEPT'
+        uci set firewall.@zone[-1].output='ACCEPT'
+        uci set firewall.@zone[-1].forward='ACCEPT'
+        uci set firewall.@zone[-1].masq='0'
+        
+        log_info "Firewall zone 'tailscale' created"
+    fi
+    
+    # Create forwarding rules (tailscale <-> lan)
+    if check_forwarding_exists "tailscale" "lan"; then
+        log_info "Forwarding tailscale->lan already exists, skipping"
+    else
+        log_info "Creating forwarding rule: tailscale -> lan"
+        uci add firewall forwarding >/dev/null
+        uci set firewall.@forwarding[-1].src='tailscale'
+        uci set firewall.@forwarding[-1].dest='lan'
+    fi
+    
+    if check_forwarding_exists "lan" "tailscale"; then
+        log_info "Forwarding lan->tailscale already exists, skipping"
+    else
+        log_info "Creating forwarding rule: lan -> tailscale"
+        uci add firewall forwarding >/dev/null
+        uci set firewall.@forwarding[-1].src='lan'
+        uci set firewall.@forwarding[-1].dest='tailscale'
+    fi
+    
+    if ! uci commit firewall; then
+        log_error "Failed to commit firewall configuration"
+        return 1
+    fi
+    
+    log_info "Firewall zone configuration completed"
+    return 0
+}
+
+# Interactive subnet routing setup
+do_setup_subnet_routing() {
+    echo ""
+    echo "============================================="
+    echo "  Subnet Routing Configuration"
+    echo "============================================="
+    echo ""
+    echo "This will configure your router to allow Tailscale subnet routing."
+    echo ""
+    echo "Step 1: Create network interface (required)"
+    echo "  - Creates 'tailscale' interface bound to tailscale0"
+    echo "  - This is usually sufficient for subnet routing to work"
+    echo ""
+    echo "Step 2: Create firewall zone (optional)"
+    echo "  - Creates 'tailscale' firewall zone"
+    echo "  - Adds forwarding rules between tailscale and lan"
+    echo "  - Only needed if Step 1 alone doesn't work"
+    echo ""
+    
+    # Step 1: Network interface
+    printf "Create network interface? [Y/n]: "
+    read -r iface_answer
+    
+    case "$iface_answer" in
+        [Nn]*)
+            echo "Skipped network interface creation."
+            ;;
+        *)
+            if ! setup_tailscale_interface; then
+                log_error "Failed to create network interface"
+                return 1
+            fi
+            /etc/init.d/network reload >/dev/null 2>&1 || true
+            echo "Network interface created successfully."
+            ;;
+    esac
+    
+    echo ""
+    
+    # Step 2: Firewall zone (optional)
+    printf "Create firewall zone? (usually not needed) [y/N]: "
+    read -r fw_answer
+    
+    case "$fw_answer" in
+        [Yy]*)
+            if ! setup_tailscale_firewall_zone; then
+                log_warn "Firewall zone setup incomplete"
+                echo ""
+                echo "You may need to configure manually via LuCI:"
+                echo "  Network -> Firewall -> Add zone 'tailscale'"
+                echo ""
+            else
+                /etc/init.d/firewall reload >/dev/null 2>&1 || true
+                echo "Firewall zone created successfully."
+            fi
+            ;;
+        *)
+            echo "Skipped firewall zone creation."
+            echo "If subnet routing doesn't work, run: tailscale-manager setup-firewall"
+            ;;
+    esac
+    
+    echo ""
+    echo "============================================="
+    echo "  Configuration Complete"
+    echo "============================================="
+    echo ""
+    echo "Next steps:"
+    echo "  1. Run: tailscale up --advertise-routes=192.168.x.0/24"
+    echo "  2. Approve the subnet routes in Tailscale admin console:"
+    echo "     https://login.tailscale.com/admin/machines"
+    echo ""
+}
+
+# Remove subnet routing configuration (for uninstall)
+remove_subnet_routing_config() {
+    log_info "Removing subnet routing configuration..."
+    
+    # Remove forwarding rules (iterate in reverse order to preserve indices)
+    local idx
+    local max_idx=0
+    
+    # First, find max index
+    while uci -q get "firewall.@forwarding[${max_idx}]" >/dev/null 2>&1; do
+        max_idx=$((max_idx + 1))
+    done
+    
+    # Remove in reverse order
+    idx=$((max_idx - 1))
+    while [ $idx -ge 0 ]; do
+        local f_src=$(uci -q get "firewall.@forwarding[${idx}].src")
+        local f_dest=$(uci -q get "firewall.@forwarding[${idx}].dest")
+        if [ "$f_src" = "tailscale" ] || [ "$f_dest" = "tailscale" ]; then
+            uci delete "firewall.@forwarding[${idx}]" 2>/dev/null || true
+            log_info "Removed forwarding rule at index ${idx}"
+        fi
+        idx=$((idx - 1))
+    done
+    
+    # Remove zone
+    idx=0
+    while uci -q get "firewall.@zone[${idx}]" >/dev/null 2>&1; do
+        if [ "$(uci -q get firewall.@zone[${idx}].name)" = "tailscale" ]; then
+            uci delete "firewall.@zone[${idx}]" 2>/dev/null || true
+            log_info "Removed firewall zone 'tailscale'"
+            break
+        fi
+        idx=$((idx + 1))
+    done
+    
+    uci commit firewall 2>/dev/null || true
+    
+    # Remove network interface
+    if check_interface_exists "tailscale"; then
+        uci delete network.tailscale 2>/dev/null || true
+        uci commit network 2>/dev/null || true
+        log_info "Removed network interface 'tailscale'"
+    fi
+    
+    /etc/init.d/network reload >/dev/null 2>&1 || true
+    /etc/init.d/firewall reload >/dev/null 2>&1 || true
+    
+    log_info "Subnet routing configuration removed"
+}
+
+# ============================================================================
 # UCI Configuration
 # ============================================================================
 
@@ -825,6 +1086,31 @@ do_install() {
     "$INIT_SCRIPT" enable
     "$INIT_SCRIPT" start
     
+    # Ask about subnet routing setup
+    echo ""
+    echo "============================================="
+    echo "  Subnet Routing (Optional)"
+    echo "============================================="
+    echo ""
+    echo "If you plan to access your local network from other Tailscale"
+    echo "devices (subnet routing), you need to create a network interface"
+    echo "for the tailscale0 device."
+    echo ""
+    printf "Configure subnet routing now? [y/N]: "
+    read -r subnet_answer
+    
+    case "$subnet_answer" in
+        [Yy]*)
+            do_setup_subnet_routing
+            ;;
+        *)
+            echo ""
+            echo "Skipped. You can configure later with:"
+            echo "  tailscale-manager setup-firewall"
+            echo ""
+            ;;
+    esac
+    
     echo ""
     echo "============================================="
     echo "  Installation Complete!"
@@ -835,8 +1121,9 @@ do_install() {
     echo "  2. Follow the auth link to connect your device"
     echo ""
     echo "Useful commands:"
-    echo "  tailscale status     - Check connection status"
-    echo "  tailscale up --help  - See all options"
+    echo "  tailscale status       - Check connection status"
+    echo "  tailscale up --help    - See all options"
+    echo "  tailscale-manager setup-firewall - Configure subnet routing"
     echo ""
 }
 
@@ -955,6 +1242,9 @@ do_uninstall() {
     
     # Remove config (optional, keep state)
     rm -f "$CONFIG_FILE"
+    
+    # Remove network/firewall configuration
+    remove_subnet_routing_config
     
     echo ""
     echo "============================================="
@@ -1075,6 +1365,7 @@ show_menu() {
     echo "  3) Uninstall Tailscale"
     echo "  4) Check Status"
     echo "  5) View Logs"
+    echo "  6) Setup Subnet Routing"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -1114,6 +1405,7 @@ interactive_menu() {
             3) do_uninstall; printf "Press Enter to continue..."; read -r _ ;;
             4) do_status; printf "Press Enter to continue..."; read -r _ ;;
             5) do_view_logs ;;
+            6) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac
@@ -1144,18 +1436,22 @@ main() {
         download-only)
             do_download_only
             ;;
+        setup-firewall)
+            do_setup_subnet_routing
+            ;;
         -h|--help|help)
             echo "OpenWRT Tailscale Manager v${VERSION}"
             echo ""
             echo "Usage: $0 [command]"
             echo ""
             echo "Commands:"
-            echo "  install       Install Tailscale"
-            echo "  update        Update to latest version"
-            echo "  uninstall     Remove Tailscale"
-            echo "  status        Show current status"
-            echo "  download-only Download binaries only (for RAM mode)"
-            echo "  help          Show this help"
+            echo "  install        Install Tailscale"
+            echo "  update         Update to latest version"
+            echo "  uninstall      Remove Tailscale"
+            echo "  status         Show current status"
+            echo "  setup-firewall Configure network/firewall for subnet routing"
+            echo "  download-only  Download binaries only (for RAM mode)"
+            echo "  help           Show this help"
             echo ""
             echo "Environment variables:"
             echo "  TAILSCALE_SOURCE=official|small"
