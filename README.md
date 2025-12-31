@@ -11,6 +11,7 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
 ## Features
 
 - **Interactive Installer**: Menu-driven installation with clear options
+- **Small Binary Support**: Compressed binaries (~10MB) optimized for embedded devices
 - **Dual Storage Modes**: Choose between persistent (`/opt/tailscale`) or RAM (`/tmp/tailscale`)
 - **Auto-Updates**: Daily cron job keeps Tailscale up to date
 - **OpenWrt Integration**: Full UCI configuration and procd service management
@@ -23,7 +24,7 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
 
 - OpenWrt router with internet access
 - SSH access to your router
-- At least 50MB of free space (for persistent mode)
+- At least 10MB of free space (Small mode) or 50MB (Official mode)
 
 ### Quick Install
 
@@ -44,6 +45,7 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
    ```
 
 4. Follow the prompts to:
+   - Choose download source (Official or Small)
    - Choose storage mode (Persistent or RAM)
    - Download and install Tailscale
    - Start the service
@@ -53,6 +55,25 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
    tailscale up
    ```
 
+## Download Sources
+
+| Source | Size | Description |
+|--------|------|-------------|
+| **Official** | ~50MB | Full binaries from pkgs.tailscale.com |
+| **Small** (Recommended) | ~10MB | Compressed binaries, optimized for embedded devices |
+
+The **Small** binary is a combined `tailscale` + `tailscaled` binary compressed with UPX. It's functionally identical to the official version but 80% smaller.
+
+### Supported Architectures (Small Binary)
+
+| Architecture | Devices |
+|--------------|---------|
+| amd64 | x86 routers, VMs |
+| arm64 | Raspberry Pi 4, modern ARM routers |
+| arm | Raspberry Pi 2/3, older ARM routers |
+| mipsle | MediaTek/Ralink routers (most common) |
+| mips | Atheros/QCA routers |
+
 ## Usage
 
 ### Interactive Menu
@@ -61,7 +82,7 @@ Run `tailscale-manager` without arguments for the interactive menu:
 
 ```
 =============================================
-  OpenWRT Tailscale Manager v2.0
+  OpenWRT Tailscale Manager v2.1
 =============================================
 
   1) Install Tailscale
@@ -105,7 +126,7 @@ tailscale up --advertise-exit-node            # Exit node
 
 | Mode | Location | Pros | Cons |
 |------|----------|------|------|
-| **Persistent** | `/opt/tailscale` | Fast boot, works offline | Uses ~50MB disk |
+| **Persistent** | `/opt/tailscale` | Fast boot, works offline | Uses disk space |
 | **RAM** | `/tmp/tailscale` | Saves disk space | Re-downloads on boot |
 
 ## Configuration
@@ -121,6 +142,7 @@ config tailscale 'settings'
     option state_file '/etc/config/tailscaled.state'
     option statedir '/etc/tailscale'
     option fw_mode 'nftables'
+    option download_source 'small'
 ```
 
 Edit with:
@@ -181,6 +203,7 @@ See [LICENSE](LICENSE) file.
 ## 特点
 
 - **交互式安装器**：菜单驱动，选项清晰
+- **小二进制支持**：压缩二进制文件（约 10MB），专为嵌入式设备优化
 - **双存储模式**：持久化 (`/opt/tailscale`) 或内存 (`/tmp/tailscale`)
 - **自动更新**：每日定时任务保持最新版本
 - **OpenWrt 集成**：完整 UCI 配置和 procd 服务管理
@@ -193,7 +216,7 @@ See [LICENSE](LICENSE) file.
 
 - 可访问互联网的 OpenWrt 路由器
 - SSH 访问权限
-- 至少 50MB 可用空间（持久化模式）
+- 至少 10MB 可用空间（小二进制模式）或 50MB（官方模式）
 
 ### 快速安装
 
@@ -213,10 +236,35 @@ See [LICENSE](LICENSE) file.
    tailscale-manager
    ```
 
-4. 连接到 Tailscale 网络：
+4. 按提示操作：
+   - 选择下载源（官方版或小二进制版）
+   - 选择存储模式（持久化或内存）
+   - 下载安装 Tailscale
+   - 启动服务
+
+5. 连接到 Tailscale 网络：
    ```sh
    tailscale up
    ```
+
+## 下载源
+
+| 来源 | 大小 | 说明 |
+|------|------|------|
+| **Official（官方）** | ~50MB | 来自 pkgs.tailscale.com 的完整二进制 |
+| **Small（推荐）** | ~10MB | 压缩二进制，专为嵌入式设备优化 |
+
+**Small** 版本是将 `tailscale` + `tailscaled` 合并后使用 UPX 压缩的二进制文件。功能与官方版本完全相同，但体积缩小 80%。
+
+### 支持的架构（小二进制）
+
+| 架构 | 适用设备 |
+|------|----------|
+| amd64 | x86 软路由、虚拟机 |
+| arm64 | 树莓派 4、新款 ARM 路由器 |
+| arm | 树莓派 2/3、较老 ARM 路由器 |
+| mipsle | MediaTek/Ralink 路由器（最常见） |
+| mips | Atheros/QCA 路由器 |
 
 ## 使用方法
 
@@ -233,8 +281,24 @@ tailscale-manager status       # 状态
 
 | 模式 | 位置 | 优点 | 缺点 |
 |------|------|------|------|
-| **持久化** | `/opt/tailscale` | 启动快，离线可用 | 占用 ~50MB 硬盘 |
+| **持久化** | `/opt/tailscale` | 启动快，离线可用 | 占用硬盘空间 |
 | **内存** | `/tmp/tailscale` | 节省硬盘空间 | 每次启动需重新下载 |
+
+## 配置
+
+设置存储在 UCI 格式的 `/etc/config/tailscale` 文件中：
+
+```
+config tailscale 'settings'
+    option enabled '1'
+    option port '41641'
+    option storage_mode 'persistent'
+    option bin_dir '/opt/tailscale'
+    option state_file '/etc/config/tailscaled.state'
+    option statedir '/etc/tailscale'
+    option fw_mode 'nftables'
+    option download_source 'small'
+```
 
 ## 网络启动行为
 
