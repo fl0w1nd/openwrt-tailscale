@@ -35,6 +35,7 @@ load_config() {
     config_get STATE_FILE settings state_file /etc/config/tailscaled.state
     config_get STATE_DIR settings statedir /etc/tailscale
     config_get FW_MODE settings fw_mode nftables
+    config_get DOWNLOAD_SOURCE settings download_source official
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
 }
@@ -44,8 +45,9 @@ load_config() {
 # ============================================================================
 
 # Check if tailscaled binary exists and is executable
+# Supports both official (separate binaries) and small (combined binary)
 check_binary() {
-    [ -x "${BIN_DIR}/tailscaled" ]
+    [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
 }
 
 # Detect architecture for downloading
@@ -76,62 +78,24 @@ get_arch() {
 }
 
 # Download binaries for RAM mode
+# Uses tailscale-manager for consistent download logic (supports both official and small binaries)
 download_for_ram_mode() {
-    local api_url="https://pkgs.tailscale.com/stable/?mode=json"
-    local download_base="https://pkgs.tailscale.com/stable"
-    
-    local arch=$(get_arch)
-    if [ -z "$arch" ]; then
-        log_msg "error" "Unsupported architecture: $(uname -m)"
+    if [ -x /usr/bin/tailscale-manager ]; then
+        log_msg "info" "RAM mode: downloading binaries via tailscale-manager..."
+        if /usr/bin/tailscale-manager download-only; then
+            # Update symlinks
+            ln -sf "${BIN_DIR}/tailscale" /usr/bin/tailscale
+            ln -sf "${BIN_DIR}/tailscaled" /usr/bin/tailscaled
+            return 0
+        else
+            log_msg "error" "Download via tailscale-manager failed"
+            return 1
+        fi
+    else
+        log_msg "error" "tailscale-manager not found at /usr/bin/tailscale-manager"
+        log_msg "info" "Please reinstall using: wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh && chmod +x /usr/bin/tailscale-manager"
         return 1
     fi
-    
-    log_msg "info" "RAM mode: Fetching latest version..."
-    local version=$(wget -qO- "$api_url" 2>/dev/null | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
-    
-    if [ -z "$version" ]; then
-        log_msg "error" "Failed to get latest version from API"
-        return 1
-    fi
-    
-    local filename="tailscale_${version}_${arch}.tgz"
-    local url="${download_base}/${filename}"
-    local tmp_dir="/tmp/tailscale_download_$$"
-    local tarball="/tmp/${filename}"
-    
-    log_msg "info" "Downloading Tailscale v${version} for ${arch}..."
-    
-    if ! wget -q -O "$tarball" "$url" 2>/dev/null; then
-        log_msg "error" "Download failed from $url"
-        rm -f "$tarball"
-        return 1
-    fi
-    
-    log_msg "info" "Extracting to ${BIN_DIR}..."
-    mkdir -p "$tmp_dir" "$BIN_DIR"
-    
-    if ! tar xzf "$tarball" -C "$tmp_dir" 2>/dev/null; then
-        log_msg "error" "Extraction failed"
-        rm -f "$tarball"
-        rm -rf "$tmp_dir"
-        return 1
-    fi
-    
-    local extracted_dir="${tmp_dir}/tailscale_${version}_${arch}"
-    mv "${extracted_dir}/tailscaled" "${BIN_DIR}/tailscaled"
-    mv "${extracted_dir}/tailscale" "${BIN_DIR}/tailscale"
-    chmod +x "${BIN_DIR}/tailscaled" "${BIN_DIR}/tailscale"
-    echo "$version" > "${BIN_DIR}/version"
-    
-    # Update symlinks
-    ln -sf "${BIN_DIR}/tailscale" /usr/bin/tailscale
-    ln -sf "${BIN_DIR}/tailscaled" /usr/bin/tailscaled
-    
-    rm -f "$tarball"
-    rm -rf "$tmp_dir"
-    
-    log_msg "info" "Successfully downloaded Tailscale v${version}"
-    return 0
 }
 
 # Wait for network with retry logic

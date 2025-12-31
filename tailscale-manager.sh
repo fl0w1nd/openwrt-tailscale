@@ -9,9 +9,26 @@ set -e
 # Configuration
 # ============================================================================
 
-VERSION="2.0.0"
+VERSION="2.1.0"
+
+# Download source: "official" or "small"
+# - official: Full binaries from pkgs.tailscale.com (~50MB)
+# - small: Compressed binaries from GitHub releases (~5MB)
+DOWNLOAD_SOURCE="${TAILSCALE_SOURCE:-official}"
+
+# Official Tailscale download
 API_URL="https://pkgs.tailscale.com/stable/?mode=json"
 DOWNLOAD_BASE="https://pkgs.tailscale.com/stable"
+
+# Small binary download (GitHub releases)
+SMALL_REPO="fl0w1nd/openwrt-tailscale"
+SMALL_API_URL="https://api.github.com/repos/${SMALL_REPO}/releases/latest"
+SMALL_RELEASES_API="https://api.github.com/repos/${SMALL_REPO}/releases"
+SMALL_DOWNLOAD_BASE="https://github.com/${SMALL_REPO}/releases/download"
+
+# Architectures supported by small binaries
+# Must match the architectures built in GitHub Actions
+SMALL_SUPPORTED_ARCHS="amd64 arm64 arm mipsle mips"
 
 # Installation paths
 PERSISTENT_DIR="/opt/tailscale"
@@ -55,6 +72,15 @@ log_warn() {
 # ============================================================================
 # Architecture Detection
 # ============================================================================
+
+# Check if architecture is supported by small binaries
+is_arch_supported_by_small() {
+    local arch="$1"
+    case " $SMALL_SUPPORTED_ARCHS " in
+        *" $arch "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 get_arch() {
     local arch=$(uname -m)
@@ -104,25 +130,79 @@ get_arch() {
 # Version Detection via API
 # ============================================================================
 
-get_latest_version() {
+# Get latest version from official Tailscale API
+get_official_latest_version() {
     local json_data
     local version
     
     json_data=$(wget -qO- "$API_URL" 2>/dev/null) || {
-        log_error "Failed to fetch version info from API"
+        log_error "Failed to fetch version info from Tailscale API"
         return 1
     }
     
     # Extract TarballsVersion using sed (more compatible with busybox)
-    # Handles both "key": "value" and "key":"value" formats
     version=$(echo "$json_data" | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
     
     if [ -z "$version" ]; then
-        log_error "Failed to parse version from API response"
+        log_error "Failed to parse version from Tailscale API"
         return 1
     fi
     
     echo "$version"
+}
+
+# Get latest version from our GitHub releases (for small binaries)
+get_small_latest_version() {
+    local json_data
+    local version
+    
+    json_data=$(wget -qO- "$SMALL_API_URL" 2>/dev/null) || {
+        log_error "Failed to fetch version info from GitHub API"
+        log_error "This may mean no releases have been published yet"
+        return 1
+    }
+    
+    # Check if response contains "Not Found" (no releases)
+    if echo "$json_data" | grep -q '"message"[: ]*"Not Found"'; then
+        log_error "No releases found in the repository"
+        log_error "Small binaries are not yet available"
+        return 1
+    fi
+    
+    # Extract tag_name (e.g., "v1.76.1")
+    version=$(echo "$json_data" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+    
+    # Remove 'v' prefix if present
+    version="${version#v}"
+    
+    if [ -z "$version" ]; then
+        log_error "Failed to parse version from GitHub API"
+        return 1
+    fi
+    
+    echo "$version"
+}
+
+# Check if a specific version exists for a specific architecture (small binaries)
+check_small_version_arch_exists() {
+    local version="$1"
+    local arch="$2"
+    local url="${SMALL_DOWNLOAD_BASE}/v${version}/tailscale-small_${version}_${arch}.tgz"
+    
+    # Use HEAD request to check if file exists
+    if wget -q --spider "$url" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+get_latest_version() {
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        get_small_latest_version
+    else
+        get_official_latest_version
+    fi
 }
 
 get_installed_version() {
@@ -145,12 +225,24 @@ download_tailscale() {
     local arch="$2"
     local target_dir="$3"
     
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        download_tailscale_small "$version" "$arch" "$target_dir"
+    else
+        download_tailscale_official "$version" "$arch" "$target_dir"
+    fi
+}
+
+download_tailscale_official() {
+    local version="$1"
+    local arch="$2"
+    local target_dir="$3"
+    
     local filename="tailscale_${version}_${arch}.tgz"
     local url="${DOWNLOAD_BASE}/${filename}"
     local tmp_dir="/tmp/tailscale_download_$$"
     local tarball="/tmp/${filename}"
     
-    log_info "Downloading Tailscale v${version} for ${arch}..."
+    log_info "Downloading Tailscale v${version} for ${arch} (official)..."
     log_info "URL: $url"
     
     # Download
@@ -186,14 +278,83 @@ download_tailscale() {
     mv "${extracted_dir}/tailscale" "${target_dir}/tailscale"
     chmod +x "${target_dir}/tailscaled" "${target_dir}/tailscale"
     
-    # Save version
+    # Save version and source type
     echo "$version" > "${target_dir}/version"
+    echo "official" > "${target_dir}/source"
     
     # Cleanup
     rm -f "$tarball"
     rm -rf "$tmp_dir"
     
     log_info "Successfully installed Tailscale v${version}"
+    return 0
+}
+
+download_tailscale_small() {
+    local version="$1"
+    local arch="$2"
+    local target_dir="$3"
+    
+    local filename="tailscale-small_${version}_${arch}.tgz"
+    local url="${SMALL_DOWNLOAD_BASE}/v${version}/${filename}"
+    local tmp_dir="/tmp/tailscale_download_$$"
+    local tarball="/tmp/${filename}"
+    
+    log_info "Downloading Tailscale v${version} for ${arch} (small/compressed)..."
+    log_info "URL: $url"
+    
+    # Download
+    if ! wget --progress=bar:force -O "$tarball" "$url" 2>&1; then
+        log_error "Download failed"
+        rm -f "$tarball"
+        return 1
+    fi
+    
+    # Extract
+    log_info "Extracting..."
+    mkdir -p "$tmp_dir"
+    if ! tar xzf "$tarball" -C "$tmp_dir" 2>&1; then
+        log_error "Extraction failed"
+        rm -f "$tarball"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+    
+    # Find extracted directory
+    local extracted_dir="${tmp_dir}/tailscale-small_${version}_${arch}"
+    
+    # Verify extracted files (small version uses combined binary with symlinks)
+    if [ ! -f "${extracted_dir}/tailscale.combined" ]; then
+        log_error "Combined binary not found in archive"
+        rm -f "$tarball"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+    
+    # Install
+    log_info "Installing to ${target_dir}..."
+    mkdir -p "$target_dir"
+    
+    # Copy the combined binary
+    mv "${extracted_dir}/tailscale.combined" "${target_dir}/tailscale.combined"
+    chmod +x "${target_dir}/tailscale.combined"
+    
+    # Create symlinks using relative paths (the binary behaves differently based on argv[0])
+    # Use relative symlinks for better portability
+    cd "$target_dir"
+    ln -sf "tailscale.combined" "tailscale"
+    ln -sf "tailscale.combined" "tailscaled"
+    cd - >/dev/null
+    
+    # Save version and source type
+    echo "$version" > "${target_dir}/version"
+    echo "small" > "${target_dir}/source"
+    
+    # Cleanup
+    rm -f "$tarball"
+    rm -rf "$tmp_dir"
+    
+    log_info "Successfully installed Tailscale v${version} (small)"
     return 0
 }
 
@@ -226,6 +387,7 @@ remove_symlinks() {
 create_uci_config() {
     local storage_mode="$1"
     local bin_dir="$2"
+    local download_source="${3:-official}"
     
     cat > "$CONFIG_FILE" << EOF
 config tailscale 'settings'
@@ -236,6 +398,7 @@ config tailscale 'settings'
     option state_file '${STATE_FILE}'
     option statedir '${STATE_DIR}'
     option fw_mode 'nftables'
+    option download_source '${download_source}'
     option log_stdout '1'
     option log_stderr '1'
 EOF
@@ -279,13 +442,15 @@ load_config() {
     config_get STATE_FILE settings state_file /etc/config/tailscaled.state
     config_get STATE_DIR settings statedir /etc/tailscale
     config_get FW_MODE settings fw_mode nftables
+    config_get DOWNLOAD_SOURCE settings download_source official
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
 }
 
-# Check if tailscaled binary exists
+# Check if tailscaled binary exists (supports both official and small/combined binaries)
 check_binary() {
-    [ -x "${BIN_DIR}/tailscaled" ]
+    # Check for combined binary (small version) or separate binary (official version)
+    [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
 }
 
 # Download binaries for RAM mode
@@ -422,14 +587,18 @@ log_msg() {
     logger -t "$LOG_TAG" "$1"
 }
 
-API_URL="https://pkgs.tailscale.com/stable/?mode=json"
+# API URLs
+OFFICIAL_API_URL="https://pkgs.tailscale.com/stable/?mode=json"
+SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest"
 
 # Source config
 . /lib/functions.sh
 config_load tailscale
 config_get BIN_DIR settings bin_dir /opt/tailscale
+config_get DOWNLOAD_SOURCE settings download_source official
 
 VERSION_FILE="${BIN_DIR}/version"
+SOURCE_FILE="${BIN_DIR}/source"
 
 if [ ! -f "$VERSION_FILE" ]; then
     log_msg "No version file found, skipping update check"
@@ -437,7 +606,23 @@ if [ ! -f "$VERSION_FILE" ]; then
 fi
 
 CURRENT_VERSION=$(cat "$VERSION_FILE")
-LATEST_VERSION=$(wget -qO- "$API_URL" | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+
+# Detect source type from installed binary
+if [ -f "$SOURCE_FILE" ]; then
+    DOWNLOAD_SOURCE=$(cat "$SOURCE_FILE")
+elif [ -f "${BIN_DIR}/tailscale.combined" ]; then
+    DOWNLOAD_SOURCE="small"
+fi
+
+# Fetch latest version based on source
+if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+    log_msg "Checking small binary releases..."
+    LATEST_VERSION=$(wget -qO- "$SMALL_API_URL" 2>/dev/null | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+    LATEST_VERSION="${LATEST_VERSION#v}"
+else
+    log_msg "Checking official Tailscale releases..."
+    LATEST_VERSION=$(wget -qO- "$OFFICIAL_API_URL" | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+fi
 
 if [ -z "$LATEST_VERSION" ]; then
     log_msg "Failed to fetch latest version"
@@ -445,11 +630,11 @@ if [ -z "$LATEST_VERSION" ]; then
 fi
 
 if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-    log_msg "Already up to date (v${CURRENT_VERSION})"
+    log_msg "Already up to date (v${CURRENT_VERSION}, source: ${DOWNLOAD_SOURCE})"
     exit 0
 fi
 
-log_msg "Update available: v${CURRENT_VERSION} -> v${LATEST_VERSION}"
+log_msg "Update available: v${CURRENT_VERSION} -> v${LATEST_VERSION} (source: ${DOWNLOAD_SOURCE})"
 
 # Perform update
 if /usr/bin/tailscale-manager update --auto; then
@@ -512,8 +697,60 @@ do_install() {
         return 1
     }
     echo "  Architecture: $arch"
+    echo ""
+    
+    # Download source selection
+    echo "Select download source:"
+    echo ""
+    echo "  1) Official (default)"
+    echo "     - Full binaries from pkgs.tailscale.com"
+    echo "     - Size: ~50MB"
+    echo "     - Always up-to-date"
+    echo ""
+    echo "  2) Small (compressed) - Recommended for embedded devices"
+    echo "     - Compressed binaries from GitHub releases"
+    echo "     - Size: ~10MB (80% smaller)"
+    echo "     - Combined binary (tailscale + tailscaled)"
+    echo "     - Supported architectures: $SMALL_SUPPORTED_ARCHS"
+    echo ""
+    printf "Enter choice [1/2] (default: 1): "
+    read -r source_choice
+    
+    case "$source_choice" in
+        2)
+            # Check if architecture is supported by small binaries
+            if ! is_arch_supported_by_small "$arch"; then
+                echo ""
+                log_warn "Architecture '$arch' is not supported by small binaries"
+                log_warn "Supported architectures: $SMALL_SUPPORTED_ARCHS"
+                echo ""
+                printf "Fall back to official binaries? [Y/n]: "
+                read -r fallback_answer
+                case "$fallback_answer" in
+                    [Nn]*) 
+                        echo "Installation cancelled."
+                        return 1 
+                        ;;
+                    *)
+                        DOWNLOAD_SOURCE="official"
+                        echo "Using official binaries instead"
+                        ;;
+                esac
+            else
+                DOWNLOAD_SOURCE="small"
+                echo ""
+                echo "Selected: Small (compressed) binaries"
+            fi
+            ;;
+        *)
+            DOWNLOAD_SOURCE="official"
+            echo ""
+            echo "Selected: Official binaries"
+            ;;
+    esac
     
     # Get latest version
+    echo ""
     echo "Fetching latest version..."
     local version=$(get_latest_version) || {
         log_error "Failed to get latest version"
@@ -528,7 +765,11 @@ do_install() {
     echo "  1) Persistent (recommended)"
     echo "     - Binaries stored in /opt/tailscale"
     echo "     - Survives reboots, no re-download needed"
-    echo "     - Uses ~50MB disk space"
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        echo "     - Uses ~5MB disk space"
+    else
+        echo "     - Uses ~50MB disk space"
+    fi
     echo ""
     echo "  2) RAM"
     echo "     - Binaries stored in /tmp/tailscale"
@@ -569,7 +810,7 @@ do_install() {
     mkdir -p "$STATE_DIR"
     
     # Create UCI config
-    create_uci_config "$storage_mode" "$bin_dir"
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE"
     
     # Install init script
     install_init_script
@@ -613,6 +854,7 @@ do_update() {
     config_load tailscale
     config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
     config_get storage_mode settings storage_mode persistent
+    config_get DOWNLOAD_SOURCE settings download_source official
     
     local current_version=$(get_installed_version "$bin_dir")
     if [ "$current_version" = "not installed" ]; then
@@ -738,21 +980,33 @@ do_status() {
     # Check installation
     local persistent_ver=$(get_installed_version "$PERSISTENT_DIR")
     local ram_ver=$(get_installed_version "$RAM_DIR")
+    local install_dir=""
+    local source_type="official"
     
     echo "Installation:"
     if [ "$persistent_ver" != "not installed" ]; then
         echo "  Mode: Persistent"
         echo "  Directory: $PERSISTENT_DIR"
         echo "  Version: $persistent_ver"
+        install_dir="$PERSISTENT_DIR"
     elif [ "$ram_ver" != "not installed" ]; then
         echo "  Mode: RAM"
         echo "  Directory: $RAM_DIR"
         echo "  Version: $ram_ver"
+        install_dir="$RAM_DIR"
     else
         echo "  Not installed"
         echo ""
         return 0
     fi
+    
+    # Check if using small/compressed version
+    if [ -n "$install_dir" ] && [ -f "${install_dir}/source" ]; then
+        source_type=$(cat "${install_dir}/source")
+    elif [ -n "$install_dir" ] && [ -f "${install_dir}/tailscale.combined" ]; then
+        source_type="small"
+    fi
+    echo "  Source: $source_type"
     
     echo ""
     echo "Service status:"
@@ -788,8 +1042,18 @@ do_download_only() {
     . /lib/functions.sh
     config_load tailscale
     config_get bin_dir settings bin_dir "$RAM_DIR"
+    config_get DOWNLOAD_SOURCE settings download_source official
     
     local arch=$(get_arch) || return 1
+    
+    # For small binaries, check if architecture is supported
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        if ! is_arch_supported_by_small "$arch"; then
+            log_warn "Architecture '$arch' not supported by small binaries, using official"
+            DOWNLOAD_SOURCE="official"
+        fi
+    fi
+    
     local version=$(get_latest_version) || return 1
     
     download_tailscale "$version" "$arch" "$bin_dir"
@@ -892,6 +1156,11 @@ main() {
             echo "  status        Show current status"
             echo "  download-only Download binaries only (for RAM mode)"
             echo "  help          Show this help"
+            echo ""
+            echo "Environment variables:"
+            echo "  TAILSCALE_SOURCE=official|small"
+            echo "    - official: Full binaries from pkgs.tailscale.com (~50MB)"
+            echo "    - small: Compressed binaries from GitHub releases (~5MB)"
             echo ""
             echo "Run without arguments for interactive menu."
             ;;

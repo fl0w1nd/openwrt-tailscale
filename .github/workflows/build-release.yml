@@ -1,0 +1,294 @@
+name: Build and Release Small Tailscale
+
+on:
+  # Manual trigger with version input
+  workflow_dispatch:
+    inputs:
+      tailscale_version:
+        description: 'Tailscale version to build (e.g., v1.76.1, or "latest" for latest stable)'
+        required: false
+        default: 'latest'
+      force_build:
+        description: 'Force build even if release exists'
+        required: false
+        default: 'false'
+        type: boolean
+
+  # Scheduled check for new versions (every day at 03:00 Beijing Time = 19:00 UTC)
+  schedule:
+    - cron: '0 19 * * *'
+
+env:
+  GO_VERSION: '1.22'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for new Tailscale version
+        id: check
+        run: |
+          # Get input version or fetch latest from official Tailscale API
+          INPUT_VERSION="${{ github.event.inputs.tailscale_version }}"
+          FORCE_BUILD="${{ github.event.inputs.force_build }}"
+          
+          if [ -z "$INPUT_VERSION" ] || [ "$INPUT_VERSION" = "latest" ]; then
+            # Fetch latest stable version from official Tailscale API
+            echo "Fetching latest stable version from Tailscale API..."
+            LATEST_VERSION=$(curl -s "https://pkgs.tailscale.com/stable/?mode=json" | jq -r '.TarballsVersion')
+            
+            if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+              echo "::error::Failed to fetch latest version from Tailscale API"
+              exit 1
+            fi
+            
+            echo "Latest Tailscale stable version: $LATEST_VERSION"
+            VERSION="v${LATEST_VERSION}"
+          else
+            VERSION="$INPUT_VERSION"
+            # Ensure version starts with 'v'
+            [[ "$VERSION" != v* ]] && VERSION="v${VERSION}"
+          fi
+          
+          echo "Target version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if we already have this release in our repo
+          echo "Checking if release $VERSION already exists..."
+          EXISTING_RELEASE=$(gh release view "$VERSION" --json tagName 2>/dev/null || echo "")
+          
+          if [ -n "$EXISTING_RELEASE" ]; then
+            echo "Release $VERSION already exists in this repository"
+            
+            if [ "$FORCE_BUILD" = "true" ]; then
+              echo "Force build enabled, will rebuild"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+            elif [ "${{ github.event_name }}" = "schedule" ]; then
+              echo "Scheduled run: skipping build (already up to date)"
+              echo "should_build=false" >> $GITHUB_OUTPUT
+            elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Manual trigger without force: skipping build"
+              echo "should_build=false" >> $GITHUB_OUTPUT
+            else
+              echo "should_build=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Release $VERSION does not exist, will build"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      
+      - name: Summary
+        run: |
+          echo "## Build Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Version:** ${{ steps.check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Should Build:** ${{ steps.check.outputs.should_build }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x86_64 - 软路由、虚拟机
+          - goos: linux
+            goarch: amd64
+            suffix: amd64
+          # ARM64 - 树莓派4、新款ARM路由器
+          - goos: linux
+            goarch: arm64
+            suffix: arm64
+          # ARMv7 - 树莓派2/3、较老ARM路由器
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            suffix: arm
+          # MIPS little-endian - 大部分 MediaTek/Ralink 路由器
+          - goos: linux
+            goarch: mipsle
+            suffix: mipsle
+          # MIPS big-endian - 部分 Atheros/QCA 路由器
+          - goos: linux
+            goarch: mips
+            suffix: mips
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Install UPX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
+
+      - name: Clone Tailscale
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          git clone --depth 1 --branch "$VERSION" https://github.com/tailscale/tailscale.git tailscale-src
+
+      - name: Build combined binary
+        run: |
+          cd tailscale-src
+          
+          VERSION="${{ needs.check-version.outputs.version }}"
+          VERSION="${VERSION#v}"  # Remove 'v' prefix
+          
+          GOOS=${{ matrix.goos }} \
+          GOARCH=${{ matrix.goarch }} \
+          ${{ matrix.goarm && format('GOARM={0}', matrix.goarm) }} \
+          go build \
+            -o ../tailscale.combined \
+            -tags 'ts_include_cli' \
+            -ldflags "-s -w -X tailscale.com/version.longStamp=${VERSION} -X tailscale.com/version.shortStamp=${VERSION}" \
+            ./cmd/tailscaled
+
+      - name: Compress with UPX
+        run: |
+          echo "Size before compression:"
+          ls -lh tailscale.combined
+          
+          # Try LZMA compression first, fall back to standard
+          if upx --best --lzma tailscale.combined 2>/dev/null; then
+            echo "LZMA compression successful"
+          elif upx --best tailscale.combined 2>/dev/null; then
+            echo "Standard compression successful"
+          else
+            echo "UPX compression failed, keeping uncompressed"
+          fi
+          
+          echo "Size after compression:"
+          ls -lh tailscale.combined
+
+      - name: Package
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          VERSION="${VERSION#v}"
+          
+          OUTPUT_NAME="tailscale-small_${VERSION}_${{ matrix.suffix }}"
+          mkdir -p "$OUTPUT_NAME"
+          
+          mv tailscale.combined "$OUTPUT_NAME/"
+          cd "$OUTPUT_NAME"
+          ln -s tailscale.combined tailscale
+          ln -s tailscale.combined tailscaled
+          echo "$VERSION" > version
+          cd ..
+          
+          tar czf "${OUTPUT_NAME}.tgz" "$OUTPUT_NAME"
+          sha256sum "${OUTPUT_NAME}.tgz" > "${OUTPUT_NAME}.tgz.sha256"
+          
+          echo "Package contents:"
+          tar tvf "${OUTPUT_NAME}.tgz"
+          echo ""
+          echo "Package size:"
+          ls -lh "${OUTPUT_NAME}.tgz"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tailscale-small-${{ matrix.suffix }}
+          path: |
+            *.tgz
+            *.sha256
+          retention-days: 7
+
+  release:
+    needs: [check-version, build]
+    if: |
+      needs.check-version.outputs.should_build == 'true' && 
+      (github.event.inputs.create_release == 'true' || github.event.inputs.create_release == '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: tailscale-small-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la artifacts/
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          cat *.sha256 > checksums.txt
+          echo ""
+          echo "All checksums:"
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-version.outputs.version }}
+          name: Tailscale Small ${{ needs.check-version.outputs.version }}
+          body: |
+            ## Tailscale Small Binaries
+            
+            These are compressed Tailscale binaries optimized for embedded devices like OpenWrt routers.
+            
+            ### Features
+            - Combined `tailscale` + `tailscaled` in a single binary
+            - Built with `-ldflags "-s -w"` to strip debug info
+            - Compressed with UPX for minimal size
+            
+            ### Usage
+            
+            1. Download the appropriate `.tgz` file for your architecture
+            2. Extract: `tar xzf tailscale-small_*.tgz`
+            3. The archive contains:
+               - `tailscale.combined` - the actual binary
+               - `tailscale` - symlink to combined binary
+               - `tailscaled` - symlink to combined binary
+               - `version` - version info
+            
+            ### Architecture Guide
+            
+            | File Suffix | Architecture | Common Devices |
+            |-------------|--------------|----------------|
+            | `amd64` | x86_64 | 软路由、虚拟机、x86 设备 |
+            | `arm64` | ARM 64-bit | 树莓派 4、新款 ARM 路由器 |
+            | `arm` | ARMv7 | 树莓派 2/3、较老 ARM 路由器 |
+            | `mipsle` | MIPS little-endian | MediaTek/Ralink 路由器 (大部分) |
+            | `mips` | MIPS big-endian | Atheros/QCA 路由器 |
+            
+            ### Verify Checksums
+            
+            ```bash
+            sha256sum -c checksums.txt
+            ```
+            
+            ---
+            
+            Built from [Tailscale](https://github.com/tailscale/tailscale) ${{ needs.check-version.outputs.version }}
+          files: |
+            artifacts/*.tgz
+            artifacts/*.sha256
+            artifacts/checksums.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: false
