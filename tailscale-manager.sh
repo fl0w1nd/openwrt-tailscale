@@ -97,18 +97,31 @@ get_arch() {
             result="arm"
             ;;
         mips)
-            # Check endianness
-            if echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+            # Check endianness - try multiple methods for better compatibility
+            if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                result="mipsle"
+            elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                result="mips"
+            elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
                 result="mipsle"
             else
+                # Default to big endian if detection fails
                 result="mips"
+                log_warn "Could not detect MIPS endianness, defaulting to big endian"
             fi
             ;;
         mips64)
-            if echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+            # Check endianness - try multiple methods for better compatibility
+            if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                result="mips64le"
+            elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                result="mips64"
+            elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
                 result="mips64le"
             else
+                # Default to big endian if detection fails
                 result="mips64"
+                log_warn "Could not detect MIPS64 endianness, defaulting to big endian"
             fi
             ;;
         i686|i386)
@@ -189,8 +202,9 @@ check_small_version_arch_exists() {
     local arch="$2"
     local url="${SMALL_DOWNLOAD_BASE}/v${version}/tailscale-small_${version}_${arch}.tgz"
     
-    # Use HEAD request to check if file exists
-    if wget -q --spider "$url" 2>/dev/null; then
+    # Check if file exists by attempting to download to /dev/null
+    # This is more compatible than --spider which may not be supported in BusyBox wget
+    if wget -q -O /dev/null "$url" 2>/dev/null; then
         return 0
     else
         return 1
@@ -220,6 +234,19 @@ get_installed_version() {
 # Download and Install
 # ============================================================================
 
+# Detect wget capabilities and return appropriate progress option
+get_wget_progress_option() {
+    # Check if wget supports --progress option
+    # BusyBox wget doesn't support this, GNU wget does
+    if wget --help 2>&1 | grep -q -- '--progress'; then
+        echo "--progress=bar:force"
+    else
+        # BusyBox wget: use quiet mode to avoid clutter
+        # We'll rely on log messages for user feedback
+        echo "-q"
+    fi
+}
+
 download_tailscale() {
     local version="$1"
     local arch="$2"
@@ -245,8 +272,9 @@ download_tailscale_official() {
     log_info "Downloading Tailscale v${version} for ${arch} (official)..."
     log_info "URL: $url"
     
-    # Download
-    if ! wget --progress=bar:force -O "$tarball" "$url" 2>&1; then
+    # Download with compatible wget options
+    local wget_progress=$(get_wget_progress_option)
+    if ! wget $wget_progress -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
         rm -f "$tarball"
         return 1
@@ -303,8 +331,9 @@ download_tailscale_small() {
     log_info "Downloading Tailscale v${version} for ${arch} (small/compressed)..."
     log_info "URL: $url"
     
-    # Download
-    if ! wget --progress=bar:force -O "$tarball" "$url" 2>&1; then
+    # Download with compatible wget options
+    local wget_progress=$(get_wget_progress_option)
+    if ! wget $wget_progress -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
         rm -f "$tarball"
         return 1
