@@ -1356,6 +1356,194 @@ do_status() {
 # Download Only (for init script RAM mode)
 # ============================================================================
 
+# ============================================================================
+# Install Specific Version Function
+# ============================================================================
+
+# List available versions from GitHub releases (for small binaries)
+list_small_versions() {
+    local limit="${1:-10}"
+    local json_data
+    
+    json_data=$(wget -qO- "${SMALL_RELEASES_API}?per_page=${limit}" 2>/dev/null) || {
+        log_error "Failed to fetch versions from GitHub API"
+        return 1
+    }
+    
+    # Extract tag_names using sed (compatible with busybox)
+    echo "$json_data" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | sed 's/^v//'
+}
+
+# Install a specific version
+do_install_specific_version() {
+    echo ""
+    echo "============================================="
+    echo "  Install Specific Version"
+    echo "============================================="
+    echo ""
+    
+    # Detect system state
+    local arch=$(get_arch) || {
+        log_error "Architecture detection failed"
+        return 1
+    }
+    echo "Architecture: $arch"
+    
+    # Determine download source preference
+    local source_pref="official"
+    if is_arch_supported_by_small "$arch"; then
+        source_pref="small"
+    fi
+    
+    echo ""
+    echo "Select download source:"
+    echo "  1) Official (pkgs.tailscale.com)"
+    echo "  2) Small (Compressed from GitHub)"
+    
+    if [ "$source_pref" = "small" ]; then
+        printf "Enter choice [1/2] (default: 2): "
+        read -r choice
+        case "$choice" in
+            1) DOWNLOAD_SOURCE="official" ;;
+            *) DOWNLOAD_SOURCE="small" ;;
+        esac
+    else
+        printf "Enter choice [1/2] (default: 1): "
+        read -r choice
+        case "$choice" in
+            2) DOWNLOAD_SOURCE="small" ;;
+            *) DOWNLOAD_SOURCE="official" ;;
+        esac
+    fi
+    
+    echo ""
+    echo "Selected Source: $DOWNLOAD_SOURCE"
+    echo ""
+    
+    local selected_version=""
+    
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        echo "Available versions (last 10 releases):"
+        echo "Fetching list..."
+        local versions=$(list_small_versions 10)
+        
+        if [ -z "$versions" ]; then
+            echo "Failed to fetch version list."
+        else
+            local i=1
+            echo "$versions" | while read -r v; do
+                echo "  $i) $v"
+                i=$((i+1))
+            done
+            echo ""
+            echo "  0) Enter manually"
+        fi
+        
+        echo ""
+        printf "Select version or enter manually: "
+        read -r v_choice
+        
+        # Determine if input is a number (selection) or string (manual version)
+        if echo "$v_choice" | grep -q '^[0-9]\+$'; then
+            if [ "$v_choice" -eq 0 ]; then
+                printf "Enter version (e.g. 1.76.1): "
+                read -r selected_version
+            else
+                selected_version=$(echo "$versions" | sed -n "${v_choice}p")
+            fi
+        else
+            selected_version="$v_choice"
+        fi
+        
+        # Verify version format
+        if [ -z "$selected_version" ]; then
+            echo "Invalid selection."
+            return 1
+        fi
+        
+        # Check if version exists for this architecture
+        echo "Checking availability of v${selected_version} for ${arch}..."
+        if ! check_small_version_arch_exists "$selected_version" "$arch"; then
+            echo "Error: Version v${selected_version} not found for architecture ${arch} in GitHub releases."
+            return 1
+        fi
+        
+    else
+        # Official source
+        echo "Enter version to install (e.g. 1.76.1):"
+        printf "> "
+        read -r selected_version
+        
+        if [ -z "$selected_version" ]; then
+            echo "Version cannot be empty."
+            return 1
+        fi
+    fi
+    
+    echo ""
+    printf "Install v${selected_version}? [y/N]: "
+    read -r confirm
+    
+    case "$confirm" in
+        [Yy]*) ;;
+        *) echo "Cancelled."; return 0 ;;
+    esac
+    
+    # Check installation mode (Persistent vs RAM) if not already installed
+    local bin_dir="$PERSISTENT_DIR"
+    local storage_mode="persistent"
+    
+    # If already installed, try to reuse current mode
+    if [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale
+        config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
+        config_get storage_mode settings storage_mode persistent
+    else
+        # Ask for storage mode
+        echo ""
+        echo "Select storage mode:"
+        echo "  1) Persistent (recommended)"
+        echo "  2) RAM"
+        printf "Enter choice [1/2] (default: 1): "
+        read -r sm_choice
+        if [ "$sm_choice" = "2" ]; then
+            storage_mode="ram"
+            bin_dir="$RAM_DIR"
+        fi
+    fi
+    
+    # Perform installation
+    log_info "Stopping service..."
+    "$INIT_SCRIPT" stop 2>/dev/null || true
+    sleep 1
+    
+    if download_tailscale "$selected_version" "$arch" "$bin_dir"; then
+        # Create symlinks
+        create_symlinks "$bin_dir"
+        
+        # Create state directory
+        mkdir -p "$STATE_DIR"
+        
+        # Update UCI config
+        create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE"
+        
+        # Install scripts
+        install_init_script
+        install_update_script
+        setup_cron
+        
+        echo ""
+        echo "Installation success!"
+        echo "Starting service..."
+        "$INIT_SCRIPT" enable
+        "$INIT_SCRIPT" start
+    else
+        echo "Installation failed."
+        return 1
+    fi
+}
+
 do_download_only() {
     # Load config
     . /lib/functions.sh
@@ -1395,6 +1583,7 @@ show_menu() {
     echo "  4) Check Status"
     echo "  5) View Logs"
     echo "  6) Setup Subnet Routing"
+    echo "  7) Install Specific Version (Downgrade)"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -1435,6 +1624,7 @@ interactive_menu() {
             4) do_status; printf "Press Enter to continue..."; read -r _ ;;
             5) do_view_logs ;;
             6) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
+            7) do_install_specific_version; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac

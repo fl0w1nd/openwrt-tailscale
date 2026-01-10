@@ -117,10 +117,12 @@ jobs:
           # MIPS little-endian - 大部分 MediaTek/Ralink 路由器
           - goos: linux
             goarch: mipsle
+            gomips: softfloat
             suffix: mipsle
           # MIPS big-endian - 部分 Atheros/QCA 路由器
           - goos: linux
             goarch: mips
+            gomips: softfloat
             suffix: mips
 
     steps:
@@ -156,6 +158,7 @@ jobs:
           GOOS=${{ matrix.goos }} \
           GOARCH=${{ matrix.goarch }} \
           ${{ matrix.goarm && format('GOARM={0}', matrix.goarm) }} \
+          ${{ matrix.gomips && format('GOMIPS={0}', matrix.gomips) }} \
           go build \
             -trimpath \
             -o ../tailscale.combined \
