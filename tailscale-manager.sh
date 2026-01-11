@@ -231,6 +231,81 @@ get_installed_version() {
 }
 
 # ============================================================================
+# Dependency Management
+# ============================================================================
+
+check_dependencies() {
+    log_info "Checking system dependencies..."
+    
+    local deps_to_install=""
+    local need_update=0
+    
+    # Check for opkg
+    if ! command -v opkg >/dev/null 2>&1; then
+        log_warn "opkg not found, cannot auto-install dependencies"
+        return 0
+    fi
+    
+    # 1. Check for kmod-tun (Required for TUN device)
+    if [ ! -d "/sys/module/tun" ] && ! opkg list-installed | grep -q "kmod-tun"; then
+        log_warn "kmod-tun is missing"
+        deps_to_install="$deps_to_install kmod-tun"
+        need_update=1
+    fi
+    
+    # 2. Check for ca-bundle/ca-certificates (Required for HTTPS)
+    if [ ! -f "/etc/ssl/certs/ca-certificates.crt" ]; then
+        if ! opkg list-installed | grep -q "ca-bundle"; then
+             log_warn "ca-bundle is missing"
+             deps_to_install="$deps_to_install ca-bundle"
+             need_update=1
+        fi
+    fi
+    
+    # 3. Check for iptables (Required for tailscaled internal firewall management)
+    # Modern OpenWrt uses fw4 (nftables), but tailscaled often invokes 'iptables' commands.
+    # We should ensure 'iptables-nft' (or regular iptables) is present.
+    if ! command -v iptables >/dev/null 2>&1; then
+        log_warn "iptables command is missing"
+        # Detect if we are on fw4 to choose correct package
+        if [ -x /sbin/fw4 ]; then
+            deps_to_install="$deps_to_install iptables-nft"
+        else
+            deps_to_install="$deps_to_install iptables"
+        fi
+        need_update=1
+    fi
+    
+    # Install if needed
+    if [ -n "$deps_to_install" ]; then
+        log_info "Installing missing dependencies:$deps_to_install..."
+        
+        if [ "$need_update" -eq 1 ]; then
+            log_info "Running opkg update..."
+            opkg update >/dev/null 2>&1 || log_warn "opkg update failed, trying install anyway"
+        fi
+        
+        if opkg install $deps_to_install; then
+            log_info "Dependencies installed successfully"
+            
+            # Load tun module immediately if we just installed it
+            if echo "$deps_to_install" | grep -q "kmod-tun"; then
+                modprobe tun 2>/dev/null || true
+            fi
+        else
+            log_error "Failed to install dependencies"
+            # We don't exit here, we'll try to continue and let the user see the eventual failure
+            # or maybe it works if they installed something equivalent manually.
+            return 1
+        fi
+    else
+        log_info "All dependencies seem to be met"
+    fi
+    
+    return 0
+}
+
+# ============================================================================
 # Download and Install
 # ============================================================================
 
@@ -987,6 +1062,10 @@ do_install() {
         return 1
     }
     echo "  Architecture: $arch"
+    echo ""
+    
+    # Check dependencies before proceeding
+    check_dependencies
     echo ""
     
     # Download source selection
