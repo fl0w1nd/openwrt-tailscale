@@ -9,7 +9,7 @@ set -e
 # Configuration
 # ============================================================================
 
-VERSION="2.1.0"
+VERSION="2.2.0"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~50MB)
@@ -39,6 +39,10 @@ CONFIG_FILE="/etc/config/tailscale"
 INIT_SCRIPT="/etc/init.d/tailscale"
 CRON_SCRIPT="/usr/bin/tailscale-update"
 LOG_FILE="/var/log/tailscale-manager.log"
+
+# Script self-update configuration
+SCRIPT_RAW_URL="https://raw.githubusercontent.com/${SMALL_REPO}/main/tailscale-manager.sh"
+SCRIPT_VERSION_CHECK_FILE="/tmp/.tailscale-manager-update-check"
 
 # ============================================================================
 # Logging Functions
@@ -1646,6 +1650,160 @@ do_download_only() {
 }
 
 # ============================================================================
+# Script Self-Update
+# ============================================================================
+
+# Get remote script version from GitHub
+get_remote_script_version() {
+    local remote_version
+    
+    # Fetch only the first 50 lines to extract version (more efficient)
+    remote_version=$(wget -qO- "$SCRIPT_RAW_URL" 2>/dev/null | head -50 | sed -n 's/^VERSION="\([^"]*\)"/\1/p' | head -1)
+    
+    if [ -z "$remote_version" ]; then
+        return 1
+    fi
+    
+    echo "$remote_version"
+}
+
+# Compare semantic versions: returns 0 if v1 < v2, 1 otherwise
+version_lt() {
+    local v1="$1"
+    local v2="$2"
+    
+    # Simple comparison using sort -V if available, otherwise string comparison
+    if command -v sort >/dev/null 2>&1 && echo "" | sort -V >/dev/null 2>&1; then
+        # sort -V is available
+        local smallest=$(printf '%s\n%s' "$v1" "$v2" | sort -V | head -n1)
+        [ "$smallest" = "$v1" ] && [ "$v1" != "$v2" ]
+    else
+        # Fallback: compare each part
+        local IFS='.'
+        set -- $v1
+        local v1_major="${1:-0}" v1_minor="${2:-0}" v1_patch="${3:-0}"
+        set -- $v2
+        local v2_major="${1:-0}" v2_minor="${2:-0}" v2_patch="${3:-0}"
+        
+        if [ "$v1_major" -lt "$v2_major" ] 2>/dev/null; then
+            return 0
+        elif [ "$v1_major" -eq "$v2_major" ] 2>/dev/null; then
+            if [ "$v1_minor" -lt "$v2_minor" ] 2>/dev/null; then
+                return 0
+            elif [ "$v1_minor" -eq "$v2_minor" ] 2>/dev/null; then
+                if [ "$v1_patch" -lt "$v2_patch" ] 2>/dev/null; then
+                    return 0
+                fi
+            fi
+        fi
+        return 1
+    fi
+}
+
+# Check for script updates
+check_script_update() {
+    # Skip if checked recently (within last hour)
+    if [ -f "$SCRIPT_VERSION_CHECK_FILE" ]; then
+        local last_check=$(cat "$SCRIPT_VERSION_CHECK_FILE" 2>/dev/null)
+        local now=$(date +%s)
+        local diff=$((now - last_check))
+        if [ "$diff" -lt 3600 ]; then
+            return 1
+        fi
+    fi
+    
+    echo "[INFO] Checking for script updates..."
+    
+    local remote_version
+    remote_version=$(get_remote_script_version) || {
+        echo "[WARN] Could not check for script updates (network error)"
+        return 1
+    }
+    
+    # Save check time
+    date +%s > "$SCRIPT_VERSION_CHECK_FILE" 2>/dev/null || true
+    
+    if version_lt "$VERSION" "$remote_version"; then
+        echo ""
+        echo "============================================="
+        echo "  New script version available!"
+        echo "============================================="
+        echo ""
+        echo "  Current version: v${VERSION}"
+        echo "  Latest version:  v${remote_version}"
+        echo ""
+        printf "  Update now? [Y/n]: "
+        read -r answer
+        
+        case "$answer" in
+            [Nn]*)
+                echo "  Update skipped."
+                echo ""
+                return 1
+                ;;
+            *)
+                do_self_update
+                return $?
+                ;;
+        esac
+    fi
+    
+    return 1
+}
+
+# Perform script self-update
+do_self_update() {
+    local script_path
+    local tmp_script="/tmp/tailscale-manager.sh.new"
+    
+    # Get the actual path of this script
+    script_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
+    
+    echo ""
+    log_info "Downloading latest script..."
+    
+    # Download new script
+    if ! wget -qO "$tmp_script" "$SCRIPT_RAW_URL" 2>&1; then
+        log_error "Failed to download script update"
+        rm -f "$tmp_script"
+        return 1
+    fi
+    
+    # Verify downloaded script has a version
+    if ! grep -q '^VERSION=' "$tmp_script"; then
+        log_error "Downloaded script appears invalid"
+        rm -f "$tmp_script"
+        return 1
+    fi
+    
+    # Backup current script
+    cp "$script_path" "${script_path}.bak" 2>/dev/null || true
+    
+    # Replace script
+    if ! mv "$tmp_script" "$script_path"; then
+        log_error "Failed to install script update"
+        rm -f "$tmp_script"
+        return 1
+    fi
+    
+    chmod +x "$script_path"
+    
+    local new_version=$(grep '^VERSION=' "$script_path" | sed 's/VERSION="\([^"]*\)"/\1/')
+    log_info "Script updated to v${new_version}"
+    echo ""
+    echo "============================================="
+    echo "  Update complete!"
+    echo "============================================="
+    echo ""
+    echo "  The script will now restart..."
+    echo ""
+    sleep 2
+    
+    # Re-execute the updated script
+    exec "$script_path" "$@"
+}
+
+# ============================================================================
 # Interactive Menu
 # ============================================================================
 
@@ -1704,6 +1862,9 @@ do_restart() {
 }
 
 interactive_menu() {
+    # Check for script updates on startup
+    check_script_update
+    
     while true; do
         show_menu
         read -r choice
