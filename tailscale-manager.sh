@@ -1656,10 +1656,32 @@ do_download_only() {
 # Get remote script version from GitHub
 get_remote_script_version() {
     local remote_version
+    local tmp_file="/tmp/.script-version-check.$$"
+    local timeout_secs=5
     
-    # Fetch only the first 50 lines to extract version (more efficient)
-    # Use timeout to prevent hanging on slow networks
-    remote_version=$(wget -T 5 -qO- "$SCRIPT_RAW_URL" 2>/dev/null | head -50 | sed -n 's/^VERSION="\([^"]*\)"/\1/p' | head -1)
+    # Use background process with timeout to prevent hanging
+    (wget -qO- "$SCRIPT_RAW_URL" 2>/dev/null | head -50 > "$tmp_file") &
+    local pid=$!
+    
+    # Wait for completion with timeout
+    local count=0
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        count=$((count + 1))
+        if [ "$count" -ge "$timeout_secs" ]; then
+            kill "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            rm -f "$tmp_file"
+            return 1
+        fi
+    done
+    wait "$pid" 2>/dev/null
+    
+    # Extract version from downloaded content
+    if [ -f "$tmp_file" ]; then
+        remote_version=$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' "$tmp_file" | head -1)
+        rm -f "$tmp_file"
+    fi
     
     if [ -z "$remote_version" ]; then
         return 1
