@@ -1862,8 +1862,8 @@ do_restart() {
 }
 
 interactive_menu() {
-    # Check for script updates on startup
-    check_script_update
+    # Check for script updates on startup (ignore return value to prevent set -e exit)
+    check_script_update || true
     
     while true; do
         show_menu
