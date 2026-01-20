@@ -1659,10 +1659,11 @@ show_menu() {
     echo "  1) Install Tailscale"
     echo "  2) Update Tailscale"
     echo "  3) Uninstall Tailscale"
-    echo "  4) Check Status"
-    echo "  5) View Logs"
-    echo "  6) Setup Subnet Routing"
-    echo "  7) Install Specific Version (Downgrade)"
+    echo "  4) Restart Tailscale"
+    echo "  5) Check Status"
+    echo "  6) View Logs"
+    echo "  7) Setup Subnet Routing"
+    echo "  8) Install Specific Version (Downgrade)"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -1691,6 +1692,17 @@ do_view_logs() {
     read -r _
 }
 
+do_restart() {
+    log_info "Restarting Tailscale service..."
+    "$INIT_SCRIPT" restart 2>/dev/null || {
+        log_warn "Restart failed, trying stop/start..."
+        "$INIT_SCRIPT" stop 2>/dev/null || true
+        sleep 2
+        "$INIT_SCRIPT" start 2>/dev/null
+    }
+    log_info "Restart complete"
+}
+
 interactive_menu() {
     while true; do
         show_menu
@@ -1700,10 +1712,11 @@ interactive_menu() {
             1) do_install; printf "Press Enter to continue..."; read -r _ ;;
             2) do_update; printf "Press Enter to continue..."; read -r _ ;;
             3) do_uninstall; printf "Press Enter to continue..."; read -r _ ;;
-            4) do_status; printf "Press Enter to continue..."; read -r _ ;;
-            5) do_view_logs ;;
-            6) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
-            7) do_install_specific_version; printf "Press Enter to continue..."; read -r _ ;;
+            4) do_restart; printf "Press Enter to continue..."; read -r _ ;;
+            5) do_status; printf "Press Enter to continue..."; read -r _ ;;
+            6) do_view_logs ;;
+            7) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
+            8) do_install_specific_version; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac
