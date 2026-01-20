@@ -1658,7 +1658,8 @@ get_remote_script_version() {
     local remote_version
     
     # Fetch only the first 50 lines to extract version (more efficient)
-    remote_version=$(wget -qO- "$SCRIPT_RAW_URL" 2>/dev/null | head -50 | sed -n 's/^VERSION="\([^"]*\)"/\1/p' | head -1)
+    # Use timeout to prevent hanging on slow networks
+    remote_version=$(wget -T 5 -qO- "$SCRIPT_RAW_URL" 2>/dev/null | head -50 | sed -n 's/^VERSION="\([^"]*\)"/\1/p' | head -1)
     
     if [ -z "$remote_version" ]; then
         return 1
