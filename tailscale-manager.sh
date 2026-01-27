@@ -9,7 +9,7 @@ set -e
 # Configuration
 # ============================================================================
 
-VERSION="2.2.0"
+VERSION="2.2.1"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~50MB)
