@@ -757,6 +757,7 @@ create_uci_config() {
     local storage_mode="$1"
     local bin_dir="$2"
     local download_source="${3:-official}"
+    local auto_update="${4:-0}"
     
     cat > "$CONFIG_FILE" << EOF
 config tailscale 'settings'
@@ -768,6 +769,7 @@ config tailscale 'settings'
     option statedir '${STATE_DIR}'
     option fw_mode 'nftables'
     option download_source '${download_source}'
+    option auto_update '${auto_update}'
     option log_stdout '1'
     option log_stderr '1'
 EOF
@@ -965,9 +967,21 @@ SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/l
 config_load tailscale
 config_get BIN_DIR settings bin_dir /opt/tailscale
 config_get DOWNLOAD_SOURCE settings download_source official
+config_get AUTO_UPDATE settings auto_update ""
+
+if [ -z "$AUTO_UPDATE" ]; then
+    # Backward compatibility: old installs didn't have auto_update
+    # Assume enabled to preserve previous cron behavior
+    AUTO_UPDATE="1"
+fi
 
 VERSION_FILE="${BIN_DIR}/version"
 SOURCE_FILE="${BIN_DIR}/source"
+
+if [ "$AUTO_UPDATE" = "0" ]; then
+    log_msg "Auto-update disabled in config, skipping"
+    exit 0
+fi
 
 if [ ! -f "$VERSION_FILE" ]; then
     log_msg "No version file found, skipping update check"
@@ -1034,6 +1048,59 @@ remove_cron() {
     if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
         crontab -l 2>/dev/null | grep -v "$CRON_SCRIPT" | crontab -
         log_info "Removed cron job"
+    fi
+}
+
+# ============================================================================
+# Auto-Update Configuration
+# ============================================================================
+
+get_auto_update_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale
+        config_get auto_update settings auto_update ""
+        if [ -n "$auto_update" ]; then
+            echo "$auto_update"
+            return 0
+        fi
+    fi
+    # Backward compatibility: if config missing, infer from cron
+    if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
+
+set_auto_update_config() {
+    local value="$1"
+    if ! command -v uci >/dev/null 2>&1; then
+        log_error "uci not found, cannot update config"
+        return 1
+    fi
+    uci set tailscale.settings.auto_update="$value" 2>/dev/null || {
+        log_error "Failed to set auto_update in UCI"
+        return 1
+    }
+    uci commit tailscale 2>/dev/null || {
+        log_error "Failed to commit UCI config"
+        return 1
+    }
+    return 0
+}
+
+configure_auto_update() {
+    local enable="$1"
+    if [ "$enable" = "1" ]; then
+        log_info "Enabling auto-updates..."
+        set_auto_update_config "1" || return 1
+        install_update_script
+        setup_cron
+    else
+        log_info "Disabling auto-updates..."
+        set_auto_update_config "0" || return 1
+        remove_cron
     fi
 }
 
@@ -1183,14 +1250,26 @@ do_install() {
     mkdir -p "$STATE_DIR"
     
     # Create UCI config
-    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE"
+    local auto_update="0"
+    printf "Enable auto-update? [y/N]: "
+    read -r au_answer
+    case "$au_answer" in
+        [Yy]*) auto_update="1" ;;
+        *) auto_update="0" ;;
+    esac
+    
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
     
     # Install init script
     install_init_script
     
-    # Install update script and cron
+    # Install update script and cron if enabled
     install_update_script
-    setup_cron
+    if [ "$auto_update" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
     
     # Enable and start service
     echo ""
@@ -1411,6 +1490,19 @@ do_status() {
     echo "  Source: $source_type"
     
     echo ""
+    echo "Auto-update:"
+    local auto_update="$(get_auto_update_config)"
+    if [ "$auto_update" = "1" ]; then
+        if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
+            echo "  Enabled (cron active)"
+        else
+            echo "  Enabled (cron missing)"
+        fi
+    else
+        echo "  Disabled"
+    fi
+    
+    echo ""
     echo "Service status:"
     if pgrep -f "tailscaled" >/dev/null 2>&1; then
         echo "  tailscaled: running (PID: $(pgrep -f tailscaled | head -1))"
@@ -1575,6 +1667,7 @@ do_install_specific_version() {
     # Check installation mode (Persistent vs RAM) if not already installed
     local bin_dir="$PERSISTENT_DIR"
     local storage_mode="persistent"
+    local auto_update="0"
     
     # If already installed, try to reuse current mode
     if [ -f "$CONFIG_FILE" ]; then
@@ -1582,6 +1675,7 @@ do_install_specific_version() {
         config_load tailscale
         config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
         config_get storage_mode settings storage_mode persistent
+        config_get auto_update settings auto_update 0
     else
         # Ask for storage mode
         echo ""
@@ -1594,6 +1688,12 @@ do_install_specific_version() {
             storage_mode="ram"
             bin_dir="$RAM_DIR"
         fi
+        printf "Enable auto-update? [y/N]: "
+        read -r au_answer
+        case "$au_answer" in
+            [Yy]*) auto_update="1" ;;
+            *) auto_update="0" ;;
+        esac
     fi
     
     # Perform installation
@@ -1609,12 +1709,16 @@ do_install_specific_version() {
         mkdir -p "$STATE_DIR"
         
         # Update UCI config
-        create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE"
+        create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
         
         # Install scripts
         install_init_script
         install_update_script
-        setup_cron
+        if [ "$auto_update" = "1" ]; then
+            setup_cron
+        else
+            remove_cron
+        fi
         
         echo ""
         echo "Installation success!"
@@ -1845,6 +1949,7 @@ show_menu() {
     echo "  6) View Logs"
     echo "  7) Setup Subnet Routing"
     echo "  8) Install Specific Version (Downgrade)"
+    echo "  9) Auto-Update Settings"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -1884,6 +1989,33 @@ do_restart() {
     log_info "Restart complete"
 }
 
+do_auto_update_settings() {
+    echo ""
+    echo "============================================="
+    echo "  Auto-Update Settings"
+    echo "============================================="
+    echo ""
+    
+    local current="$(get_auto_update_config)"
+    if [ "$current" = "1" ]; then
+        echo "Current: Enabled"
+        printf "Disable auto-update? [y/N]: "
+        read -r answer
+        case "$answer" in
+            [Yy]*) configure_auto_update "0" ;;
+            *) echo "No changes." ;;
+        esac
+    else
+        echo "Current: Disabled"
+        printf "Enable auto-update? [y/N]: "
+        read -r answer
+        case "$answer" in
+            [Yy]*) configure_auto_update "1" ;;
+            *) echo "No changes." ;;
+        esac
+    fi
+}
+
 interactive_menu() {
     # Check for script updates on startup (ignore return value to prevent set -e exit)
     check_script_update || true
@@ -1901,6 +2033,7 @@ interactive_menu() {
             6) do_view_logs ;;
             7) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
             8) do_install_specific_version; printf "Press Enter to continue..."; read -r _ ;;
+            9) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac
@@ -1934,6 +2067,34 @@ main() {
         setup-firewall)
             do_setup_subnet_routing
             ;;
+        auto-update)
+            case "${2:-status}" in
+                on|enable|1)
+                    configure_auto_update "1"
+                    ;;
+                off|disable|0)
+                    configure_auto_update "0"
+                    ;;
+                status|"")
+                    echo ""
+                    echo "Auto-update status:"
+                    if [ "$(get_auto_update_config)" = "1" ]; then
+                        if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
+                            echo "  Enabled (cron active)"
+                        else
+                            echo "  Enabled (cron missing)"
+                        fi
+                    else
+                        echo "  Disabled"
+                    fi
+                    echo ""
+                    ;;
+                *)
+                    echo "Usage: $0 auto-update [on|off|status]"
+                    exit 1
+                    ;;
+            esac
+            ;;
         -h|--help|help)
             echo "OpenWRT Tailscale Manager v${VERSION}"
             echo ""
@@ -1946,6 +2107,7 @@ main() {
             echo "  status         Show current status"
             echo "  setup-firewall Configure network/firewall for subnet routing"
             echo "  download-only  Download binaries only (for RAM mode)"
+            echo "  auto-update    Configure auto-update (on/off/status)"
             echo "  help           Show this help"
             echo ""
             echo "Environment variables:"
