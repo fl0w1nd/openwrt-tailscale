@@ -59,6 +59,29 @@ jobs:
           echo "Target version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           
+          # For "latest", ensure the upstream GitHub release is actually published
+          if [ -z "$INPUT_VERSION" ] || [ "$INPUT_VERSION" = "latest" ]; then
+            echo "Checking upstream release status on tailscale/tailscale..."
+            UPSTREAM_JSON=$(gh release view "$VERSION" --repo tailscale/tailscale --json isDraft,isPrerelease,tagName,publishedAt 2>/dev/null || echo "")
+            
+            if [ -z "$UPSTREAM_JSON" ]; then
+              echo "Upstream GitHub release $VERSION not found (tag-only or not published yet)."
+              echo "should_build=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            IS_DRAFT=$(echo "$UPSTREAM_JSON" | jq -r '.isDraft')
+            IS_PRERELEASE=$(echo "$UPSTREAM_JSON" | jq -r '.isPrerelease')
+            
+            if [ "$IS_DRAFT" = "true" ] || [ "$IS_PRERELEASE" = "true" ]; then
+              echo "Upstream GitHub release $VERSION is draft/prerelease; skipping build."
+              echo "should_build=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            echo "Upstream GitHub release $VERSION is published."
+          fi
+          
           # Check if we already have this release in our repo
           echo "Checking if release $VERSION already exists..."
           EXISTING_RELEASE=$(gh release view "$VERSION" --json tagName 2>/dev/null || echo "")
