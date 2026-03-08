@@ -9,7 +9,7 @@ set -e
 # Configuration
 # ============================================================================
 
-VERSION="2.2.1"
+VERSION="2.3.0"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~50MB)
@@ -28,7 +28,7 @@ SMALL_DOWNLOAD_BASE="https://github.com/${SMALL_REPO}/releases/download"
 
 # Architectures supported by small binaries
 # Must match the architectures built in GitHub Actions
-SMALL_SUPPORTED_ARCHS="amd64 arm64 arm mipsle mips"
+SMALL_SUPPORTED_ARCHS="amd64 arm64 arm armv6 armv5 mipsle mips"
 
 # Installation paths
 PERSISTENT_DIR="/opt/tailscale"
@@ -98,7 +98,21 @@ get_arch() {
             result="arm64"
             ;;
         armv7l|armv7)
-            result="arm"
+            # Detect FPU capability from /proc/cpuinfo
+            if grep -q 'vfpv3\|vfpv4\|vfpd32' /proc/cpuinfo 2>/dev/null; then
+                result="arm"
+            elif grep -q 'vfp' /proc/cpuinfo 2>/dev/null; then
+                result="armv6"
+            else
+                result="armv5"
+                log_warn "No hardware FPU detected, using softfloat (armv5) binary"
+            fi
+            ;;
+        armv6l|armv6)
+            result="armv6"
+            ;;
+        armv5tel|armv5tejl|armv5l|armv5)
+            result="armv5"
             ;;
         mips)
             # Check endianness - try multiple methods for better compatibility

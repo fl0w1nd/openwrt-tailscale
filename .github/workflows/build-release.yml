@@ -132,11 +132,21 @@ jobs:
           - goos: linux
             goarch: arm64
             suffix: arm64
-          # ARMv7 - 树莓派2/3、较老ARM路由器
+          # ARMv7 - 树莓派2/3、较老ARM路由器 (hardfloat)
           - goos: linux
             goarch: arm
             goarm: "7"
             suffix: arm
+          # ARMv6 - 树莓派1/Zero (VFPv1)
+          - goos: linux
+            goarch: arm
+            goarm: "6"
+            suffix: armv6
+          # ARMv5 - 无硬件浮点的ARM设备 (softfloat, 如 DGA4132)
+          - goos: linux
+            goarch: arm
+            goarm: "5"
+            suffix: armv5
           # MIPS little-endian - 大部分 MediaTek/Ralink 路由器
           - goos: linux
             goarch: mipsle
@@ -246,8 +256,6 @@ jobs:
           cd ..
           
           tar czf "${OUTPUT_NAME}.tgz" "$OUTPUT_NAME"
-          sha256sum "${OUTPUT_NAME}.tgz" > "${OUTPUT_NAME}.tgz.sha256"
-          
           echo "Package contents:"
           tar tvf "${OUTPUT_NAME}.tgz"
           echo ""
@@ -258,9 +266,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tailscale-small-${{ matrix.suffix }}
-          path: |
-            *.tgz
-            *.sha256
+          path: "*.tgz"
           retention-days: 7
 
   release:
@@ -286,14 +292,6 @@ jobs:
         run: |
           echo "Downloaded artifacts:"
           ls -la artifacts/
-
-      - name: Generate checksums
-        run: |
-          cd artifacts
-          cat *.sha256 > checksums.txt
-          echo ""
-          echo "All checksums:"
-          cat checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -323,17 +321,16 @@ jobs:
             |------|---------|
             | amd64 | x86 routers, VMs |
             | arm64 | Raspberry Pi 4, modern ARM routers |
-            | arm | Raspberry Pi 2/3, older ARM routers |
+            | arm | Raspberry Pi 2/3, older ARM routers (hardfloat) |
+            | armv6 | Raspberry Pi 1/Zero (VFPv1) |
+            | armv5 | ARM devices without FPU (e.g., DGA4132) |
             | mipsle | MediaTek/Ralink routers |
             | mips | Atheros/QCA routers |
             
             ---
             
             Built from [Tailscale](https://github.com/tailscale/tailscale) ${{ needs.check-version.outputs.version }}
-          files: |
-            artifacts/*.tgz
-            artifacts/*.sha256
-            artifacts/checksums.txt
+          files: "artifacts/*.tgz"
           draft: false
           prerelease: false
           generate_release_notes: false
