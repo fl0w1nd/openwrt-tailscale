@@ -1,5 +1,4 @@
 #!/bin/sh
-# OpenWRT Tailscale Manager v2.0
 # Interactive script for installing, updating, and managing Tailscale on OpenWRT
 # https://github.com/fl0w1nd/openwrt-tailscale
 
