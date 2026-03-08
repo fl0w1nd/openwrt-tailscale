@@ -1848,9 +1848,12 @@ version_lt() {
 }
 
 # Check for script updates
+# Pass "force" as $1 to skip rate limiting (e.g., from self-update command)
 check_script_update() {
-    # Skip if checked recently (within last hour)
-    if [ -f "$SCRIPT_VERSION_CHECK_FILE" ]; then
+    local force="${1:-}"
+    
+    # Skip if checked recently (within last hour), unless forced
+    if [ "$force" != "force" ] && [ -f "$SCRIPT_VERSION_CHECK_FILE" ]; then
         local last_check=$(cat "$SCRIPT_VERSION_CHECK_FILE" 2>/dev/null)
         local now=$(date +%s)
         local diff=$((now - last_check))
@@ -2087,6 +2090,9 @@ main() {
         setup-firewall)
             do_setup_subnet_routing
             ;;
+        self-update)
+            check_script_update force || echo "Already up to date (v${VERSION})."
+            ;;
         auto-update)
             case "${2:-status}" in
                 on|enable|1)
@@ -2127,6 +2133,7 @@ main() {
             echo "  status         Show current status"
             echo "  setup-firewall Configure network/firewall for subnet routing"
             echo "  download-only  Download binaries only (for RAM mode)"
+            echo "  self-update    Update this script to latest version"
             echo "  auto-update    Configure auto-update (on/off/status)"
             echo "  help           Show this help"
             echo ""
