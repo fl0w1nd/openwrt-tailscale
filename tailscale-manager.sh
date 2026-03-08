@@ -9,7 +9,7 @@ set -e
 # Configuration
 # ============================================================================
 
-VERSION="2.3.0"
+VERSION="2.3.1"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~50MB)
@@ -105,7 +105,7 @@ get_arch() {
                 result="armv6"
             else
                 result="armv5"
-                log_warn "No hardware FPU detected, using softfloat (armv5) binary"
+                echo "[WARN] No hardware FPU detected, using softfloat (armv5) binary" >&2
             fi
             ;;
         armv6l|armv6)
@@ -125,7 +125,7 @@ get_arch() {
             else
                 # Default to big endian if detection fails
                 result="mips"
-                log_warn "Could not detect MIPS endianness, defaulting to big endian"
+                echo "[WARN] Could not detect MIPS endianness, defaulting to big endian" >&2
             fi
             ;;
         mips64)
@@ -139,7 +139,7 @@ get_arch() {
             else
                 # Default to big endian if detection fails
                 result="mips64"
-                log_warn "Could not detect MIPS64 endianness, defaulting to big endian"
+                echo "[WARN] Could not detect MIPS64 endianness, defaulting to big endian" >&2
             fi
             ;;
         i686|i386)
@@ -357,7 +357,13 @@ download_tailscale_official() {
     local arch="$2"
     local target_dir="$3"
     
-    local filename="tailscale_${version}_${arch}.tgz"
+    # Map arch to official Tailscale naming (official only provides "arm", not armv5/armv6)
+    local official_arch="$arch"
+    case "$arch" in
+        armv5|armv6) official_arch="arm" ;;
+    esac
+    
+    local filename="tailscale_${version}_${official_arch}.tgz"
     local url="${DOWNLOAD_BASE}/${filename}"
     local tmp_dir="/tmp/tailscale_download_$$"
     local tarball="/tmp/${filename}"
@@ -384,7 +390,7 @@ download_tailscale_official() {
     fi
     
     # Verify extracted files
-    local extracted_dir="${tmp_dir}/tailscale_${version}_${arch}"
+    local extracted_dir="${tmp_dir}/tailscale_${version}_${official_arch}"
     if [ ! -f "${extracted_dir}/tailscaled" ] || [ ! -f "${extracted_dir}/tailscale" ]; then
         log_error "Required binaries not found in archive"
         rm -f "$tarball"
