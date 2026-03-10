@@ -184,6 +184,20 @@ tailscale up
 tailscale set --advertise-routes=192.168.1.0/24
 ```
 
+In userspace mode, the init script automatically enables proxy listeners for outbound traffic:
+- **SOCKS5 proxy**: `localhost:1055`
+- **HTTP proxy**: `localhost:1056`
+
+Applications can use these proxies to route traffic through the Tailscale network. For example:
+
+```sh
+# Use SOCKS5 proxy
+curl --proxy socks5://localhost:1055 http://100.x.x.x:8080
+
+# Use HTTP proxy
+http_proxy=http://localhost:1056 curl http://100.x.x.x:8080
+```
+
 Notes:
 - Userspace mode does not create a `tailscale0` interface, so `tailscale-manager setup-firewall` is not needed for this mode.
 - Userspace subnet routing supports TCP/UDP and ping, but not all protocols.
@@ -395,6 +409,20 @@ uci commit tailscale
 ```sh
 tailscale up
 tailscale set --advertise-routes=192.168.1.0/24
+```
+
+在 userspace 模式下，init 脚本会自动启用代理监听，用于出站流量：
+- **SOCKS5 代理**：`localhost:1055`
+- **HTTP 代理**：`localhost:1056`
+
+应用程序可以通过这些代理将流量路由到 Tailscale 网络。例如：
+
+```sh
+# 使用 SOCKS5 代理
+curl --proxy socks5://localhost:1055 http://100.x.x.x:8080
+
+# 使用 HTTP 代理
+http_proxy=http://localhost:1056 curl http://100.x.x.x:8080
 ```
 
 说明：
