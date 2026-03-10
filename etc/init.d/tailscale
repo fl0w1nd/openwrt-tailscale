@@ -37,6 +37,7 @@ load_config() {
     config_get FW_MODE settings fw_mode nftables
     config_get DOWNLOAD_SOURCE settings download_source official
     config_get TUN_MODE settings tun_mode auto
+    config_get PROXY_LISTEN settings proxy_listen localhost
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
 }
@@ -248,6 +249,7 @@ start_service() {
     # Determine effective TUN mode
     local use_userspace=0
     local effective_tun_mode=""
+    local listen_addr="localhost"
     effective_tun_mode="$(get_effective_tun_mode "$TUN_MODE")" || effective_tun_mode=""
 
     if [ -z "$effective_tun_mode" ]; then
@@ -278,8 +280,13 @@ start_service() {
     procd_append_param command --statedir "$STATE_DIR"
     if [ "$use_userspace" = "1" ]; then
         procd_append_param command --tun=userspace-networking
-        procd_append_param command --socks5-server=localhost:1055
-        procd_append_param command --outbound-http-proxy-listen=localhost:1056
+        listen_addr="$PROXY_LISTEN"
+        case "$listen_addr" in
+            lan|0.0.0.0) listen_addr="0.0.0.0" ;;
+            *) listen_addr="localhost" ;;
+        esac
+        procd_append_param command --socks5-server=${listen_addr}:1055
+        procd_append_param command --outbound-http-proxy-listen=${listen_addr}:1056
     fi
     procd_set_param respawn 3600 5 5
     procd_set_param stdout "$LOG_STDOUT"
@@ -287,7 +294,7 @@ start_service() {
     procd_close_instance
     
     if [ "$use_userspace" = "1" ]; then
-        log_msg "info" "Tailscale service start requested (userspace networking mode)"
+        log_msg "info" "Tailscale service start requested (userspace networking mode, proxy on ${listen_addr})"
     else
         log_msg "info" "Tailscale service start requested"
     fi
