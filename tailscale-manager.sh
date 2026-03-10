@@ -862,6 +862,14 @@ show_userspace_subnet_guidance() {
     echo "  3. Approve the subnet routes in Tailscale admin console:"
     echo "     https://login.tailscale.com/admin/machines"
     echo ""
+    echo "Proxy listeners (for outbound traffic through Tailscale):"
+    echo "  - SOCKS5: <listen_addr>:1055"
+    echo "  - HTTP:   <listen_addr>:1056"
+    echo ""
+    echo "  To allow LAN devices to use the proxy, set proxy_listen to 'lan':"
+    echo "    uci set tailscale.settings.proxy_listen='lan'"
+    echo "    uci commit tailscale && /etc/init.d/tailscale restart"
+    echo ""
     echo "Notes:"
     echo "  - Userspace subnet routing supports TCP/UDP and ping, but not all protocols"
     echo "  - Performance may be lower than kernel mode"
@@ -2132,6 +2140,7 @@ do_auto_update_settings() {
 
 configure_tun_mode() {
     local mode="$1"
+    local proxy_listen="${2:-}"
 
     case "$mode" in
         auto|kernel|userspace) ;;
@@ -2147,12 +2156,16 @@ configure_tun_mode() {
     fi
 
     uci set tailscale.settings.tun_mode="$mode"
+    if [ -n "$proxy_listen" ]; then
+        uci set tailscale.settings.proxy_listen="$proxy_listen"
+    fi
     uci commit tailscale || {
         log_error "Failed to save tun mode"
         return 1
     }
 
     log_info "TUN mode set to: $mode"
+    [ -n "$proxy_listen" ] && log_info "Proxy listen: $proxy_listen"
 
     install_init_script || return 1
 
@@ -2195,7 +2208,19 @@ do_network_mode_settings() {
     case "$answer" in
         1) configure_tun_mode "auto" ;;
         2) configure_tun_mode "kernel" ;;
-        3) configure_tun_mode "userspace" ;;
+        3)
+            echo ""
+            echo "  Proxy listen scope for userspace mode:"
+            echo "    a) localhost  - Only this device can use the proxy"
+            echo "    b) LAN (0.0.0.0) - LAN devices can also use the proxy"
+            echo ""
+            printf "  Enter choice [a/b] (default: a): "
+            read -r proxy_answer
+            case "$proxy_answer" in
+                [Bb]) configure_tun_mode "userspace" "lan" ;;
+                *)    configure_tun_mode "userspace" "localhost" ;;
+            esac
+            ;;
         "") echo "No changes." ;;
         *) echo "Invalid choice" ;;
     esac
