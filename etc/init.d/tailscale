@@ -278,6 +278,8 @@ start_service() {
     procd_append_param command --statedir "$STATE_DIR"
     if [ "$use_userspace" = "1" ]; then
         procd_append_param command --tun=userspace-networking
+        procd_append_param command --socks5-server=localhost:1055
+        procd_append_param command --outbound-http-proxy-listen=localhost:1056
     fi
     procd_set_param respawn 3600 5 5
     procd_set_param stdout "$LOG_STDOUT"
