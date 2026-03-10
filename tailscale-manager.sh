@@ -8,7 +8,7 @@ set -e
 # Configuration
 # ============================================================================
 
-VERSION="2.3.1"
+VERSION="2.3.2"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~50MB)
@@ -104,7 +104,6 @@ get_arch() {
                 result="armv6"
             else
                 result="armv5"
-                echo "[WARN] No hardware FPU detected, using softfloat (armv5) binary" >&2
             fi
             ;;
         armv6l|armv6)
@@ -124,7 +123,6 @@ get_arch() {
             else
                 # Default to big endian if detection fails
                 result="mips"
-                echo "[WARN] Could not detect MIPS endianness, defaulting to big endian" >&2
             fi
             ;;
         mips64)
@@ -138,7 +136,6 @@ get_arch() {
             else
                 # Default to big endian if detection fails
                 result="mips64"
-                echo "[WARN] Could not detect MIPS64 endianness, defaulting to big endian" >&2
             fi
             ;;
         i686|i386)
@@ -268,6 +265,9 @@ check_dependencies() {
         log_warn "kmod-tun is missing"
         deps_to_install="$deps_to_install kmod-tun"
         need_update=1
+    elif [ ! -d "/sys/module/tun" ]; then
+        # kmod-tun installed but module not loaded, try loading it
+        modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
     fi
     
     # 2. Check for ca-bundle/ca-certificates (Required for HTTPS)
@@ -319,7 +319,32 @@ check_dependencies() {
         log_info "All dependencies seem to be met"
     fi
     
+    # Ensure TUN device node exists
+    ensure_tun_device
+    
     return 0
+}
+
+# Ensure /dev/net/tun device node exists
+# Some systems have kmod-tun installed but the device node is missing
+ensure_tun_device() {
+    # Try loading the tun module if not already loaded
+    if [ ! -d "/sys/module/tun" ]; then
+        modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    fi
+    
+    # Create device node manually if still missing
+    if [ ! -e "/dev/net/tun" ]; then
+        mkdir -p /dev/net
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 666 /dev/net/tun 2>/dev/null || true
+        if [ -e "/dev/net/tun" ]; then
+            log_info "Created /dev/net/tun device node"
+        else
+            log_warn "/dev/net/tun could not be created, tailscaled may fail to start"
+            log_warn "Please check if your kernel supports TUN/TAP (CONFIG_TUN)"
+        fi
+    fi
 }
 
 # ============================================================================
@@ -778,6 +803,14 @@ create_uci_config() {
     local download_source="${3:-official}"
     local auto_update="${4:-0}"
     
+    # Detect firewall mode based on actual system backend
+    local fw_backend=$(detect_firewall_backend)
+    local fw_mode="nftables"
+    case "$fw_backend" in
+        fw3) fw_mode="iptables" ;;
+        fw4) fw_mode="nftables" ;;
+    esac
+    
     cat > "$CONFIG_FILE" << EOF
 config tailscale 'settings'
     option enabled '1'
@@ -786,7 +819,7 @@ config tailscale 'settings'
     option bin_dir '${bin_dir}'
     option state_file '${STATE_FILE}'
     option statedir '${STATE_DIR}'
-    option fw_mode 'nftables'
+    option fw_mode '${fw_mode}'
     option download_source '${download_source}'
     option auto_update '${auto_update}'
     option log_stdout '1'
@@ -919,6 +952,22 @@ start_service() {
     wait_for_network || {
         log_msg "warn" "Continuing despite network issues - tailscaled may retry internally"
     }
+    
+    # Ensure TUN device exists
+    if [ ! -d "/sys/module/tun" ]; then
+        modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    fi
+    if [ ! -e "/dev/net/tun" ]; then
+        mkdir -p /dev/net
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 666 /dev/net/tun 2>/dev/null || true
+        if [ -e "/dev/net/tun" ]; then
+            log_msg "info" "Created /dev/net/tun device node"
+        else
+            log_msg "error" "/dev/net/tun not available, tailscaled requires TUN support"
+            return 1
+        fi
+    fi
     
     # Cleanup before start
     "${BIN_DIR}/tailscaled" --cleanup 2>/dev/null || true
@@ -1151,6 +1200,14 @@ do_install() {
         log_error "Architecture detection failed"
         return 1
     }
+    local raw_arch=$(uname -m)
+    case "$raw_arch" in
+        armv7l|armv7)
+            if [ "$arch" = "armv5" ]; then
+                log_warn "No hardware FPU detected, using softfloat (armv5) binary"
+            fi
+            ;;
+    esac
     echo "  Architecture: $arch"
     echo ""
     
