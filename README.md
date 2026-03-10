@@ -185,10 +185,20 @@ tailscale set --advertise-routes=192.168.1.0/24
 ```
 
 In userspace mode, the init script automatically enables proxy listeners for outbound traffic:
-- **SOCKS5 proxy**: `localhost:1055`
-- **HTTP proxy**: `localhost:1056`
+- **SOCKS5 proxy**: `<listen_addr>:1055`
+- **HTTP proxy**: `<listen_addr>:1056`
 
-Applications can use these proxies to route traffic through the Tailscale network. For example:
+By default, the proxy listens on `localhost` (only this device). To allow LAN devices to use the proxy, set `proxy_listen` to `lan`:
+
+```sh
+uci set tailscale.settings.proxy_listen='lan'
+uci commit tailscale
+/etc/init.d/tailscale restart
+```
+
+You can also configure this interactively via `tailscale-manager` → Network Mode Settings → Userspace.
+
+Usage examples:
 
 ```sh
 # Use SOCKS5 proxy
@@ -225,6 +235,7 @@ config tailscale 'settings'
     option fw_mode 'nftables'
     option download_source 'small'
     option tun_mode 'auto'
+    option proxy_listen 'localhost'
 ```
 
 Edit with:
@@ -412,10 +423,20 @@ tailscale set --advertise-routes=192.168.1.0/24
 ```
 
 在 userspace 模式下，init 脚本会自动启用代理监听，用于出站流量：
-- **SOCKS5 代理**：`localhost:1055`
-- **HTTP 代理**：`localhost:1056`
+- **SOCKS5 代理**：`<监听地址>:1055`
+- **HTTP 代理**：`<监听地址>:1056`
 
-应用程序可以通过这些代理将流量路由到 Tailscale 网络。例如：
+默认监听 `localhost`（仅本机可用）。如需让局域网设备也能使用代理，将 `proxy_listen` 设为 `lan`：
+
+```sh
+uci set tailscale.settings.proxy_listen='lan'
+uci commit tailscale
+/etc/init.d/tailscale restart
+```
+
+也可以通过 `tailscale-manager` → 网络模式设置 → Userspace 交互式配置。
+
+使用示例：
 
 ```sh
 # 使用 SOCKS5 代理
@@ -452,6 +473,7 @@ config tailscale 'settings'
     option fw_mode 'nftables'
     option download_source 'small'
     option tun_mode 'auto'
+    option proxy_listen 'localhost'
 ```
 
 ## 网络启动行为
