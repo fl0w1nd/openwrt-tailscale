@@ -784,6 +784,68 @@ get_configured_tun_mode() {
     echo "${tun_mode:-auto}"
 }
 
+# ============================================================================
+# Service Status Helpers
+# ============================================================================
+
+get_tailscaled_pid() {
+    local pids
+    pids="$(pidof tailscaled 2>/dev/null)" || return 1
+    [ -n "$pids" ] || return 1
+    echo "${pids%% *}"
+}
+
+tailscaled_is_userspace() {
+    local pid cmd
+    pid="$(get_tailscaled_pid)" || return 1
+    cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" || return 1
+    case " $cmd " in
+        *" --tun=userspace-networking "*|*" --tun userspace-networking "*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+is_tailscaled_running() {
+    pidof tailscaled >/dev/null 2>&1
+}
+
+wait_for_tailscaled() {
+    local timeout="${1:-10}"
+    local i=0
+    while [ "$i" -lt "$timeout" ]; do
+        if is_tailscaled_running; then
+            sleep 1
+            if is_tailscaled_running; then
+                return 0
+            fi
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+show_service_status() {
+    local pid
+    if is_tailscaled_running; then
+        pid="$(get_tailscaled_pid 2>/dev/null || true)"
+        if [ -n "$pid" ]; then
+            log_info "tailscaled is running (PID: $pid)"
+        else
+            log_info "tailscaled is running"
+        fi
+        if tailscaled_is_userspace; then
+            log_info "Active mode: userspace"
+        else
+            log_info "Active mode: kernel"
+        fi
+    else
+        log_error "tailscaled is not running"
+    fi
+}
+
 show_userspace_subnet_guidance() {
     echo ""
     echo "============================================="
@@ -1286,6 +1348,12 @@ do_install() {
     "$INIT_SCRIPT" enable
     "$INIT_SCRIPT" start
     
+    if wait_for_tailscaled 10; then
+        show_service_status
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+    fi
+    
     # Ask about subnet routing setup
     echo ""
     local configured_tun_mode="$(get_configured_tun_mode)"
@@ -1395,7 +1463,13 @@ do_update() {
     log_info "Starting Tailscale service..."
     "$INIT_SCRIPT" start
     
-    log_info "Update complete: v${current_version} -> v${latest_version}"
+    if wait_for_tailscaled 10; then
+        show_service_status
+        log_info "Update complete: v${current_version} -> v${latest_version}"
+    else
+        log_error "tailscaled failed to start after update. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
 }
 
 # ============================================================================
@@ -1524,9 +1598,15 @@ do_status() {
     
     echo ""
     echo "Service status:"
-    if pgrep -f "tailscaled" >/dev/null 2>&1; then
-        echo "  tailscaled: running (PID: $(pgrep -f tailscaled | head -1))"
-        if pgrep -f "tailscaled.*userspace-networking" >/dev/null 2>&1; then
+    if is_tailscaled_running; then
+        local pid
+        pid="$(get_tailscaled_pid 2>/dev/null || true)"
+        if [ -n "$pid" ]; then
+            echo "  tailscaled: running (PID: $pid)"
+        else
+            echo "  tailscaled: running"
+        fi
+        if tailscaled_is_userspace; then
             echo "  Active mode: userspace"
         else
             echo "  Active mode: kernel"
@@ -1750,6 +1830,12 @@ do_install_specific_version() {
         echo "Starting service..."
         "$INIT_SCRIPT" enable
         "$INIT_SCRIPT" start
+
+        if wait_for_tailscaled 10; then
+            show_service_status
+        else
+            log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        fi
     else
         echo "Installation failed."
         return 1
@@ -2007,7 +2093,14 @@ do_restart() {
         sleep 2
         "$INIT_SCRIPT" start 2>/dev/null
     }
-    log_info "Restart complete"
+
+    if wait_for_tailscaled 10; then
+        show_service_status
+        log_info "Restart complete"
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
 }
 
 do_auto_update_settings() {
@@ -2069,6 +2162,13 @@ configure_tun_mode() {
             log_warn "Restart failed. Try manually: $INIT_SCRIPT restart"
             return 1
         }
+
+        if wait_for_tailscaled 10; then
+            show_service_status
+        else
+            log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+            return 1
+        fi
     fi
 
     return 0

@@ -277,7 +277,7 @@ start_service() {
     procd_append_param command --state "$STATE_FILE"
     procd_append_param command --statedir "$STATE_DIR"
     if [ "$use_userspace" = "1" ]; then
-        procd_append_param command --tun "userspace-networking"
+        procd_append_param command --tun=userspace-networking
     fi
     procd_set_param respawn 3600 5 5
     procd_set_param stdout "$LOG_STDOUT"
@@ -285,9 +285,9 @@ start_service() {
     procd_close_instance
     
     if [ "$use_userspace" = "1" ]; then
-        log_msg "info" "Tailscale service started (userspace networking mode)"
+        log_msg "info" "Tailscale service start requested (userspace networking mode)"
     else
-        log_msg "info" "Tailscale service started"
+        log_msg "info" "Tailscale service start requested"
     fi
 }
 
