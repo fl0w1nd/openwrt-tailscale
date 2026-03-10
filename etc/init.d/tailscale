@@ -36,6 +36,7 @@ load_config() {
     config_get STATE_DIR settings statedir /etc/tailscale
     config_get FW_MODE settings fw_mode nftables
     config_get DOWNLOAD_SOURCE settings download_source official
+    config_get TUN_MODE settings tun_mode auto
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
 }
@@ -48,6 +49,78 @@ load_config() {
 # Supports both official (separate binaries) and small (combined binary)
 check_binary() {
     [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
+}
+
+ensure_tun_device_node() {
+    if [ ! -e "/dev/net/tun" ]; then
+        mkdir -p /dev/net
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 666 /dev/net/tun 2>/dev/null || true
+    fi
+}
+
+kernel_has_builtin_tun() {
+    if [ -r /proc/config.gz ]; then
+        zcat /proc/config.gz 2>/dev/null | grep -q '^CONFIG_TUN=y$'
+    elif [ -r "/boot/config-$(uname -r)" ]; then
+        grep -q '^CONFIG_TUN=y$' "/boot/config-$(uname -r)" 2>/dev/null
+    else
+        return 1
+    fi
+}
+
+kernel_tun_available() {
+    if [ -d "/sys/module/tun" ]; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    if [ -d "/sys/module/tun" ]; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    if kernel_has_builtin_tun; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    return 1
+}
+
+get_effective_tun_mode() {
+    local requested_mode="${1:-auto}"
+
+    case "$requested_mode" in
+        userspace)
+            echo "userspace"
+            return 0
+            ;;
+        kernel)
+            kernel_tun_available && echo "kernel"
+            return $?
+            ;;
+        auto|"")
+            if kernel_tun_available; then
+                echo "kernel"
+            else
+                echo "userspace"
+            fi
+            return 0
+            ;;
+        *)
+            if kernel_tun_available; then
+                echo "kernel"
+            else
+                echo "userspace"
+            fi
+            return 0
+            ;;
+    esac
 }
 
 # Detect architecture for downloading
@@ -172,20 +245,25 @@ start_service() {
         log_msg "warn" "Network not available, but starting tailscaled anyway (it may retry internally)"
     fi
     
-    # Ensure TUN device exists
-    if [ ! -d "/sys/module/tun" ]; then
-        modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    # Determine effective TUN mode
+    local use_userspace=0
+    local effective_tun_mode=""
+    effective_tun_mode="$(get_effective_tun_mode "$TUN_MODE")" || effective_tun_mode=""
+
+    if [ -z "$effective_tun_mode" ]; then
+        log_msg "error" "/dev/net/tun is not available and kernel mode is explicitly configured"
+        log_msg "info" "Set tun_mode to 'userspace' or 'auto' to allow fallback"
+        return 1
     fi
-    if [ ! -e "/dev/net/tun" ]; then
-        mkdir -p /dev/net
-        mknod /dev/net/tun c 10 200 2>/dev/null || true
-        chmod 666 /dev/net/tun 2>/dev/null || true
-        if [ -e "/dev/net/tun" ]; then
-            log_msg "info" "Created /dev/net/tun device node"
+
+    if [ "$effective_tun_mode" = "userspace" ]; then
+        use_userspace=1
+        if [ "$TUN_MODE" = "userspace" ]; then
+            log_msg "info" "Using userspace networking mode (configured)"
         else
-            log_msg "error" "/dev/net/tun not available, tailscaled requires TUN support"
-            return 1
+            log_msg "warn" "TUN not available, falling back to userspace networking"
         fi
+        log_msg "info" "Userspace subnet routing supports TCP/UDP and ping, but not all protocols"
     fi
     
     # Cleanup before start
@@ -198,12 +276,19 @@ start_service() {
     procd_append_param command --port "$PORT"
     procd_append_param command --state "$STATE_FILE"
     procd_append_param command --statedir "$STATE_DIR"
+    if [ "$use_userspace" = "1" ]; then
+        procd_append_param command --tun "userspace-networking"
+    fi
     procd_set_param respawn 3600 5 5
     procd_set_param stdout "$LOG_STDOUT"
     procd_set_param stderr "$LOG_STDERR"
     procd_close_instance
     
-    log_msg "info" "Tailscale service started successfully"
+    if [ "$use_userspace" = "1" ]; then
+        log_msg "info" "Tailscale service started (userspace networking mode)"
+    else
+        log_msg "info" "Tailscale service started"
+    fi
 }
 
 stop_service() {

@@ -16,6 +16,7 @@ This is an auto-updating Tailscale installation manager for OpenWrt routers. It 
 - **Subnet Routing Setup**: Automatic network interface and firewall configuration
 - **Auto-Updates**: Daily cron job keeps Tailscale up to date
 - **OpenWrt Integration**: Full UCI configuration and procd service management
+- **Userspace Fallback**: Falls back to userspace networking when `/dev/net/tun` is unavailable
 - **Network-Aware Startup**: Retry logic for environments with delayed network (e.g., OpenClash)
 - **Complete Lifecycle**: Install, update, uninstall, and status check in one script
 
@@ -121,7 +122,7 @@ tailscale-manager help           # Show help
 
 ```sh
 tailscale status                              # Check connection
-tailscale up --advertise-routes=192.168.1.0/24  # Subnet routing
+tailscale set --advertise-routes=192.168.1.0/24 # Subnet routing
 tailscale up --advertise-exit-node            # Exit node
 ```
 
@@ -156,12 +157,37 @@ If you prefer to configure manually:
 ### Using Subnet Routing
 
 ```sh
+# Log in if needed
+tailscale up
+
 # Advertise your local subnet
-tailscale up --advertise-routes=192.168.1.0/24
+tailscale set --advertise-routes=192.168.1.0/24
 
 # Then approve in Tailscale Admin Console:
 # https://login.tailscale.com/admin/machines
 ```
+
+### Userspace Networking Mode
+
+On devices where the kernel does not provide a working TUN device, the service can fall back to userspace networking automatically or explicitly:
+
+```sh
+uci set tailscale.settings.tun_mode='userspace'
+uci commit tailscale
+/etc/init.d/tailscale restart
+```
+
+For subnet routing in userspace mode:
+
+```sh
+tailscale up
+tailscale set --advertise-routes=192.168.1.0/24
+```
+
+Notes:
+- Userspace mode does not create a `tailscale0` interface, so `tailscale-manager setup-firewall` is not needed for this mode.
+- Userspace subnet routing supports TCP/UDP and ping, but not all protocols.
+- Performance may be lower than kernel mode.
 
 ## Storage Modes
 
@@ -184,6 +210,7 @@ config tailscale 'settings'
     option statedir '/etc/tailscale'
     option fw_mode 'nftables'
     option download_source 'small'
+    option tun_mode 'auto'
 ```
 
 Edit with:
@@ -250,6 +277,7 @@ See [LICENSE](LICENSE) file.
 - **子网路由配置**：自动配置网络接口和防火墙
 - **自动更新**：每日定时任务保持最新版本
 - **OpenWrt 集成**：完整 UCI 配置和 procd 服务管理
+- **用户空间回退**：当 `/dev/net/tun` 不可用时可自动切换到 userspace networking
 - **网络感知启动**：针对延迟网络环境（如 OpenClash）的重试逻辑
 - **完整生命周期**：安装、更新、卸载、状态检查一体化
 
@@ -342,12 +370,37 @@ tailscale-manager setup-firewall
 ### 使用子网路由
 
 ```sh
+# 如未登录，先执行
+tailscale up
+
 # 公开本地子网
-tailscale up --advertise-routes=192.168.1.0/24
+tailscale set --advertise-routes=192.168.1.0/24
 
 # 然后在 Tailscale 管理控制台批准：
 # https://login.tailscale.com/admin/machines
 ```
+
+### 用户空间网络模式
+
+如果设备内核没有可用的 TUN 支持，服务可以自动回退到 userspace networking，也可以手动指定：
+
+```sh
+uci set tailscale.settings.tun_mode='userspace'
+uci commit tailscale
+/etc/init.d/tailscale restart
+```
+
+在 userspace 模式下使用子网路由：
+
+```sh
+tailscale up
+tailscale set --advertise-routes=192.168.1.0/24
+```
+
+说明：
+- userspace 模式不会创建 `tailscale0` 接口，因此不需要执行 `tailscale-manager setup-firewall`。
+- userspace 子网路由支持 TCP/UDP 和 ping，但并不覆盖所有协议。
+- 性能通常低于内核模式。
 
 ## 存储模式
 
@@ -370,6 +423,7 @@ config tailscale 'settings'
     option statedir '/etc/tailscale'
     option fw_mode 'nftables'
     option download_source 'small'
+    option tun_mode 'auto'
 ```
 
 ## 网络启动行为

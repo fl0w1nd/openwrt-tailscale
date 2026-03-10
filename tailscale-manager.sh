@@ -668,8 +668,138 @@ setup_tailscale_firewall_zone() {
     return 0
 }
 
+ensure_tun_device_node() {
+    if [ ! -e "/dev/net/tun" ]; then
+        mkdir -p /dev/net
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 666 /dev/net/tun 2>/dev/null || true
+    fi
+}
+
+kernel_has_builtin_tun() {
+    if [ -r /proc/config.gz ]; then
+        zcat /proc/config.gz 2>/dev/null | grep -q '^CONFIG_TUN=y$'
+    elif [ -r "/boot/config-$(uname -r)" ]; then
+        grep -q '^CONFIG_TUN=y$' "/boot/config-$(uname -r)" 2>/dev/null
+    else
+        return 1
+    fi
+}
+
+kernel_tun_available() {
+    if [ -d "/sys/module/tun" ]; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    if [ -d "/sys/module/tun" ]; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    if kernel_has_builtin_tun; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    return 1
+}
+
+get_effective_tun_mode() {
+    local requested_mode="${1:-auto}"
+
+    case "$requested_mode" in
+        userspace)
+            echo "userspace"
+            return 0
+            ;;
+        kernel)
+            kernel_tun_available && echo "kernel"
+            return $?
+            ;;
+        auto|"")
+            if kernel_tun_available; then
+                echo "kernel"
+            else
+                echo "userspace"
+            fi
+            return 0
+            ;;
+        *)
+            if kernel_tun_available; then
+                echo "kernel"
+            else
+                echo "userspace"
+            fi
+            return 0
+            ;;
+    esac
+}
+
+get_configured_tun_mode() {
+    local tun_mode="auto"
+
+    if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        config_get tun_mode settings tun_mode auto
+    fi
+
+    echo "${tun_mode:-auto}"
+}
+
+show_userspace_subnet_guidance() {
+    echo ""
+    echo "============================================="
+    echo "  Userspace Subnet Routing"
+    echo "============================================="
+    echo ""
+    echo "Userspace networking mode does not create a tailscale0 interface."
+    echo "You do not need to create the OpenWrt tailscale interface or firewall zone"
+    echo "for this mode."
+    echo ""
+    echo "Next steps:"
+    echo "  1. Run: tailscale up   (if not logged in yet)"
+    echo "  2. Run: tailscale set --advertise-routes=192.168.x.0/24"
+    echo "  3. Approve the subnet routes in Tailscale admin console:"
+    echo "     https://login.tailscale.com/admin/machines"
+    echo ""
+    echo "Notes:"
+    echo "  - Userspace subnet routing supports TCP/UDP and ping, but not all protocols"
+    echo "  - Performance may be lower than kernel mode"
+    echo ""
+}
+
 # Interactive subnet routing setup
 do_setup_subnet_routing() {
+    local tun_mode="$(get_configured_tun_mode)"
+    local effective_tun_mode=""
+
+    effective_tun_mode="$(get_effective_tun_mode "$tun_mode")" || effective_tun_mode=""
+
+    if [ "$effective_tun_mode" = "userspace" ]; then
+        show_userspace_subnet_guidance
+        return 0
+    elif [ -z "$effective_tun_mode" ]; then
+        echo ""
+        echo "============================================="
+        echo "  Subnet Routing Configuration"
+        echo "============================================="
+        echo ""
+        echo "Kernel networking mode is configured, but TUN is not available."
+        echo "Either fix kernel TUN support or switch to userspace mode:"
+        echo ""
+        echo "  uci set tailscale.settings.tun_mode='userspace'"
+        echo "  uci commit tailscale"
+        echo "  /etc/init.d/tailscale restart"
+        echo ""
+        return 1
+    fi
+
     echo ""
     echo "============================================="
     echo "  Subnet Routing Configuration"
@@ -736,8 +866,9 @@ do_setup_subnet_routing() {
     echo "============================================="
     echo ""
     echo "Next steps:"
-    echo "  1. Run: tailscale up --advertise-routes=192.168.x.0/24"
-    echo "  2. Approve the subnet routes in Tailscale admin console:"
+    echo "  1. Run: tailscale up   (if not logged in yet)"
+    echo "  2. Run: tailscale set --advertise-routes=192.168.x.0/24"
+    echo "  3. Approve the subnet routes in Tailscale admin console:"
     echo "     https://login.tailscale.com/admin/machines"
     echo ""
 }
@@ -822,6 +953,7 @@ config tailscale 'settings'
     option fw_mode '${fw_mode}'
     option download_source '${download_source}'
     option auto_update '${auto_update}'
+    option tun_mode 'auto'
     option log_stdout '1'
     option log_stderr '1'
 EOF
@@ -866,6 +998,7 @@ load_config() {
     config_get STATE_DIR settings statedir /etc/tailscale
     config_get FW_MODE settings fw_mode nftables
     config_get DOWNLOAD_SOURCE settings download_source official
+    config_get TUN_MODE settings tun_mode auto
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
 }
@@ -874,6 +1007,78 @@ load_config() {
 check_binary() {
     # Check for combined binary (small version) or separate binary (official version)
     [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
+}
+
+ensure_tun_device_node() {
+    if [ ! -e "/dev/net/tun" ]; then
+        mkdir -p /dev/net
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 666 /dev/net/tun 2>/dev/null || true
+    fi
+}
+
+kernel_has_builtin_tun() {
+    if [ -r /proc/config.gz ]; then
+        zcat /proc/config.gz 2>/dev/null | grep -q '^CONFIG_TUN=y$'
+    elif [ -r "/boot/config-$(uname -r)" ]; then
+        grep -q '^CONFIG_TUN=y$' "/boot/config-$(uname -r)" 2>/dev/null
+    else
+        return 1
+    fi
+}
+
+kernel_tun_available() {
+    if [ -d "/sys/module/tun" ]; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    if [ -d "/sys/module/tun" ]; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    if kernel_has_builtin_tun; then
+        ensure_tun_device_node
+        [ -e "/dev/net/tun" ]
+        return $?
+    fi
+
+    return 1
+}
+
+get_effective_tun_mode() {
+    local requested_mode="${1:-auto}"
+
+    case "$requested_mode" in
+        userspace)
+            echo "userspace"
+            return 0
+            ;;
+        kernel)
+            kernel_tun_available && echo "kernel"
+            return $?
+            ;;
+        auto|"")
+            if kernel_tun_available; then
+                echo "kernel"
+            else
+                echo "userspace"
+            fi
+            return 0
+            ;;
+        *)
+            if kernel_tun_available; then
+                echo "kernel"
+            else
+                echo "userspace"
+            fi
+            return 0
+            ;;
+    esac
 }
 
 # Download binaries for RAM mode
@@ -953,20 +1158,25 @@ start_service() {
         log_msg "warn" "Continuing despite network issues - tailscaled may retry internally"
     }
     
-    # Ensure TUN device exists
-    if [ ! -d "/sys/module/tun" ]; then
-        modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+    # Determine effective TUN mode
+    local use_userspace=0
+    local effective_tun_mode=""
+    effective_tun_mode="$(get_effective_tun_mode "$TUN_MODE")" || effective_tun_mode=""
+
+    if [ -z "$effective_tun_mode" ]; then
+        log_msg "error" "/dev/net/tun is not available and kernel mode is explicitly configured"
+        log_msg "info" "Set tun_mode to 'userspace' or 'auto' to allow fallback"
+        return 1
     fi
-    if [ ! -e "/dev/net/tun" ]; then
-        mkdir -p /dev/net
-        mknod /dev/net/tun c 10 200 2>/dev/null || true
-        chmod 666 /dev/net/tun 2>/dev/null || true
-        if [ -e "/dev/net/tun" ]; then
-            log_msg "info" "Created /dev/net/tun device node"
+
+    if [ "$effective_tun_mode" = "userspace" ]; then
+        use_userspace=1
+        if [ "$TUN_MODE" = "userspace" ]; then
+            log_msg "info" "Using userspace networking mode (configured)"
         else
-            log_msg "error" "/dev/net/tun not available, tailscaled requires TUN support"
-            return 1
+            log_msg "warn" "TUN not available, falling back to userspace networking"
         fi
+        log_msg "info" "Userspace subnet routing supports TCP/UDP and ping, but not all protocols"
     fi
     
     # Cleanup before start
@@ -979,12 +1189,19 @@ start_service() {
     procd_append_param command --port "$PORT"
     procd_append_param command --state "$STATE_FILE"
     procd_append_param command --statedir "$STATE_DIR"
+    if [ "$use_userspace" = "1" ]; then
+        procd_append_param command --tun "userspace-networking"
+    fi
     procd_set_param respawn 3600 5 5
     procd_set_param stdout "$LOG_STDOUT"
     procd_set_param stderr "$LOG_STDERR"
     procd_close_instance
     
-    log_msg "info" "Tailscale service started"
+    if [ "$use_userspace" = "1" ]; then
+        log_msg "info" "Tailscale service started (userspace networking mode)"
+    else
+        log_msg "info" "Tailscale service started"
+    fi
 }
 
 stop_service() {
@@ -1355,28 +1572,36 @@ do_install() {
     
     # Ask about subnet routing setup
     echo ""
-    echo "============================================="
-    echo "  Subnet Routing (Optional)"
-    echo "============================================="
-    echo ""
-    echo "If you plan to access your local network from other Tailscale"
-    echo "devices (subnet routing), you need to create a network interface"
-    echo "for the tailscale0 device."
-    echo ""
-    printf "Configure subnet routing now? [y/N]: "
-    read -r subnet_answer
-    
-    case "$subnet_answer" in
-        [Yy]*)
-            do_setup_subnet_routing
-            ;;
-        *)
-            echo ""
-            echo "Skipped. You can configure later with:"
-            echo "  tailscale-manager setup-firewall"
-            echo ""
-            ;;
-    esac
+    local configured_tun_mode="$(get_configured_tun_mode)"
+    local effective_tun_mode=""
+    effective_tun_mode="$(get_effective_tun_mode "$configured_tun_mode")" || effective_tun_mode=""
+
+    if [ "$effective_tun_mode" = "userspace" ]; then
+        show_userspace_subnet_guidance
+    else
+        echo "============================================="
+        echo "  Subnet Routing (Optional)"
+        echo "============================================="
+        echo ""
+        echo "If you plan to access your local network from other Tailscale"
+        echo "devices (subnet routing), you need to create a network interface"
+        echo "for the tailscale0 device."
+        echo ""
+        printf "Configure subnet routing now? [y/N]: "
+        read -r subnet_answer
+
+        case "$subnet_answer" in
+            [Yy]*)
+                do_setup_subnet_routing
+                ;;
+            *)
+                echo ""
+                echo "Skipped. You can configure later with:"
+                echo "  tailscale-manager setup-firewall"
+                echo ""
+                ;;
+        esac
+    fi
     
     echo ""
     echo "============================================="
@@ -1564,6 +1789,9 @@ do_status() {
         source_type="small"
     fi
     echo "  Source: $source_type"
+    if [ -f "$CONFIG_FILE" ]; then
+        echo "  TUN mode: $(get_configured_tun_mode)"
+    fi
     
     echo ""
     echo "Auto-update:"
@@ -1582,6 +1810,11 @@ do_status() {
     echo "Service status:"
     if pgrep -f "tailscaled" >/dev/null 2>&1; then
         echo "  tailscaled: running (PID: $(pgrep -f tailscaled | head -1))"
+        if pgrep -f "tailscaled.*userspace-networking" >/dev/null 2>&1; then
+            echo "  Active mode: userspace"
+        else
+            echo "  Active mode: kernel"
+        fi
     else
         echo "  tailscaled: not running"
     fi
@@ -2029,6 +2262,7 @@ show_menu() {
     echo "  7) Setup Subnet Routing"
     echo "  8) Install Specific Version (Downgrade)"
     echo "  9) Auto-Update Settings"
+    echo " 10) Network Mode Settings"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -2095,6 +2329,68 @@ do_auto_update_settings() {
     fi
 }
 
+configure_tun_mode() {
+    local mode="$1"
+
+    case "$mode" in
+        auto|kernel|userspace) ;;
+        *)
+            log_error "Invalid tun mode: $mode"
+            return 1
+            ;;
+    esac
+
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log_error "Tailscale is not installed. Run: tailscale-manager install"
+        return 1
+    fi
+
+    uci set tailscale.settings.tun_mode="$mode"
+    uci commit tailscale || {
+        log_error "Failed to save tun mode"
+        return 1
+    }
+
+    log_info "TUN mode set to: $mode"
+
+    if [ -x "$INIT_SCRIPT" ]; then
+        log_info "Restarting Tailscale service..."
+        "$INIT_SCRIPT" restart 2>/dev/null || {
+            log_warn "Restart failed. Try manually: $INIT_SCRIPT restart"
+            return 1
+        }
+    fi
+
+    return 0
+}
+
+do_network_mode_settings() {
+    echo ""
+    echo "============================================="
+    echo "  Network Mode Settings"
+    echo "============================================="
+    echo ""
+    echo "Current: $(get_configured_tun_mode)"
+    echo ""
+    echo "  1) Auto"
+    echo "     - Prefer kernel TUN, fall back to userspace if unavailable"
+    echo "  2) Kernel"
+    echo "     - Require /dev/net/tun and normal kernel networking"
+    echo "  3) Userspace"
+    echo "     - Force userspace networking mode"
+    echo ""
+    printf "Enter choice [1/2/3] (blank to cancel): "
+    read -r answer
+
+    case "$answer" in
+        1) configure_tun_mode "auto" ;;
+        2) configure_tun_mode "kernel" ;;
+        3) configure_tun_mode "userspace" ;;
+        "") echo "No changes." ;;
+        *) echo "Invalid choice" ;;
+    esac
+}
+
 interactive_menu() {
     # Check for script updates on startup (ignore return value to prevent set -e exit)
     check_script_update || true
@@ -2113,6 +2409,7 @@ interactive_menu() {
             7) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
             8) do_install_specific_version; printf "Press Enter to continue..."; read -r _ ;;
             9) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
+            10) do_network_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac
@@ -2177,6 +2474,30 @@ main() {
                     ;;
             esac
             ;;
+        network-mode)
+            case "${2:-status}" in
+                auto|kernel|userspace)
+                    configure_tun_mode "$2"
+                    ;;
+                status|"")
+                    echo ""
+                    echo "Network mode:"
+                    echo "  Configured: $(get_configured_tun_mode)"
+                    if pgrep -f "tailscaled.*userspace-networking" >/dev/null 2>&1; then
+                        echo "  Active: userspace"
+                    elif pgrep -f "tailscaled" >/dev/null 2>&1; then
+                        echo "  Active: kernel"
+                    else
+                        echo "  Active: not running"
+                    fi
+                    echo ""
+                    ;;
+                *)
+                    echo "Usage: $0 network-mode [auto|kernel|userspace|status]"
+                    exit 1
+                    ;;
+            esac
+            ;;
         -h|--help|help)
             echo "OpenWRT Tailscale Manager v${VERSION}"
             echo ""
@@ -2191,6 +2512,7 @@ main() {
             echo "  download-only  Download binaries only (for RAM mode)"
             echo "  self-update    Update this script to latest version"
             echo "  auto-update    Configure auto-update (on/off/status)"
+            echo "  network-mode   Configure network mode (auto/kernel/userspace/status)"
             echo "  help           Show this help"
             echo ""
             echo "Environment variables:"
