@@ -1,0 +1,75 @@
+#!/bin/sh
+# Tailscale auto-update script
+# Called by cron
+
+LOG_TAG="tailscale-update"
+LOG_FILE="/var/log/tailscale-update.log"
+
+log_msg() {
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$ts] $1" >> "$LOG_FILE"
+    logger -t "$LOG_TAG" "$1"
+}
+
+OFFICIAL_API_URL="https://pkgs.tailscale.com/stable/?mode=json"
+SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest"
+
+. /lib/functions.sh
+config_load tailscale
+config_get BIN_DIR settings bin_dir /opt/tailscale
+config_get DOWNLOAD_SOURCE settings download_source official
+config_get AUTO_UPDATE settings auto_update ""
+
+if [ -z "$AUTO_UPDATE" ]; then
+    AUTO_UPDATE="1"
+fi
+
+VERSION_FILE="${BIN_DIR}/version"
+SOURCE_FILE="${BIN_DIR}/source"
+
+if [ "$AUTO_UPDATE" = "0" ]; then
+    log_msg "Auto-update disabled in config, skipping"
+    exit 0
+fi
+
+if [ ! -f "$VERSION_FILE" ]; then
+    log_msg "No version file found, skipping update check"
+    exit 0
+fi
+
+CURRENT_VERSION=$(cat "$VERSION_FILE")
+
+if [ -f "$SOURCE_FILE" ]; then
+    DOWNLOAD_SOURCE=$(cat "$SOURCE_FILE")
+elif [ -f "${BIN_DIR}/tailscale.combined" ]; then
+    DOWNLOAD_SOURCE="small"
+fi
+
+if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+    log_msg "Checking small binary releases..."
+    LATEST_VERSION=$(wget -qO- "$SMALL_API_URL" 2>/dev/null | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+    LATEST_VERSION="${LATEST_VERSION#v}"
+else
+    log_msg "Checking official Tailscale releases..."
+    LATEST_VERSION=$(wget -qO- "$OFFICIAL_API_URL" 2>/dev/null | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+fi
+
+if [ -z "$LATEST_VERSION" ]; then
+    log_msg "Failed to fetch latest version"
+    exit 1
+fi
+
+if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+    log_msg "Already up to date (v${CURRENT_VERSION}, source: ${DOWNLOAD_SOURCE})"
+    exit 0
+fi
+
+log_msg "Update available: v${CURRENT_VERSION} -> v${LATEST_VERSION} (source: ${DOWNLOAD_SOURCE})"
+
+if /usr/bin/tailscale-manager update --auto; then
+    log_msg "Update successful"
+else
+    log_msg "Update failed"
+    exit 1
+fi
