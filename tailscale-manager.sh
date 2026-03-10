@@ -40,9 +40,11 @@ CRON_SCRIPT="/usr/bin/tailscale-update"
 LOG_FILE="/var/log/tailscale-manager.log"
 
 # Script self-update configuration
-SCRIPT_RAW_URL="https://raw.githubusercontent.com/${SMALL_REPO}/main/tailscale-manager.sh"
-SCRIPT_VERSION_CHECK_FILE="/tmp/.tailscale-manager-update-check"
-
+RAW_BASE_URL="${TAILSCALE_RAW_BASE_URL:-https://raw.githubusercontent.com/${SMALL_REPO}/main}"
+SCRIPT_RAW_URL="${TAILSCALE_SCRIPT_URL:-${RAW_BASE_URL}/tailscale-manager.sh}"
+CONFIG_TEMPLATE_URL="${RAW_BASE_URL}/etc/config/tailscale"
+INIT_SCRIPT_URL="${RAW_BASE_URL}/etc/init.d/tailscale"
+UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-update"
 # ============================================================================
 # Logging Functions
 # ============================================================================
@@ -70,6 +72,36 @@ log_warn() {
     echo "[WARN] $1"
     logger -t "tailscale-manager" -p daemon.warn "$1"
     log_file "WARN" "$1"
+}
+
+download_repo_file() {
+    local url="$1"
+    local dest="$2"
+    local mode="${3:-644}"
+    local tmp_file="${dest}.tmp.$$"
+
+    mkdir -p "$(dirname "$dest")"
+
+    if ! wget -qO "$tmp_file" "$url" 2>/dev/null; then
+        rm -f "$tmp_file"
+        log_error "Failed to download ${url}"
+        return 1
+    fi
+
+    if [ ! -s "$tmp_file" ]; then
+        rm -f "$tmp_file"
+        log_error "Downloaded file is empty: ${url}"
+        return 1
+    fi
+
+    if ! mv "$tmp_file" "$dest"; then
+        rm -f "$tmp_file"
+        log_error "Failed to install ${dest}"
+        return 1
+    fi
+
+    chmod "$mode" "$dest" 2>/dev/null || true
+    return 0
 }
 
 # ============================================================================
@@ -941,23 +973,34 @@ create_uci_config() {
         fw3) fw_mode="iptables" ;;
         fw4) fw_mode="nftables" ;;
     esac
-    
-    cat > "$CONFIG_FILE" << EOF
-config tailscale 'settings'
-    option enabled '1'
-    option port '41641'
-    option storage_mode '${storage_mode}'
-    option bin_dir '${bin_dir}'
-    option state_file '${STATE_FILE}'
-    option statedir '${STATE_DIR}'
-    option fw_mode '${fw_mode}'
-    option download_source '${download_source}'
-    option auto_update '${auto_update}'
-    option tun_mode 'auto'
-    option log_stdout '1'
-    option log_stderr '1'
+
+    if ! command -v uci >/dev/null 2>&1; then
+        log_error "uci not found, cannot create config"
+        return 1
+    fi
+
+    download_repo_file "$CONFIG_TEMPLATE_URL" "$CONFIG_FILE" 644 || return 1
+
+    uci -q batch <<EOF >/dev/null
+set tailscale.settings.enabled='1'
+set tailscale.settings.port='41641'
+set tailscale.settings.storage_mode='${storage_mode}'
+set tailscale.settings.bin_dir='${bin_dir}'
+set tailscale.settings.state_file='${STATE_FILE}'
+set tailscale.settings.statedir='${STATE_DIR}'
+set tailscale.settings.fw_mode='${fw_mode}'
+set tailscale.settings.download_source='${download_source}'
+set tailscale.settings.auto_update='${auto_update}'
+set tailscale.settings.tun_mode='auto'
+set tailscale.settings.log_stdout='1'
+set tailscale.settings.log_stderr='1'
 EOF
-    
+
+    if ! uci commit tailscale >/dev/null 2>&1; then
+        log_error "Failed to commit ${CONFIG_FILE}"
+        return 1
+    fi
+
     log_info "Created UCI config at ${CONFIG_FILE}"
 }
 
@@ -966,261 +1009,7 @@ EOF
 # ============================================================================
 
 install_init_script() {
-    cat > "$INIT_SCRIPT" << 'INITEOF'
-#!/bin/sh /etc/rc.common
-
-# OpenWRT Tailscale Init Script
-# Managed by tailscale-manager
-
-USE_PROCD=1
-START=99
-STOP=1
-
-LOG_TAG="tailscale"
-LOG_FILE="/var/log/tailscale.log"
-
-log_msg() {
-    local level="$1"
-    local msg="$2"
-    local ts=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$ts] [$level] $msg" >> "$LOG_FILE"
-    logger -t "$LOG_TAG" -p "daemon.${level}" "$msg"
-}
-
-# Load UCI config
-load_config() {
-    config_load tailscale
-    config_get ENABLED settings enabled 1
-    config_get PORT settings port 41641
-    config_get STORAGE_MODE settings storage_mode persistent
-    config_get BIN_DIR settings bin_dir /opt/tailscale
-    config_get STATE_FILE settings state_file /etc/config/tailscaled.state
-    config_get STATE_DIR settings statedir /etc/tailscale
-    config_get FW_MODE settings fw_mode nftables
-    config_get DOWNLOAD_SOURCE settings download_source official
-    config_get TUN_MODE settings tun_mode auto
-    config_get LOG_STDOUT settings log_stdout 1
-    config_get LOG_STDERR settings log_stderr 1
-}
-
-# Check if tailscaled binary exists (supports both official and small/combined binaries)
-check_binary() {
-    # Check for combined binary (small version) or separate binary (official version)
-    [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
-}
-
-ensure_tun_device_node() {
-    if [ ! -e "/dev/net/tun" ]; then
-        mkdir -p /dev/net
-        mknod /dev/net/tun c 10 200 2>/dev/null || true
-        chmod 666 /dev/net/tun 2>/dev/null || true
-    fi
-}
-
-kernel_has_builtin_tun() {
-    if [ -r /proc/config.gz ]; then
-        zcat /proc/config.gz 2>/dev/null | grep -q '^CONFIG_TUN=y$'
-    elif [ -r "/boot/config-$(uname -r)" ]; then
-        grep -q '^CONFIG_TUN=y$' "/boot/config-$(uname -r)" 2>/dev/null
-    else
-        return 1
-    fi
-}
-
-kernel_tun_available() {
-    if [ -d "/sys/module/tun" ]; then
-        ensure_tun_device_node
-        [ -e "/dev/net/tun" ]
-        return $?
-    fi
-
-    modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
-    if [ -d "/sys/module/tun" ]; then
-        ensure_tun_device_node
-        [ -e "/dev/net/tun" ]
-        return $?
-    fi
-
-    if kernel_has_builtin_tun; then
-        ensure_tun_device_node
-        [ -e "/dev/net/tun" ]
-        return $?
-    fi
-
-    return 1
-}
-
-get_effective_tun_mode() {
-    local requested_mode="${1:-auto}"
-
-    case "$requested_mode" in
-        userspace)
-            echo "userspace"
-            return 0
-            ;;
-        kernel)
-            kernel_tun_available && echo "kernel"
-            return $?
-            ;;
-        auto|"")
-            if kernel_tun_available; then
-                echo "kernel"
-            else
-                echo "userspace"
-            fi
-            return 0
-            ;;
-        *)
-            if kernel_tun_available; then
-                echo "kernel"
-            else
-                echo "userspace"
-            fi
-            return 0
-            ;;
-    esac
-}
-
-# Download binaries for RAM mode
-download_if_needed() {
-    if [ "$STORAGE_MODE" = "ram" ] && ! check_binary; then
-        log_msg "info" "RAM mode: downloading binaries..."
-        if [ -x /usr/bin/tailscale-manager ]; then
-            /usr/bin/tailscale-manager download-only
-        else
-            log_msg "error" "tailscale-manager not found, cannot download"
-            return 1
-        fi
-    fi
-}
-
-# Wait for network with retries
-wait_for_network() {
-    local max_retries=10
-    local retry_interval=30
-    local retry=0
-    
-    # First immediate attempt
-    if ping -c 1 -W 3 223.5.5.5 >/dev/null 2>&1 || \
-       ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
-        log_msg "info" "Network is reachable"
-        return 0
-    fi
-    
-    log_msg "warn" "Network not immediately available, starting retry loop..."
-    
-    while [ $retry -lt $max_retries ]; do
-        retry=$((retry + 1))
-        log_msg "info" "Network check retry ${retry}/${max_retries}, waiting ${retry_interval}s..."
-        sleep $retry_interval
-        
-        if ping -c 1 -W 3 223.5.5.5 >/dev/null 2>&1 || \
-           ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
-            log_msg "info" "Network is now reachable (retry ${retry})"
-            return 0
-        fi
-    done
-    
-    log_msg "error" "Network not reachable after ${max_retries} retries (${retry_interval}s each)"
-    return 1
-}
-
-start_service() {
-    load_config
-    
-    [ "$ENABLED" = "0" ] && {
-        log_msg "info" "Tailscale is disabled in config"
-        return 0
-    }
-    
-    log_msg "info" "Starting Tailscale service..."
-    
-    # Ensure state directory exists
-    mkdir -p "$STATE_DIR"
-    
-    # For RAM mode, download binaries if needed
-    if [ "$STORAGE_MODE" = "ram" ]; then
-        download_if_needed || {
-            log_msg "error" "Failed to download binaries for RAM mode"
-            return 1
-        }
-    fi
-    
-    # Check binary exists
-    if ! check_binary; then
-        log_msg "error" "tailscaled binary not found at ${BIN_DIR}/tailscaled"
-        log_msg "info" "Please run: tailscale-manager install"
-        return 1
-    fi
-    
-    # Wait for network (with retry logic)
-    wait_for_network || {
-        log_msg "warn" "Continuing despite network issues - tailscaled may retry internally"
-    }
-    
-    # Determine effective TUN mode
-    local use_userspace=0
-    local effective_tun_mode=""
-    effective_tun_mode="$(get_effective_tun_mode "$TUN_MODE")" || effective_tun_mode=""
-
-    if [ -z "$effective_tun_mode" ]; then
-        log_msg "error" "/dev/net/tun is not available and kernel mode is explicitly configured"
-        log_msg "info" "Set tun_mode to 'userspace' or 'auto' to allow fallback"
-        return 1
-    fi
-
-    if [ "$effective_tun_mode" = "userspace" ]; then
-        use_userspace=1
-        if [ "$TUN_MODE" = "userspace" ]; then
-            log_msg "info" "Using userspace networking mode (configured)"
-        else
-            log_msg "warn" "TUN not available, falling back to userspace networking"
-        fi
-        log_msg "info" "Userspace subnet routing supports TCP/UDP and ping, but not all protocols"
-    fi
-    
-    # Cleanup before start
-    "${BIN_DIR}/tailscaled" --cleanup 2>/dev/null || true
-    
-    # Start with procd
-    procd_open_instance tailscale
-    procd_set_param command "${BIN_DIR}/tailscaled"
-    procd_set_param env TS_DEBUG_FIREWALL_MODE="$FW_MODE"
-    procd_append_param command --port "$PORT"
-    procd_append_param command --state "$STATE_FILE"
-    procd_append_param command --statedir "$STATE_DIR"
-    if [ "$use_userspace" = "1" ]; then
-        procd_append_param command --tun "userspace-networking"
-    fi
-    procd_set_param respawn 3600 5 5
-    procd_set_param stdout "$LOG_STDOUT"
-    procd_set_param stderr "$LOG_STDERR"
-    procd_close_instance
-    
-    if [ "$use_userspace" = "1" ]; then
-        log_msg "info" "Tailscale service started (userspace networking mode)"
-    else
-        log_msg "info" "Tailscale service started"
-    fi
-}
-
-stop_service() {
-    load_config
-    log_msg "info" "Stopping Tailscale service..."
-    
-    if check_binary; then
-        "${BIN_DIR}/tailscaled" --cleanup 2>/dev/null || true
-    fi
-    
-    log_msg "info" "Tailscale service stopped"
-}
-
-service_triggers() {
-    procd_add_reload_trigger "tailscale"
-}
-INITEOF
-
-    chmod +x "$INIT_SCRIPT"
+    download_repo_file "$INIT_SCRIPT_URL" "$INIT_SCRIPT" 755 || return 1
     log_info "Installed init script at ${INIT_SCRIPT}"
 }
 
@@ -1229,92 +1018,19 @@ INITEOF
 # ============================================================================
 
 install_update_script() {
-    cat > "$CRON_SCRIPT" << 'CRONEOF'
-#!/bin/sh
-# Tailscale auto-update script
-# Called by cron
-
-LOG_TAG="tailscale-update"
-LOG_FILE="/var/log/tailscale-update.log"
-
-log_msg() {
-    local ts=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$ts] $1" >> "$LOG_FILE"
-    logger -t "$LOG_TAG" "$1"
+    download_repo_file "$UPDATE_SCRIPT_URL" "$CRON_SCRIPT" 755 || return 1
+    log_info "Installed update script at ${CRON_SCRIPT}"
 }
 
-# API URLs
-OFFICIAL_API_URL="https://pkgs.tailscale.com/stable/?mode=json"
-SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest"
+sync_managed_scripts() {
+    install_init_script || return 1
+    install_update_script || return 1
 
-# Source config
-. /lib/functions.sh
-config_load tailscale
-config_get BIN_DIR settings bin_dir /opt/tailscale
-config_get DOWNLOAD_SOURCE settings download_source official
-config_get AUTO_UPDATE settings auto_update ""
-
-if [ -z "$AUTO_UPDATE" ]; then
-    # Backward compatibility: old installs didn't have auto_update
-    # Assume enabled to preserve previous cron behavior
-    AUTO_UPDATE="1"
-fi
-
-VERSION_FILE="${BIN_DIR}/version"
-SOURCE_FILE="${BIN_DIR}/source"
-
-if [ "$AUTO_UPDATE" = "0" ]; then
-    log_msg "Auto-update disabled in config, skipping"
-    exit 0
-fi
-
-if [ ! -f "$VERSION_FILE" ]; then
-    log_msg "No version file found, skipping update check"
-    exit 0
-fi
-
-CURRENT_VERSION=$(cat "$VERSION_FILE")
-
-# Detect source type from installed binary
-if [ -f "$SOURCE_FILE" ]; then
-    DOWNLOAD_SOURCE=$(cat "$SOURCE_FILE")
-elif [ -f "${BIN_DIR}/tailscale.combined" ]; then
-    DOWNLOAD_SOURCE="small"
-fi
-
-# Fetch latest version based on source
-if [ "$DOWNLOAD_SOURCE" = "small" ]; then
-    log_msg "Checking small binary releases..."
-    LATEST_VERSION=$(wget -qO- "$SMALL_API_URL" 2>/dev/null | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
-    LATEST_VERSION="${LATEST_VERSION#v}"
-else
-    log_msg "Checking official Tailscale releases..."
-    LATEST_VERSION=$(wget -qO- "$OFFICIAL_API_URL" | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
-fi
-
-if [ -z "$LATEST_VERSION" ]; then
-    log_msg "Failed to fetch latest version"
-    exit 1
-fi
-
-if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-    log_msg "Already up to date (v${CURRENT_VERSION}, source: ${DOWNLOAD_SOURCE})"
-    exit 0
-fi
-
-log_msg "Update available: v${CURRENT_VERSION} -> v${LATEST_VERSION} (source: ${DOWNLOAD_SOURCE})"
-
-# Perform update
-if /usr/bin/tailscale-manager update --auto; then
-    log_msg "Update successful"
-else
-    log_msg "Update failed"
-    exit 1
-fi
-CRONEOF
-
-    chmod +x "$CRON_SCRIPT"
-    log_info "Installed update script at ${CRON_SCRIPT}"
+    if [ "$(get_auto_update_config)" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
 }
 
 setup_cron() {
@@ -2137,30 +1853,19 @@ version_lt() {
 }
 
 # Check for script updates
-# Pass "force" as $1 to skip rate limiting (e.g., from self-update command)
+# Return codes:
+#   0  update installed successfully (or re-execed)
+#   10 already up to date
+#   20 update check failed
+#   30 update available but skipped by user
 check_script_update() {
-    local force="${1:-}"
-    
-    # Skip if checked recently (within last hour), unless forced
-    if [ "$force" != "force" ] && [ -f "$SCRIPT_VERSION_CHECK_FILE" ]; then
-        local last_check=$(cat "$SCRIPT_VERSION_CHECK_FILE" 2>/dev/null)
-        local now=$(date +%s)
-        local diff=$((now - last_check))
-        if [ "$diff" -lt 3600 ]; then
-            return 1
-        fi
-    fi
-    
     echo "[INFO] Checking for script updates..."
     
     local remote_version
     remote_version=$(get_remote_script_version) || {
         echo "[WARN] Could not check for script updates (network error)"
-        return 1
+        return 20
     }
-    
-    # Save check time
-    date +%s > "$SCRIPT_VERSION_CHECK_FILE" 2>/dev/null || true
     
     if version_lt "$VERSION" "$remote_version"; then
         echo ""
@@ -2178,16 +1883,16 @@ check_script_update() {
             [Nn]*)
                 echo "  Update skipped."
                 echo ""
-                return 1
+                return 30
                 ;;
             *)
-                do_self_update
+                do_self_update "$@"
                 return $?
                 ;;
         esac
     fi
     
-    return 1
+    return 10
 }
 
 # Perform script self-update
@@ -2228,6 +1933,9 @@ do_self_update() {
     chmod +x "$script_path"
     
     local new_version=$(grep '^VERSION=' "$script_path" | sed 's/VERSION="\([^"]*\)"/\1/')
+    if ! "$script_path" sync-scripts; then
+        log_warn "Script updated, but failed to sync managed files"
+    fi
     log_info "Script updated to v${new_version}"
     echo ""
     echo "============================================="
@@ -2353,6 +2061,8 @@ configure_tun_mode() {
 
     log_info "TUN mode set to: $mode"
 
+    install_init_script || return 1
+
     if [ -x "$INIT_SCRIPT" ]; then
         log_info "Restarting Tailscale service..."
         "$INIT_SCRIPT" restart 2>/dev/null || {
@@ -2392,9 +2102,6 @@ do_network_mode_settings() {
 }
 
 interactive_menu() {
-    # Check for script updates on startup (ignore return value to prevent set -e exit)
-    check_script_update || true
-    
     while true; do
         show_menu
         read -r choice
@@ -2423,6 +2130,10 @@ interactive_menu() {
 main() {
     # Ensure log directory exists
     mkdir -p "$(dirname "$LOG_FILE")"
+
+    if [ "${1:-}" != "self-update" ] && [ "${1:-}" != "sync-scripts" ]; then
+        check_script_update "$@" || true
+    fi
     
     case "${1:-}" in
         install)
@@ -2444,7 +2155,21 @@ main() {
             do_setup_subnet_routing
             ;;
         self-update)
-            check_script_update force || echo "Already up to date (v${VERSION})."
+            local rc=0
+            check_script_update "$@" || rc=$?
+            case "$rc" in
+                0) ;;
+                10)
+                    echo "Already up to date (v${VERSION})."
+                    ;;
+                30) ;;
+                *)
+                    exit 1
+                    ;;
+            esac
+            ;;
+        sync-scripts)
+            sync_managed_scripts
             ;;
         auto-update)
             case "${2:-status}" in
@@ -2511,6 +2236,7 @@ main() {
             echo "  setup-firewall Configure network/firewall for subnet routing"
             echo "  download-only  Download binaries only (for RAM mode)"
             echo "  self-update    Update this script to latest version"
+            echo "  sync-scripts   Download and install managed auxiliary files"
             echo "  auto-update    Configure auto-update (on/off/status)"
             echo "  network-mode   Configure network mode (auto/kernel/userspace/status)"
             echo "  help           Show this help"
