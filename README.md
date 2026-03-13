@@ -1,6 +1,6 @@
 # OpenWrt Tailscale Installer
 
-*[English](#english) | [简体中文](#simplified-chinese)*
+*[English](#english) | [简体中文](#simplified-chinese)* | [Deploy Derper](https://github.com/fl0w1nd/derp)
 
 <a name="english"></a>
 
