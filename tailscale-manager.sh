@@ -1951,6 +1951,205 @@ do_download_only() {
 }
 
 # ============================================================================
+# Non-Interactive Install (for LuCI / automation)
+# ============================================================================
+
+# Fully non-interactive install.
+# Reads settings from UCI if config exists, otherwise uses defaults.
+# Accepts optional overrides via arguments:
+#   install-quiet [--source official|small] [--storage persistent|ram] [--auto-update 0|1]
+do_install_quiet() {
+    local opt_source="" opt_storage="" opt_auto_update=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --source)    opt_source="$2";      shift 2 ;;
+            --storage)   opt_storage="$2";     shift 2 ;;
+            --auto-update) opt_auto_update="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
+
+    # Defaults
+    local download_source="${opt_source:-small}"
+    local storage_mode="${opt_storage:-persistent}"
+    local auto_update="${opt_auto_update:-1}"
+    local bin_dir="$PERSISTENT_DIR"
+
+    # If UCI config already exists, read from it (CLI args still override)
+    if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        [ -z "$opt_source" ]      && config_get download_source settings download_source "$download_source"
+        [ -z "$opt_storage" ]     && config_get storage_mode settings storage_mode "$storage_mode"
+        [ -z "$opt_auto_update" ] && config_get auto_update settings auto_update "$auto_update"
+    fi
+
+    case "$storage_mode" in
+        ram) bin_dir="$RAM_DIR" ;;
+        *)   bin_dir="$PERSISTENT_DIR"; storage_mode="persistent" ;;
+    esac
+
+    DOWNLOAD_SOURCE="$download_source"
+
+    # Detect architecture
+    local arch
+    arch=$(get_arch) || {
+        log_error "Architecture detection failed"
+        return 1
+    }
+    log_info "Architecture: $arch"
+
+    # Auto-fallback if small doesn't support this arch
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        if ! is_arch_supported_by_small "$arch"; then
+            log_warn "Architecture '$arch' not supported by small binaries, falling back to official"
+            DOWNLOAD_SOURCE="official"
+        fi
+    fi
+
+    # Check dependencies
+    check_dependencies
+
+    # Get latest version
+    local version
+    version=$(get_latest_version) || {
+        log_error "Failed to get latest version"
+        return 1
+    }
+    log_info "Installing Tailscale v${version} (source=${DOWNLOAD_SOURCE}, storage=${storage_mode})"
+
+    # Download and install
+    download_tailscale "$version" "$arch" "$bin_dir" || {
+        log_error "Installation failed"
+        return 1
+    }
+
+    create_symlinks "$bin_dir"
+    mkdir -p "$STATE_DIR"
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+
+    install_runtime_scripts || return 1
+    install_update_script || return 1
+    if [ "$auto_update" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
+
+    "$INIT_SCRIPT" enable
+    "$INIT_SCRIPT" start
+
+    if wait_for_tailscaled 10; then
+        show_service_status
+        log_info "Installation complete"
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
+}
+
+# Non-interactive install of a specific version.
+# Usage: install-version <version> [--source official|small]
+do_install_version_quiet() {
+    local target_version="$1"
+    shift || true
+    local opt_source=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --source) opt_source="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
+
+    if [ -z "$target_version" ]; then
+        log_error "Version required. Usage: $0 install-version <version>"
+        return 1
+    fi
+
+    # Strip leading 'v' if present
+    target_version="${target_version#v}"
+
+    if ! validate_version_format "$target_version"; then
+        log_error "Invalid version format: $target_version"
+        return 1
+    fi
+
+    # Load existing config or use defaults
+    local download_source="${opt_source:-official}"
+    local storage_mode="persistent"
+    local bin_dir="$PERSISTENT_DIR"
+    local auto_update="0"
+
+    if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        [ -z "$opt_source" ] && config_get download_source settings download_source "$download_source"
+        config_get storage_mode settings storage_mode "$storage_mode"
+        config_get bin_dir settings bin_dir "$bin_dir"
+        config_get auto_update settings auto_update "$auto_update"
+    fi
+
+    case "$storage_mode" in
+        ram) bin_dir="$RAM_DIR" ;;
+        *)   bin_dir="$PERSISTENT_DIR" ;;
+    esac
+
+    DOWNLOAD_SOURCE="$download_source"
+
+    local arch
+    arch=$(get_arch) || {
+        log_error "Architecture detection failed"
+        return 1
+    }
+
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        if ! is_arch_supported_by_small "$arch"; then
+            log_warn "Architecture '$arch' not supported by small binaries, falling back to official"
+            DOWNLOAD_SOURCE="official"
+        fi
+    fi
+
+    log_info "Installing Tailscale v${target_version} (source=${DOWNLOAD_SOURCE}, arch=${arch})"
+
+    # Stop service if running
+    if [ -x "$INIT_SCRIPT" ]; then
+        "$INIT_SCRIPT" stop 2>/dev/null || true
+        sleep 1
+    fi
+
+    download_tailscale "$target_version" "$arch" "$bin_dir" || {
+        log_error "Installation of v${target_version} failed"
+        [ -x "$INIT_SCRIPT" ] && "$INIT_SCRIPT" start 2>/dev/null
+        return 1
+    }
+
+    create_symlinks "$bin_dir"
+    mkdir -p "$STATE_DIR"
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+
+    install_runtime_scripts || return 1
+    install_update_script || return 1
+    if [ "$auto_update" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
+
+    "$INIT_SCRIPT" enable
+    "$INIT_SCRIPT" start
+
+    if wait_for_tailscaled 10; then
+        show_service_status
+        log_info "Installed Tailscale v${target_version}"
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
+}
+
+# ============================================================================
 # Script Self-Update
 # ============================================================================
 
@@ -2339,9 +2538,10 @@ main() {
     # Ensure log directory exists
     mkdir -p "$(dirname "$LOG_FILE")"
 
-    if [ "${1:-}" != "self-update" ] && [ "${1:-}" != "sync-scripts" ]; then
-        check_script_update "$@" || true
-    fi
+    case "${1:-}" in
+        self-update|sync-scripts|install-quiet|install-version|list-versions) ;;
+        *) check_script_update "$@" || true ;;
+    esac
     
     case "${1:-}" in
         install)
@@ -2358,6 +2558,17 @@ main() {
             ;;
         download-only)
             do_download_only
+            ;;
+        install-quiet)
+            shift
+            do_install_quiet "$@"
+            ;;
+        install-version)
+            shift
+            do_install_version_quiet "$@"
+            ;;
+        list-versions)
+            list_small_versions "${2:-10}"
             ;;
         setup-firewall)
             do_setup_subnet_routing
@@ -2437,17 +2648,20 @@ main() {
             echo "Usage: $0 [command]"
             echo ""
             echo "Commands:"
-            echo "  install        Install Tailscale"
-            echo "  update         Update to latest version"
-            echo "  uninstall      Remove Tailscale (use --yes to skip confirmation)"
-            echo "  status         Show current status"
-            echo "  setup-firewall Configure network/firewall for subnet routing"
-            echo "  download-only  Download binaries only (for RAM mode)"
-            echo "  self-update    Update this script to latest version"
-            echo "  sync-scripts   Download and install managed auxiliary files"
-            echo "  auto-update    Configure auto-update (on/off/status)"
-            echo "  network-mode   Configure network mode (auto/kernel/userspace/status)"
-            echo "  help           Show this help"
+            echo "  install          Install Tailscale (interactive)"
+            echo "  install-quiet    Install Tailscale (non-interactive, for LuCI/automation)"
+            echo "  install-version  Install specific version (non-interactive)"
+            echo "  update           Update to latest version"
+            echo "  uninstall        Remove Tailscale (use --yes to skip confirmation)"
+            echo "  status           Show current status"
+            echo "  list-versions    List available small binary versions"
+            echo "  setup-firewall   Configure network/firewall for subnet routing"
+            echo "  download-only    Download binaries only (for RAM mode)"
+            echo "  self-update      Update this script to latest version"
+            echo "  sync-scripts     Download and install managed auxiliary files"
+            echo "  auto-update      Configure auto-update (on/off/status)"
+            echo "  network-mode     Configure network mode (auto/kernel/userspace/status)"
+            echo "  help             Show this help"
             echo ""
             echo "Environment variables:"
             echo "  TAILSCALE_SOURCE=official|small"
