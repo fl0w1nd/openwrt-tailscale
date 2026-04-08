@@ -274,6 +274,29 @@ COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
 
+# Override LuCI paths so install_luci_app writes to test dir
+LUCI_VIEW_DIR="$TEST_DIR/root/www/luci-static/resources/view/tailscale"
+LUCI_UCODE_DEST="$TEST_DIR/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+LUCI_MENU_DEST="$TEST_DIR/root/usr/share/luci/menu.d/luci-app-tailscale.json"
+LUCI_ACL_DEST="$TEST_DIR/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
+
+install_luci_app() {
+    local installed_any=0
+    for view_file in config.js status.js; do
+        if download_repo_file "\${LUCI_VIEW_BASE_URL}/\${view_file}" "\${LUCI_VIEW_DIR}/\${view_file}" 644; then
+            installed_any=1
+        else
+            return 0
+        fi
+    done
+    download_repo_file "\$LUCI_UCODE_URL" "\$LUCI_UCODE_DEST" 644 || return 0
+    download_repo_file "\$LUCI_MENU_URL" "\$LUCI_MENU_DEST" 644 || return 0
+    download_repo_file "\$LUCI_ACL_URL" "\$LUCI_ACL_DEST" 644 || return 0
+    if [ "\$installed_any" = "1" ]; then
+        echo "luci_installed" >> "\$CALLS"
+    fi
+}
+
 download_repo_file() {
     printf '%s %s\n' "\$1" "\$2" >> "$TEST_DIR/downloads.log"
     mkdir -p "\$(dirname "\$2")"
@@ -298,7 +321,10 @@ sync_managed_scripts
 [ -f "\$COMMON_LIB_PATH" ]
 [ -f "\$INIT_SCRIPT" ]
 [ -f "\$CRON_SCRIPT" ]
+[ -f "\$LUCI_VIEW_DIR/config.js" ]
+[ -f "\$LUCI_UCODE_DEST" ]
 grep -Fq 'remove' "\$CALLS"
+grep -Fq 'luci_installed' "\$CALLS"
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
