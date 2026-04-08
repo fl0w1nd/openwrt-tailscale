@@ -2,8 +2,11 @@
 # Tailscale auto-update script
 # Called by cron
 
-LOG_TAG="tailscale-update"
-LOG_FILE="/var/log/tailscale-update.log"
+LOG_TAG="${TAILSCALE_UPDATE_LOG_TAG:-tailscale-update}"
+LOG_FILE="${TAILSCALE_UPDATE_LOG_FILE:-/var/log/tailscale-update.log}"
+COMMON_LIB_PATH="${TAILSCALE_COMMON_LIB_PATH:-/usr/lib/tailscale/common.sh}"
+FUNCTIONS_LIB_PATH="${TAILSCALE_FUNCTIONS_PATH:-/lib/functions.sh}"
+TAILSCALE_MANAGER_BIN="${TAILSCALE_MANAGER_BIN:-/usr/bin/tailscale-manager}"
 
 log_msg() {
     local ts
@@ -16,9 +19,11 @@ OFFICIAL_API_URL="https://pkgs.tailscale.com/stable/?mode=json"
 SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest"
 
 # Source shared library for validate_version_format
-[ -f /usr/lib/tailscale/common.sh ] && . /usr/lib/tailscale/common.sh
+# shellcheck source=/dev/null
+[ -f "$COMMON_LIB_PATH" ] && . "$COMMON_LIB_PATH"
 
-. /lib/functions.sh
+# shellcheck source=/dev/null
+. "$FUNCTIONS_LIB_PATH"
 config_load tailscale
 config_get BIN_DIR settings bin_dir /opt/tailscale
 config_get DOWNLOAD_SOURCE settings download_source official
@@ -78,7 +83,7 @@ fi
 
 log_msg "Update available: v${CURRENT_VERSION} -> v${LATEST_VERSION} (source: ${DOWNLOAD_SOURCE})"
 
-if /usr/bin/tailscale-manager update --auto; then
+if "$TAILSCALE_MANAGER_BIN" update --auto; then
     log_msg "Update successful"
 else
     log_msg "Update failed"

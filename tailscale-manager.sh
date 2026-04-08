@@ -54,7 +54,8 @@ COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
 log_file() {
     local level="$1"
     local msg="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] [$level] $msg" >> "$LOG_FILE"
 }
 
@@ -114,11 +115,14 @@ download_repo_file() {
 # Inline fallback below is used during bootstrap (before first install).
 
 if [ -f "$COMMON_LIB_PATH" ]; then
+    # shellcheck source=/dev/null
     . "$COMMON_LIB_PATH"
 else
     get_arch() {
-        local arch=$(uname -m)
+        local arch
         local result=""
+
+        arch=$(uname -m)
 
         case "$arch" in
             x86_64)
@@ -147,7 +151,7 @@ else
                     result="mipsle"
                 elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
                     result="mips"
-                elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+                elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
                     result="mipsle"
                 else
                     result="mips"
@@ -158,7 +162,7 @@ else
                     result="mips64le"
                 elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
                     result="mips64"
-                elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+                elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
                     result="mips64le"
                 else
                     result="mips64"
@@ -436,8 +440,11 @@ check_dependencies() {
             log_info "Running opkg update..."
             opkg update >/dev/null 2>&1 || log_warn "opkg update failed, trying install anyway"
         fi
-        
-        if opkg install $deps_to_install; then
+
+        # Split package names into argv for opkg.
+        # shellcheck disable=SC2086
+        set -- $deps_to_install
+        if opkg install "$@"; then
             log_info "Dependencies installed successfully"
             
             # Load tun module immediately if we just installed it
@@ -531,8 +538,9 @@ download_tailscale_official() {
     log_info "URL: $url"
     
     # Download with compatible wget options
-    local wget_progress=$(get_wget_progress_option)
-    if ! wget $wget_progress -O "$tarball" "$url" 2>&1; then
+    local wget_progress
+    wget_progress=$(get_wget_progress_option)
+    if ! wget "$wget_progress" -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
         rm -f "$tarball"
         return 1
@@ -590,8 +598,9 @@ download_tailscale_small() {
     log_info "URL: $url"
     
     # Download with compatible wget options
-    local wget_progress=$(get_wget_progress_option)
-    if ! wget $wget_progress -O "$tarball" "$url" 2>&1; then
+    local wget_progress
+    wget_progress=$(get_wget_progress_option)
+    if ! wget "$wget_progress" -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
         rm -f "$tarball"
         return 1
@@ -716,8 +725,10 @@ check_forwarding_exists() {
     local dest="$2"
     local idx=0
     while uci -q get "firewall.@forwarding[${idx}]" >/dev/null 2>&1; do
-        local f_src=$(uci -q get "firewall.@forwarding[${idx}].src")
-        local f_dest=$(uci -q get "firewall.@forwarding[${idx}].dest")
+        local f_src
+        local f_dest
+        f_src=$(uci -q get "firewall.@forwarding[${idx}].src")
+        f_dest=$(uci -q get "firewall.@forwarding[${idx}].dest")
         if [ "$f_src" = "$src" ] && [ "$f_dest" = "$dest" ]; then
             return 0
         fi
@@ -755,7 +766,8 @@ setup_tailscale_firewall_zone() {
         return 1
     fi
     
-    local fw_backend=$(detect_firewall_backend)
+    local fw_backend
+    fw_backend=$(detect_firewall_backend)
     log_info "Detected firewall backend: ${fw_backend}"
     
     # Create zone if not exists
@@ -909,8 +921,10 @@ show_userspace_subnet_guidance() {
 
 # Interactive subnet routing setup
 do_setup_subnet_routing() {
-    local tun_mode="$(get_configured_tun_mode)"
+    local tun_mode
     local effective_tun_mode=""
+
+    tun_mode="$(get_configured_tun_mode)"
 
     effective_tun_mode="$(get_effective_tun_mode "$tun_mode")" || effective_tun_mode=""
 
@@ -1022,8 +1036,10 @@ remove_subnet_routing_config() {
     # Remove in reverse order
     idx=$((max_idx - 1))
     while [ $idx -ge 0 ]; do
-        local f_src=$(uci -q get "firewall.@forwarding[${idx}].src")
-        local f_dest=$(uci -q get "firewall.@forwarding[${idx}].dest")
+        local f_src
+        local f_dest
+        f_src=$(uci -q get "firewall.@forwarding[${idx}].src")
+        f_dest=$(uci -q get "firewall.@forwarding[${idx}].dest")
         if [ "$f_src" = "tailscale" ] || [ "$f_dest" = "tailscale" ]; then
             uci delete "firewall.@forwarding[${idx}]" 2>/dev/null || true
             log_info "Removed forwarding rule at index ${idx}"
@@ -1068,7 +1084,8 @@ create_uci_config() {
     local auto_update="${4:-0}"
     
     # Detect firewall mode based on actual system backend
-    local fw_backend=$(detect_firewall_backend)
+    local fw_backend
+    fw_backend=$(detect_firewall_backend)
     local fw_mode="nftables"
     case "$fw_backend" in
         fw3) fw_mode="iptables" ;;
@@ -1240,11 +1257,13 @@ do_install() {
     
     # Detect architecture
     echo "Detecting system architecture..."
-    local arch=$(get_arch) || {
+    local arch
+    arch=$(get_arch) || {
         log_error "Architecture detection failed"
         return 1
     }
-    local raw_arch=$(uname -m)
+    local raw_arch
+    raw_arch=$(uname -m)
     case "$raw_arch" in
         armv7l|armv7)
             if [ "$arch" = "armv5" ]; then
@@ -1312,7 +1331,8 @@ do_install() {
     # Get latest version
     echo ""
     echo "Fetching latest version..."
-    local version=$(get_latest_version) || {
+    local version
+    version=$(get_latest_version) || {
         log_error "Failed to get latest version"
         return 1
     }
@@ -1403,8 +1423,10 @@ do_install() {
     
     # Ask about subnet routing setup
     echo ""
-    local configured_tun_mode="$(get_configured_tun_mode)"
+    local configured_tun_mode
     local effective_tun_mode=""
+
+    configured_tun_mode="$(get_configured_tun_mode)"
     effective_tun_mode="$(get_effective_tun_mode "$configured_tun_mode")" || effective_tun_mode=""
 
     if [ "$effective_tun_mode" = "userspace" ]; then
@@ -1466,13 +1488,15 @@ do_update() {
     config_get storage_mode settings storage_mode persistent
     config_get DOWNLOAD_SOURCE settings download_source official
     
-    local current_version=$(get_installed_version "$bin_dir")
+    local current_version
+    current_version=$(get_installed_version "$bin_dir")
     if [ "$current_version" = "not installed" ]; then
         log_error "Tailscale is not installed. Run: tailscale-manager install"
         return 1
     fi
     
-    local latest_version=$(get_latest_version) || return 1
+    local latest_version
+    latest_version=$(get_latest_version) || return 1
     
     echo "Current version: $current_version"
     echo "Latest version:  $latest_version"
@@ -1483,7 +1507,7 @@ do_update() {
     fi
     
     if [ "$auto_mode" != "--auto" ]; then
-        printf "Update to v${latest_version}? [y/N]: "
+        printf 'Update to v%s? [y/N]: ' "$latest_version"
         read -r answer
         case "$answer" in
             [Yy]*) ;;
@@ -1491,7 +1515,8 @@ do_update() {
         esac
     fi
     
-    local arch=$(get_arch) || return 1
+    local arch
+    arch=$(get_arch) || return 1
     
     # Stop service
     log_info "Stopping Tailscale service..."
@@ -1599,8 +1624,10 @@ do_status() {
     echo ""
     
     # Check installation
-    local persistent_ver=$(get_installed_version "$PERSISTENT_DIR")
-    local ram_ver=$(get_installed_version "$RAM_DIR")
+    local persistent_ver
+    local ram_ver
+    persistent_ver=$(get_installed_version "$PERSISTENT_DIR")
+    ram_ver=$(get_installed_version "$RAM_DIR")
     local install_dir=""
     local source_type="official"
     
@@ -1634,7 +1661,8 @@ do_status() {
     
     echo ""
     echo "Auto-update:"
-    local auto_update="$(get_auto_update_config)"
+    local auto_update
+    auto_update="$(get_auto_update_config)"
     if [ "$auto_update" = "1" ]; then
         if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
             echo "  Enabled (cron active)"
@@ -1666,7 +1694,8 @@ do_status() {
     
     echo ""
     echo "Latest available version:"
-    local latest=$(get_latest_version 2>/dev/null)
+    local latest=""
+    latest=$(get_latest_version 2>/dev/null || true)
     if [ -n "$latest" ]; then
         echo "  $latest"
     else
@@ -1712,7 +1741,8 @@ do_install_specific_version() {
     echo ""
     
     # Detect system state
-    local arch=$(get_arch) || {
+    local arch
+    arch=$(get_arch) || {
         log_error "Architecture detection failed"
         return 1
     }
@@ -1754,7 +1784,8 @@ do_install_specific_version() {
     if [ "$DOWNLOAD_SOURCE" = "small" ]; then
         echo "Available versions (last 10 releases):"
         echo "Fetching list..."
-        local versions=$(list_small_versions 10)
+        local versions=""
+        versions=$(list_small_versions 10 || true)
         
         if [ -z "$versions" ]; then
             echo "Failed to fetch version list."
@@ -1810,7 +1841,7 @@ do_install_specific_version() {
     fi
     
     echo ""
-    printf "Install v${selected_version}? [y/N]: "
+    printf 'Install v%s? [y/N]: ' "$selected_version"
     read -r confirm
     
     case "$confirm" in
@@ -1898,7 +1929,8 @@ do_download_only() {
     config_get bin_dir settings bin_dir "$RAM_DIR"
     config_get DOWNLOAD_SOURCE settings download_source official
     
-    local arch=$(get_arch) || return 1
+    local arch
+    arch=$(get_arch) || return 1
     
     # For small binaries, check if architecture is supported
     if [ "$DOWNLOAD_SOURCE" = "small" ]; then
@@ -1908,7 +1940,8 @@ do_download_only() {
         fi
     fi
     
-    local version=$(get_latest_version) || return 1
+    local version
+    version=$(get_latest_version) || return 1
     
     download_tailscale "$version" "$arch" "$bin_dir"
 }
@@ -1962,13 +1995,16 @@ version_lt() {
     # Simple comparison using sort -V if available, otherwise string comparison
     if command -v sort >/dev/null 2>&1 && echo "" | sort -V >/dev/null 2>&1; then
         # sort -V is available
-        local smallest=$(printf '%s\n%s' "$v1" "$v2" | sort -V | head -n1)
+        local smallest
+        smallest=$(printf '%s\n%s' "$v1" "$v2" | sort -V | head -n1)
         [ "$smallest" = "$v1" ] && [ "$v1" != "$v2" ]
     else
         # Fallback: compare each part
         local IFS='.'
+        # shellcheck disable=SC2086
         set -- $v1
         local v1_major="${1:-0}" v1_minor="${2:-0}" v1_patch="${3:-0}"
+        # shellcheck disable=SC2086
         set -- $v2
         local v2_major="${1:-0}" v2_minor="${2:-0}" v2_patch="${3:-0}"
         
@@ -2067,7 +2103,8 @@ do_self_update() {
     
     chmod +x "$script_path"
     
-    local new_version=$(grep '^VERSION=' "$script_path" | sed 's/VERSION="\([^"]*\)"/\1/')
+    local new_version
+    new_version=$(grep '^VERSION=' "$script_path" | sed 's/VERSION="\([^"]*\)"/\1/')
     if ! "$script_path" sync-scripts; then
         log_warn "Script updated, but failed to sync managed files"
     fi
@@ -2159,7 +2196,8 @@ do_auto_update_settings() {
     echo "============================================="
     echo ""
     
-    local current="$(get_auto_update_config)"
+    local current
+    current="$(get_auto_update_config)"
     if [ "$current" = "1" ]; then
         echo "Current: Enabled"
         printf "Disable auto-update? [y/N]: "
@@ -2425,4 +2463,6 @@ main() {
     esac
 }
 
-main "$@"
+if [ "${TAILSCALE_MANAGER_SOURCE_ONLY:-0}" != "1" ]; then
+    main "$@"
+fi

@@ -3,6 +3,7 @@
 # OpenWRT Tailscale Init Script
 # Managed by openwrt-tailscale
 
+# shellcheck disable=SC2034
 USE_PROCD=1
 START=99
 STOP=1
@@ -17,7 +18,8 @@ LOG_FILE="/var/log/tailscale.log"
 log_msg() {
     local level="$1"
     local msg="$2"
-    local ts=$(date '+%Y-%m-%d %H:%M:%S')
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$ts] [$level] $msg" >> "$LOG_FILE"
     logger -t "$LOG_TAG" -p "daemon.${level}" "$msg"
 }

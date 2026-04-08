@@ -19,7 +19,7 @@ on:
     - cron: '0 19 * * *'
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.26.2'
 
 jobs:
   check-version:
@@ -271,9 +271,7 @@ jobs:
 
   release:
     needs: [check-version, build]
-    if: |
-      needs.check-version.outputs.should_build == 'true' && 
-      (github.event.inputs.create_release == 'true' || github.event.inputs.create_release == '')
+    if: needs.check-version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

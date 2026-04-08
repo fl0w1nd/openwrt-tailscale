@@ -10,8 +10,10 @@
 # ============================================================================
 
 get_arch() {
-    local arch=$(uname -m)
+    local arch
     local result=""
+
+    arch=$(uname -m)
 
     case "$arch" in
         x86_64)
@@ -42,7 +44,7 @@ get_arch() {
                 result="mipsle"
             elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
                 result="mips"
-            elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+            elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
                 result="mipsle"
             else
                 result="mips"
@@ -54,7 +56,7 @@ get_arch() {
                 result="mips64le"
             elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
                 result="mips64"
-            elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+            elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
                 result="mips64le"
             else
                 result="mips64"

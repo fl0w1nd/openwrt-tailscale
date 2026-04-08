@@ -73,6 +73,8 @@ The **Small** binary is a combined `tailscale` + `tailscaled` binary compressed 
 | amd64 | x86 routers, VMs |
 | arm64 | Raspberry Pi 4, modern ARM routers |
 | arm | Raspberry Pi 2/3, older ARM routers |
+| armv6 | Raspberry Pi 1/Zero, ARMv6 routers |
+| armv5 | ARM devices without FPU |
 | mipsle | MediaTek/Ralink routers (most common) |
 | mips | Atheros/QCA routers |
 
