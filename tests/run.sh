@@ -982,6 +982,68 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_uninstall_removes_overridden_luci_paths() {
+    new_script manager-uninstall-luci.sh <<'EOF'
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+
+LUCI_VIEW_DIR="$TEST_DIR/custom/view/tailscale"
+LUCI_UCODE_DEST="$TEST_DIR/custom/ucode/luci-tailscale.uc"
+LUCI_MENU_DEST="$TEST_DIR/custom/menu/luci-app-tailscale.json"
+LUCI_ACL_DEST="$TEST_DIR/custom/acl/luci-app-tailscale.json"
+export LUCI_VIEW_DIR LUCI_UCODE_DEST LUCI_MENU_DEST LUCI_ACL_DEST
+
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
+RAM_DIR="$TEST_DIR/root/tmp/tailscale"
+INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
+CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
+COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
+CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
+STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
+
+mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$LUCI_UCODE_DEST")" \
+         "$(dirname "$LUCI_MENU_DEST")" "$(dirname "$LUCI_ACL_DEST")" \
+         "$(dirname "$INIT_SCRIPT")" "$(dirname "$CRON_SCRIPT")" \
+         "$(dirname "$COMMON_LIB_PATH")" "$(dirname "$CONFIG_FILE")" \
+         "$PERSISTENT_DIR" "$RAM_DIR"
+
+printf 'config\n' > "$LUCI_VIEW_DIR/config.js"
+printf 'status\n' > "$LUCI_VIEW_DIR/status.js"
+printf 'ucode\n' > "$LUCI_UCODE_DEST"
+printf 'menu\n' > "$LUCI_MENU_DEST"
+printf 'acl\n' > "$LUCI_ACL_DEST"
+printf 'init\n' > "$INIT_SCRIPT"
+printf 'cron\n' > "$CRON_SCRIPT"
+printf 'common\n' > "$COMMON_LIB_PATH"
+printf 'config\n' > "$CONFIG_FILE"
+
+remove_cron() {
+    return 0
+}
+
+remove_symlinks() {
+    return 0
+}
+
+remove_subnet_routing_config() {
+    return 0
+}
+
+do_uninstall --yes >/dev/null
+
+[ ! -e "$LUCI_VIEW_DIR" ]
+[ ! -e "$LUCI_UCODE_DEST" ]
+[ ! -e "$LUCI_MENU_DEST" ]
+[ ! -e "$LUCI_ACL_DEST" ]
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
 run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
 run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
@@ -1003,5 +1065,6 @@ run_test 'check_script_update skips when stdin is not a tty' test_check_script_u
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
 run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
 run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
+run_test 'uninstall removes overridden LuCI paths' test_uninstall_removes_overridden_luci_paths
 
 printf '1..%s\n' "$TEST_INDEX"

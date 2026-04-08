@@ -1712,10 +1712,10 @@ do_uninstall() {
     rm -f /usr/bin/tailscale_update_check  # Old script
     
     # Remove LuCI app files
-    rm -rf /www/luci-static/resources/view/tailscale
-    rm -f /usr/share/rpcd/ucode/luci-tailscale.uc
-    rm -f /usr/share/luci/menu.d/luci-app-tailscale.json
-    rm -f /usr/share/rpcd/acl.d/luci-app-tailscale.json
+    rm -rf "$LUCI_VIEW_DIR"
+    rm -f "$LUCI_UCODE_DEST"
+    rm -f "$LUCI_MENU_DEST"
+    rm -f "$LUCI_ACL_DEST"
     if [ -x /etc/init.d/rpcd ]; then
         /etc/init.d/rpcd reload 2>/dev/null || true
     fi
