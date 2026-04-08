@@ -1549,27 +1549,31 @@ do_update() {
 # ============================================================================
 
 do_uninstall() {
-    echo ""
-    echo "============================================="
-    echo "  Tailscale Uninstallation"
-    echo "============================================="
-    echo ""
-    echo "This will remove:"
-    echo "  - Tailscale binaries"
-    echo "  - Init scripts"
-    echo "  - Configuration files"
-    echo "  - Cron jobs"
-    echo ""
-    echo "Note: Tailscale state (/etc/config/tailscaled.state) will be preserved."
-    echo "      Delete it manually if you want a clean uninstall."
-    echo ""
-    printf "Are you sure you want to uninstall? [y/N]: "
-    read -r answer
-    
-    case "$answer" in
-        [Yy]*) ;;
-        *) echo "Uninstall cancelled."; return 0 ;;
-    esac
+    local force="${1:-}"
+
+    if [ "$force" != "--yes" ]; then
+        echo ""
+        echo "============================================="
+        echo "  Tailscale Uninstallation"
+        echo "============================================="
+        echo ""
+        echo "This will remove:"
+        echo "  - Tailscale binaries"
+        echo "  - Init scripts"
+        echo "  - Configuration files"
+        echo "  - Cron jobs"
+        echo ""
+        echo "Note: Tailscale state (/etc/config/tailscaled.state) will be preserved."
+        echo "      Delete it manually if you want a clean uninstall."
+        echo ""
+        printf "Are you sure you want to uninstall? [y/N]: "
+        read -r answer
+        
+        case "$answer" in
+            [Yy]*) ;;
+            *) echo "Uninstall cancelled."; return 0 ;;
+        esac
+    fi
     
     log_info "Uninstalling Tailscale..."
     
@@ -2347,7 +2351,7 @@ main() {
             do_update "$2"
             ;;
         uninstall)
-            do_uninstall
+            do_uninstall "$2"
             ;;
         status)
             do_status
@@ -2435,7 +2439,7 @@ main() {
             echo "Commands:"
             echo "  install        Install Tailscale"
             echo "  update         Update to latest version"
-            echo "  uninstall      Remove Tailscale"
+            echo "  uninstall      Remove Tailscale (use --yes to skip confirmation)"
             echo "  status         Show current status"
             echo "  setup-firewall Configure network/firewall for subnet routing"
             echo "  download-only  Download binaries only (for RAM mode)"
