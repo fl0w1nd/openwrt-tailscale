@@ -28,8 +28,8 @@ function read_first_line(path) {
 
 function find_bin_dir() {
 	for (let d in BIN_DIRS) {
-		if (stat(d + '/version'))
-			return d;
+		if (stat(BIN_DIRS[d] + '/version'))
+			return BIN_DIRS[d];
 	}
 	return null;
 }
@@ -240,7 +240,7 @@ const methods = {
 			let installed_source = get_installed_source(bin_dir);
 
 			if (installed_source == 'official') {
-				let r = shell("wget -qO- 'https://pkgs.tailscale.com/stable/?mode=json' 2>/dev/null");
+				let r = shell("wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/?mode=json' 2>/dev/null");
 				if (r.code == 0 && r.stdout) {
 					let data = json(r.stdout);
 					if (data && data.TarballsVersion)
@@ -252,7 +252,7 @@ const methods = {
 			// small source or not yet installed — query GitHub only,
 			// matching tailscale-manager get_small_latest_version() which
 			// never falls back to official.
-			let r = shell("wget -qO- 'https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest' 2>/dev/null");
+			let r = shell("wget -T 5 -qO- 'https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest' 2>/dev/null");
 			if (r.code == 0 && r.stdout) {
 				let data = json(r.stdout);
 				if (data && data.tag_name) {

@@ -472,10 +472,19 @@ test_luci_ucode_source_detection_fallbacks() {
     ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
 
     assert_file_contains "$ucode_file" "function get_installed_source(bin_dir)" 'LuCI ucode should define installed source helper'
+    assert_file_contains "$ucode_file" "stat(BIN_DIRS[d] + '/version')" 'LuCI ucode should check version files using BIN_DIRS values'
+    assert_file_contains "$ucode_file" "return BIN_DIRS[d];" 'LuCI ucode should return the matched BIN_DIRS path'
     assert_file_contains "$ucode_file" "stat(bin_dir + '/tailscale.combined')" 'LuCI ucode should detect small installs from combined binary'
     assert_file_contains "$ucode_file" "uci -q get tailscale.settings.download_source" 'LuCI ucode should fall back to configured download source'
     assert_file_contains "$ucode_file" "result.source_type = get_installed_source(bin_dir);" 'LuCI status should use installed source helper'
     assert_file_contains "$ucode_file" "let installed_source = get_installed_source(bin_dir);" 'LuCI latest-version lookup should use installed source helper'
+}
+
+test_luci_ucode_version_checks_use_timeouts() {
+    ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+
+    assert_file_contains "$ucode_file" "wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/?mode=json'" 'Official latest-version check should set a wget timeout'
+    assert_file_contains "$ucode_file" "wget -T 5 -qO- 'https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest'" 'Small latest-version check should set a wget timeout'
 }
 
 test_luci_urls_match_repo_paths() {
@@ -683,6 +692,7 @@ run_test 'tailscale-update rejects malformed upstream versions' test_update_scri
 run_test 'LuCI source files exist in repo' test_luci_source_files_exist_in_repo
 run_test 'LuCI JSON files are valid' test_luci_json_files_valid
 run_test 'LuCI ucode detects source type fallbacks' test_luci_ucode_source_detection_fallbacks
+run_test 'LuCI ucode version checks use network timeouts' test_luci_ucode_version_checks_use_timeouts
 run_test 'LuCI URLs in manager match repo file paths' test_luci_urls_match_repo_paths
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
