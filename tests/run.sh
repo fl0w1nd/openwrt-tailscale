@@ -445,6 +445,234 @@ EOF
     assert_file_contains "$TEST_DIR/update.log" 'Invalid version format from API: 1.76beta' 'update script should log malformed versions'
 }
 
+test_luci_source_files_exist_in_repo() {
+    for f in \
+        luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js \
+        luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js \
+        luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc \
+        luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
+        luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json; do
+        assert_file_exists "$REPO_ROOT/$f" "LuCI source file should exist: $f"
+    done
+}
+
+test_luci_json_files_valid() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        return 0
+    fi
+
+    for f in \
+        luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
+        luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json; do
+        python3 -m json.tool "$REPO_ROOT/$f" >/dev/null 2>&1 || fail "Invalid JSON: $f"
+    done
+}
+
+test_luci_ucode_source_detection_fallbacks() {
+    ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+
+    assert_file_contains "$ucode_file" "function get_installed_source(bin_dir)" 'LuCI ucode should define installed source helper'
+    assert_file_contains "$ucode_file" "stat(bin_dir + '/tailscale.combined')" 'LuCI ucode should detect small installs from combined binary'
+    assert_file_contains "$ucode_file" "uci -q get tailscale.settings.download_source" 'LuCI ucode should fall back to configured download source'
+    assert_file_contains "$ucode_file" "result.source_type = get_installed_source(bin_dir);" 'LuCI status should use installed source helper'
+    assert_file_contains "$ucode_file" "let installed_source = get_installed_source(bin_dir);" 'LuCI latest-version lookup should use installed source helper'
+}
+
+test_luci_urls_match_repo_paths() {
+    new_script manager-luci-urls.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+base="\$RAW_BASE_URL"
+
+check_url_file() {
+    local url="\$1"
+    local rel="\${url#\$base/}"
+    [ -f "$REPO_ROOT/\$rel" ] || { echo "MISSING: \$rel"; exit 1; }
+}
+
+check_url_file "\$LUCI_UCODE_URL"
+check_url_file "\$LUCI_MENU_URL"
+check_url_file "\$LUCI_ACL_URL"
+check_url_file "\${LUCI_VIEW_BASE_URL}/config.js"
+check_url_file "\${LUCI_VIEW_BASE_URL}/status.js"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_check_script_update_skips_non_interactive() {
+    write_stub wget <<'EOF'
+#!/bin/sh
+echo "wget should not be called in non-interactive context" >&2
+exit 99
+EOF
+
+    new_script manager-selfupdate-guard.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+export PATH="$STUB_BIN:$ORIGINAL_PATH"
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+# In test context stdin is a pipe, not a tty — check_script_update
+# must return 10 immediately without calling wget.
+rc=0
+check_script_update || rc=\$?
+[ "\$rc" -eq 10 ]
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_luci_app_reports_partial_failure() {
+    new_script manager-luci-partial.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+download_call=0
+download_repo_file() {
+    download_call=\$((download_call + 1))
+    # Succeed for first two files (config.js probe + status.js), fail on third (ucode)
+    [ "\$download_call" -le 2 ]
+}
+
+rc=0
+install_luci_app || rc=\$?
+[ "\$rc" -eq 1 ] || { echo "expected rc=1 for partial failure, got \$rc"; exit 1; }
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_luci_app_deploy_rollback_first_install() {
+    new_script manager-luci-rollback.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+
+# Point LuCI destinations into the test directory
+LUCI_VIEW_DIR="$TEST_DIR/luci/view"
+LUCI_UCODE_DEST="$TEST_DIR/luci/ucode/luci-tailscale.uc"
+LUCI_MENU_DEST="$TEST_DIR/luci/menu/luci-app-tailscale.json"
+LUCI_ACL_DEST="$TEST_DIR/luci/acl/luci-app-tailscale.json"
+export LUCI_VIEW_DIR LUCI_UCODE_DEST LUCI_MENU_DEST LUCI_ACL_DEST
+
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+# download_repo_file: create real staging files on disk
+download_repo_file() {
+    mkdir -p "\$(dirname "\$2")"
+    printf 'content %s\n' "\$1" > "\$2"
+    chmod "\${3:-644}" "\$2" 2>/dev/null || true
+}
+
+# Wrap mv so the 3rd deploy-phase rename fails (simulates I/O error).
+# Deploy calls mv -f five times; rollback also calls mv -f but must succeed.
+_real_mv=\$(command -v mv)
+_mv_count=0
+_mv_fail_at=3
+mv() {
+    _mv_count=\$((_mv_count + 1))
+    if [ "\$_mv_count" -eq "\$_mv_fail_at" ]; then
+        return 1
+    fi
+    "\$_real_mv" "\$@"
+}
+
+# --- First-install scenario: no prior files exist ---
+rc=0
+install_luci_app || rc=\$?
+
+[ "\$rc" -eq 1 ] || { echo "expected rc=1, got \$rc"; exit 1; }
+
+# Files 1-2 were deployed then should have been rolled back (removed,
+# since no prior version existed).
+[ ! -e "\$LUCI_VIEW_DIR/config.js" ] || { echo "config.js should not exist after rollback"; exit 1; }
+[ ! -e "\$LUCI_VIEW_DIR/status.js" ] || { echo "status.js should not exist after rollback"; exit 1; }
+
+# File 3 (ucode) failed to deploy, should not exist
+[ ! -e "\$LUCI_UCODE_DEST" ] || { echo "ucode dest should not exist"; exit 1; }
+
+# Staging and backup artifacts should be cleaned up
+for suf in ".staging.\$\$" ".bak.\$\$"; do
+    for f in "\$LUCI_VIEW_DIR/config.js" "\$LUCI_VIEW_DIR/status.js" \
+             "\$LUCI_UCODE_DEST" "\$LUCI_MENU_DEST" "\$LUCI_ACL_DEST"; do
+        [ ! -e "\${f}\${suf}" ] || { echo "leftover artifact: \${f}\${suf}"; exit 1; }
+    done
+done
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_luci_app_deploy_rollback_upgrade() {
+    new_script manager-luci-rollback-upgrade.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+
+LUCI_VIEW_DIR="$TEST_DIR/luci/view"
+LUCI_UCODE_DEST="$TEST_DIR/luci/ucode/luci-tailscale.uc"
+LUCI_MENU_DEST="$TEST_DIR/luci/menu/luci-app-tailscale.json"
+LUCI_ACL_DEST="$TEST_DIR/luci/acl/luci-app-tailscale.json"
+export LUCI_VIEW_DIR LUCI_UCODE_DEST LUCI_MENU_DEST LUCI_ACL_DEST
+
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+download_repo_file() {
+    mkdir -p "\$(dirname "\$2")"
+    printf 'new-%s\n' "\$1" > "\$2"
+    chmod "\${3:-644}" "\$2" 2>/dev/null || true
+}
+
+# Pre-populate "old" live files to simulate an upgrade
+mkdir -p "\$LUCI_VIEW_DIR" "\$(dirname "\$LUCI_UCODE_DEST")" \
+         "\$(dirname "\$LUCI_MENU_DEST")" "\$(dirname "\$LUCI_ACL_DEST")"
+printf 'old-config\n' > "\$LUCI_VIEW_DIR/config.js"
+printf 'old-status\n' > "\$LUCI_VIEW_DIR/status.js"
+printf 'old-ucode\n'  > "\$LUCI_UCODE_DEST"
+printf 'old-menu\n'   > "\$LUCI_MENU_DEST"
+printf 'old-acl\n'    > "\$LUCI_ACL_DEST"
+
+_real_mv=\$(command -v mv)
+_mv_count=0
+_mv_fail_at=3
+mv() {
+    _mv_count=\$((_mv_count + 1))
+    if [ "\$_mv_count" -eq "\$_mv_fail_at" ]; then
+        return 1
+    fi
+    "\$_real_mv" "\$@"
+}
+
+rc=0
+install_luci_app || rc=\$?
+
+[ "\$rc" -eq 1 ] || { echo "expected rc=1, got \$rc"; exit 1; }
+
+# Files 1-2 were deployed then rolled back — should be restored to old content
+grep -Fq 'old-config' "\$LUCI_VIEW_DIR/config.js" || { echo "config.js not restored"; exit 1; }
+grep -Fq 'old-status' "\$LUCI_VIEW_DIR/status.js" || { echo "status.js not restored"; exit 1; }
+
+# Files 3-5 were never replaced — should still be old
+grep -Fq 'old-ucode' "\$LUCI_UCODE_DEST" || { echo "ucode not preserved"; exit 1; }
+grep -Fq 'old-menu'  "\$LUCI_MENU_DEST"  || { echo "menu not preserved"; exit 1; }
+grep -Fq 'old-acl'   "\$LUCI_ACL_DEST"   || { echo "acl not preserved"; exit 1; }
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
 run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
 run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
@@ -452,5 +680,13 @@ run_test 'version_lt handles sort and fallback comparisons' test_version_lt_cove
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
 run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts
 run_test 'tailscale-update rejects malformed upstream versions' test_update_script_rejects_invalid_version
+run_test 'LuCI source files exist in repo' test_luci_source_files_exist_in_repo
+run_test 'LuCI JSON files are valid' test_luci_json_files_valid
+run_test 'LuCI ucode detects source type fallbacks' test_luci_ucode_source_detection_fallbacks
+run_test 'LuCI URLs in manager match repo file paths' test_luci_urls_match_repo_paths
+run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
+run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
+run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
+run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
 
 printf '1..%s\n' "$TEST_INDEX"

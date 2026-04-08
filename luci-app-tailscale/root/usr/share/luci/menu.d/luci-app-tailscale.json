@@ -1,0 +1,35 @@
+{
+	"admin/services/tailscale": {
+		"title": "Tailscale",
+		"order": 60,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-tailscale"
+			]
+		}
+	},
+	"admin/services/tailscale/status": {
+		"title": "Status",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "tailscale/status"
+		}
+	},
+	"admin/services/tailscale/config": {
+		"title": "Configuration",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "tailscale/config"
+		},
+		"depends": {
+			"uci": {
+				"tailscale": true
+			}
+		}
+	}
+}

@@ -53,6 +53,12 @@ LUCI_VIEW_BASE_URL="${RAW_BASE_URL}/luci-app-tailscale/htdocs/luci-static/resour
 LUCI_UCODE_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
 LUCI_MENU_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
 LUCI_ACL_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
+
+# LuCI app destination paths (overridable for testing)
+LUCI_VIEW_DIR="${LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}"
+LUCI_UCODE_DEST="${LUCI_UCODE_DEST:-/usr/share/rpcd/ucode/luci-tailscale.uc}"
+LUCI_MENU_DEST="${LUCI_MENU_DEST:-/usr/share/luci/menu.d/luci-app-tailscale.json}"
+LUCI_ACL_DEST="${LUCI_ACL_DEST:-/usr/share/rpcd/acl.d/luci-app-tailscale.json}"
 # ============================================================================
 # Logging Functions
 # ============================================================================
@@ -1157,42 +1163,110 @@ install_runtime_scripts() {
 }
 
 install_luci_app() {
-    local luci_view_dir="/www/luci-static/resources/view/tailscale"
-    local installed_any=0
+    local f1="${LUCI_VIEW_DIR}/config.js"
+    local f2="${LUCI_VIEW_DIR}/status.js"
+    local f3="$LUCI_UCODE_DEST"
+    local f4="$LUCI_MENU_DEST"
+    local f5="$LUCI_ACL_DEST"
+    local stag=".staging.$$"
+    local bak=".bak.$$"
+    local f
 
-    # Download view files
-    for view_file in config.js status.js; do
-        if download_repo_file "${LUCI_VIEW_BASE_URL}/${view_file}" "${luci_view_dir}/${view_file}" 644; then
-            installed_any=1
-        else
-            log_warn "Failed to download LuCI view: ${view_file} (LuCI app may not be available yet)"
-            return 0
+    mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$f3")" "$(dirname "$f4")" "$(dirname "$f5")"
+
+    # --- Download: all files go to same-dir staging --------------------
+    if ! download_repo_file "${LUCI_VIEW_BASE_URL}/config.js" "${f1}${stag}" 644; then
+        rm -f "${f1}${stag}"
+        log_warn "LuCI app not available yet, skipping"
+        return 0
+    fi
+
+    local failed=0
+    download_repo_file "${LUCI_VIEW_BASE_URL}/status.js" "${f2}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_UCODE_URL" "${f3}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_MENU_URL"  "${f4}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_ACL_URL"   "${f5}${stag}" 644 || failed=1
+
+    if [ "$failed" = "1" ]; then
+        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+        log_error "LuCI app download incomplete: some files failed to fetch"
+        return 1
+    fi
+
+    # --- Pre-flight: verify targets are writable -----------------------
+    for f in "$f1" "$f2" "$f3" "$f4" "$f5"; do
+        if [ -e "$f" ] && [ ! -w "$f" ]; then
+            rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+            log_error "LuCI pre-flight failed: ${f} is not writable"
+            return 1
         fi
     done
 
-    download_repo_file "$LUCI_UCODE_URL" "/usr/share/rpcd/ucode/luci-tailscale.uc" 644 || return 0
-    download_repo_file "$LUCI_MENU_URL" "/usr/share/luci/menu.d/luci-app-tailscale.json" 644 || return 0
-    download_repo_file "$LUCI_ACL_URL" "/usr/share/rpcd/acl.d/luci-app-tailscale.json" 644 || return 0
+    # --- Backup existing live files (abort if cp fails) ----------------
+    for f in "$f1" "$f2" "$f3" "$f4" "$f5"; do
+        if [ -f "$f" ] && ! cp -f "$f" "${f}${bak}" 2>/dev/null; then
+            rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" \
+                  "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+            log_error "LuCI backup failed for ${f}, aborting deploy"
+            return 1
+        fi
+    done
 
-    if [ "$installed_any" = "1" ]; then
-        # Reload rpcd to pick up new ACL and ucode
-        [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null || true
-        # Clear LuCI cache so new menu entries appear
-        rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
-        log_info "Installed LuCI app files"
+    # --- Deploy: rename staging → live, rollback on any failure --------
+    # Run once; break on first mv failure so $deployed stays accurate.
+    local deployed=0
+    while true; do
+        mv -f "${f1}${stag}" "$f1" || break; deployed=1
+        mv -f "${f2}${stag}" "$f2" || break; deployed=2
+        mv -f "${f3}${stag}" "$f3" || break; deployed=3
+        mv -f "${f4}${stag}" "$f4" || break; deployed=4
+        mv -f "${f5}${stag}" "$f5" || break; deployed=5
+        break
+    done
+
+    if [ "$deployed" -lt 5 ]; then
+        log_error "LuCI deploy failed at step $((deployed + 1)), rolling back"
+        # Restore from backup if it exists; otherwise remove the new file
+        # (first-install case where no prior version existed).
+        if [ "$deployed" -ge 1 ]; then
+            if [ -f "${f1}${bak}" ]; then mv -f "${f1}${bak}" "$f1" 2>/dev/null; else rm -f "$f1" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 2 ]; then
+            if [ -f "${f2}${bak}" ]; then mv -f "${f2}${bak}" "$f2" 2>/dev/null; else rm -f "$f2" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 3 ]; then
+            if [ -f "${f3}${bak}" ]; then mv -f "${f3}${bak}" "$f3" 2>/dev/null; else rm -f "$f3" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 4 ]; then
+            if [ -f "${f4}${bak}" ]; then mv -f "${f4}${bak}" "$f4" 2>/dev/null; else rm -f "$f4" 2>/dev/null; fi || true
+        fi
+        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" \
+              "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
+        return 1
     fi
+
+    # --- Success: clean backups, reload --------------------------------
+    rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
+
+    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null || true
+    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+    log_info "Installed LuCI app files"
 }
 
 sync_managed_scripts() {
+    local luci_rc=0
+
     install_runtime_scripts || return 1
     install_update_script || return 1
-    install_luci_app
+    install_luci_app || luci_rc=1
 
     if [ "$(get_auto_update_config)" = "1" ]; then
         setup_cron
     else
         remove_cron
     fi
+
+    return "$luci_rc"
 }
 
 setup_cron() {
@@ -2275,6 +2349,9 @@ version_lt() {
 #   20 update check failed
 #   30 update available but skipped by user
 check_script_update() {
+    # Non-interactive context (RPC / cron) — skip update prompt entirely
+    [ -t 0 ] || return 10
+
     echo "[INFO] Checking for script updates..."
     
     local remote_version
