@@ -45,6 +45,8 @@ SCRIPT_RAW_URL="${TAILSCALE_SCRIPT_URL:-${RAW_BASE_URL}/tailscale-manager.sh}"
 CONFIG_TEMPLATE_URL="${RAW_BASE_URL}/etc/config/tailscale"
 INIT_SCRIPT_URL="${RAW_BASE_URL}/etc/init.d/tailscale"
 UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-update"
+COMMON_LIB_URL="${RAW_BASE_URL}/usr/lib/tailscale/common.sh"
+COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
 # ============================================================================
 # Logging Functions
 # ============================================================================
@@ -105,6 +107,165 @@ download_repo_file() {
 }
 
 # ============================================================================
+# Shared Function Library
+# ============================================================================
+# Functions shared with init script and other components.
+# Canonical versions live in /usr/lib/tailscale/common.sh.
+# Inline fallback below is used during bootstrap (before first install).
+
+if [ -f "$COMMON_LIB_PATH" ]; then
+    . "$COMMON_LIB_PATH"
+else
+    get_arch() {
+        local arch=$(uname -m)
+        local result=""
+
+        case "$arch" in
+            x86_64)
+                result="amd64"
+                ;;
+            aarch64)
+                result="arm64"
+                ;;
+            armv7l|armv7)
+                if grep -q 'vfpv3\|vfpv4\|vfpd32' /proc/cpuinfo 2>/dev/null; then
+                    result="arm"
+                elif grep -q 'vfp' /proc/cpuinfo 2>/dev/null; then
+                    result="armv6"
+                else
+                    result="armv5"
+                fi
+                ;;
+            armv6l|armv6)
+                result="armv6"
+                ;;
+            armv5tel|armv5tejl|armv5l|armv5)
+                result="armv5"
+                ;;
+            mips)
+                if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                    result="mipsle"
+                elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                    result="mips"
+                elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+                    result="mipsle"
+                else
+                    result="mips"
+                fi
+                ;;
+            mips64)
+                if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                    result="mips64le"
+                elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                    result="mips64"
+                elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
+                    result="mips64le"
+                else
+                    result="mips64"
+                fi
+                ;;
+            i686|i386)
+                result="386"
+                ;;
+            riscv64)
+                result="riscv64"
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+
+        echo "$result"
+    }
+
+    ensure_tun_device_node() {
+        if [ ! -e "/dev/net/tun" ]; then
+            mkdir -p /dev/net
+            mknod /dev/net/tun c 10 200 2>/dev/null || true
+            chmod 666 /dev/net/tun 2>/dev/null || true
+        fi
+    }
+
+    kernel_has_builtin_tun() {
+        if [ -r /proc/config.gz ]; then
+            zcat /proc/config.gz 2>/dev/null | grep -q '^CONFIG_TUN=y$'
+        elif [ -r "/boot/config-$(uname -r)" ]; then
+            grep -q '^CONFIG_TUN=y$' "/boot/config-$(uname -r)" 2>/dev/null
+        else
+            return 1
+        fi
+    }
+
+    kernel_tun_available() {
+        if [ -d "/sys/module/tun" ]; then
+            ensure_tun_device_node
+            [ -e "/dev/net/tun" ]
+            return $?
+        fi
+
+        modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+        if [ -d "/sys/module/tun" ]; then
+            ensure_tun_device_node
+            [ -e "/dev/net/tun" ]
+            return $?
+        fi
+
+        if kernel_has_builtin_tun; then
+            ensure_tun_device_node
+            [ -e "/dev/net/tun" ]
+            return $?
+        fi
+
+        return 1
+    }
+
+    get_effective_tun_mode() {
+        local requested_mode="${1:-auto}"
+
+        case "$requested_mode" in
+            userspace)
+                echo "userspace"
+                return 0
+                ;;
+            kernel)
+                kernel_tun_available && echo "kernel"
+                return $?
+                ;;
+            auto|"")
+                if kernel_tun_available; then
+                    echo "kernel"
+                else
+                    echo "userspace"
+                fi
+                return 0
+                ;;
+            *)
+                if kernel_tun_available; then
+                    echo "kernel"
+                else
+                    echo "userspace"
+                fi
+                return 0
+                ;;
+        esac
+    }
+
+    validate_version_format() {
+        case "$1" in
+            ''|.*|*.|*..*|*[!0-9.]*)
+                return 1
+                ;;
+            *.*)
+                return 0
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+fi
+
+# ============================================================================
 # Architecture Detection
 # ============================================================================
 
@@ -115,74 +276,6 @@ is_arch_supported_by_small() {
         *" $arch "*) return 0 ;;
         *) return 1 ;;
     esac
-}
-
-get_arch() {
-    local arch=$(uname -m)
-    local result=""
-    
-    case "$arch" in
-        x86_64)
-            result="amd64"
-            ;;
-        aarch64)
-            result="arm64"
-            ;;
-        armv7l|armv7)
-            # Detect FPU capability from /proc/cpuinfo
-            if grep -q 'vfpv3\|vfpv4\|vfpd32' /proc/cpuinfo 2>/dev/null; then
-                result="arm"
-            elif grep -q 'vfp' /proc/cpuinfo 2>/dev/null; then
-                result="armv6"
-            else
-                result="armv5"
-            fi
-            ;;
-        armv6l|armv6)
-            result="armv6"
-            ;;
-        armv5tel|armv5tejl|armv5l|armv5)
-            result="armv5"
-            ;;
-        mips)
-            # Check endianness - try multiple methods for better compatibility
-            if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
-                result="mipsle"
-            elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
-                result="mips"
-            elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
-                result="mipsle"
-            else
-                # Default to big endian if detection fails
-                result="mips"
-            fi
-            ;;
-        mips64)
-            # Check endianness - try multiple methods for better compatibility
-            if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
-                result="mips64le"
-            elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
-                result="mips64"
-            elif echo -n I | hexdump -o 2>/dev/null | grep -q '0001'; then
-                result="mips64le"
-            else
-                # Default to big endian if detection fails
-                result="mips64"
-            fi
-            ;;
-        i686|i386)
-            result="386"
-            ;;
-        riscv64)
-            result="riscv64"
-            ;;
-        *)
-            log_error "Unsupported architecture: $arch"
-            return 1
-            ;;
-    esac
-    
-    echo "$result"
 }
 
 # ============================================================================
@@ -204,6 +297,11 @@ get_official_latest_version() {
     
     if [ -z "$version" ]; then
         log_error "Failed to parse version from Tailscale API"
+        return 1
+    fi
+
+    if ! validate_version_format "$version"; then
+        log_error "Invalid version format from Tailscale API: $version"
         return 1
     fi
     
@@ -236,6 +334,11 @@ get_small_latest_version() {
     
     if [ -z "$version" ]; then
         log_error "Failed to parse version from GitHub API"
+        return 1
+    fi
+
+    if ! validate_version_format "$version"; then
+        log_error "Invalid version format from GitHub API: $version"
         return 1
     fi
     
@@ -364,18 +467,18 @@ ensure_tun_device() {
     if [ ! -d "/sys/module/tun" ]; then
         modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
     fi
-    
-    # Create device node manually if still missing
-    if [ ! -e "/dev/net/tun" ]; then
-        mkdir -p /dev/net
-        mknod /dev/net/tun c 10 200 2>/dev/null || true
-        chmod 666 /dev/net/tun 2>/dev/null || true
-        if [ -e "/dev/net/tun" ]; then
-            log_info "Created /dev/net/tun device node"
-        else
-            log_warn "/dev/net/tun could not be created, tailscaled may fail to start"
-            log_warn "Please check if your kernel supports TUN/TAP (CONFIG_TUN)"
-        fi
+
+    # Create device node if missing (delegates to shared library function)
+    local had_tun=0
+    [ -e "/dev/net/tun" ] && had_tun=1
+
+    ensure_tun_device_node
+
+    if [ "$had_tun" = "0" ] && [ -e "/dev/net/tun" ]; then
+        log_info "Created /dev/net/tun device node"
+    elif [ ! -e "/dev/net/tun" ]; then
+        log_warn "/dev/net/tun could not be created, tailscaled may fail to start"
+        log_warn "Please check if your kernel supports TUN/TAP (CONFIG_TUN)"
     fi
 }
 
@@ -700,78 +803,6 @@ setup_tailscale_firewall_zone() {
     return 0
 }
 
-ensure_tun_device_node() {
-    if [ ! -e "/dev/net/tun" ]; then
-        mkdir -p /dev/net
-        mknod /dev/net/tun c 10 200 2>/dev/null || true
-        chmod 666 /dev/net/tun 2>/dev/null || true
-    fi
-}
-
-kernel_has_builtin_tun() {
-    if [ -r /proc/config.gz ]; then
-        zcat /proc/config.gz 2>/dev/null | grep -q '^CONFIG_TUN=y$'
-    elif [ -r "/boot/config-$(uname -r)" ]; then
-        grep -q '^CONFIG_TUN=y$' "/boot/config-$(uname -r)" 2>/dev/null
-    else
-        return 1
-    fi
-}
-
-kernel_tun_available() {
-    if [ -d "/sys/module/tun" ]; then
-        ensure_tun_device_node
-        [ -e "/dev/net/tun" ]
-        return $?
-    fi
-
-    modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
-    if [ -d "/sys/module/tun" ]; then
-        ensure_tun_device_node
-        [ -e "/dev/net/tun" ]
-        return $?
-    fi
-
-    if kernel_has_builtin_tun; then
-        ensure_tun_device_node
-        [ -e "/dev/net/tun" ]
-        return $?
-    fi
-
-    return 1
-}
-
-get_effective_tun_mode() {
-    local requested_mode="${1:-auto}"
-
-    case "$requested_mode" in
-        userspace)
-            echo "userspace"
-            return 0
-            ;;
-        kernel)
-            kernel_tun_available && echo "kernel"
-            return $?
-            ;;
-        auto|"")
-            if kernel_tun_available; then
-                echo "kernel"
-            else
-                echo "userspace"
-            fi
-            return 0
-            ;;
-        *)
-            if kernel_tun_available; then
-                echo "kernel"
-            else
-                echo "userspace"
-            fi
-            return 0
-            ;;
-    esac
-}
-
 get_configured_tun_mode() {
     local tun_mode="auto"
 
@@ -1078,6 +1109,11 @@ EOF
 # Init Script
 # ============================================================================
 
+install_common_lib() {
+    download_repo_file "$COMMON_LIB_URL" "$COMMON_LIB_PATH" 644 || return 1
+    log_info "Installed common library at ${COMMON_LIB_PATH}"
+}
+
 install_init_script() {
     download_repo_file "$INIT_SCRIPT_URL" "$INIT_SCRIPT" 755 || return 1
     log_info "Installed init script at ${INIT_SCRIPT}"
@@ -1092,8 +1128,13 @@ install_update_script() {
     log_info "Installed update script at ${CRON_SCRIPT}"
 }
 
-sync_managed_scripts() {
+install_runtime_scripts() {
+    install_common_lib || return 1
     install_init_script || return 1
+}
+
+sync_managed_scripts() {
+    install_runtime_scripts || return 1
     install_update_script || return 1
 
     if [ "$(get_auto_update_config)" = "1" ]; then
@@ -1166,7 +1207,7 @@ configure_auto_update() {
     if [ "$enable" = "1" ]; then
         log_info "Enabling auto-updates..."
         set_auto_update_config "1" || return 1
-        install_update_script
+        install_update_script || return 1
         setup_cron
     else
         log_info "Disabling auto-updates..."
@@ -1339,11 +1380,9 @@ do_install() {
     
     create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
     
-    # Install init script
-    install_init_script
-    
-    # Install update script and cron if enabled
-    install_update_script
+    # Install managed scripts
+    install_runtime_scripts || return 1
+    install_update_script || return 1
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else
@@ -1525,9 +1564,11 @@ do_uninstall() {
     rm -rf "$PERSISTENT_DIR"
     rm -rf "$RAM_DIR"
     
-    # Remove scripts
+    # Remove scripts and shared library
     rm -f "$INIT_SCRIPT"
     rm -f "$CRON_SCRIPT"
+    rm -f "$COMMON_LIB_PATH"
+    rmdir /usr/lib/tailscale 2>/dev/null || true
     rm -f /usr/bin/tailscale_update_check  # Old script
     
     # Remove config (optional, keep state)
@@ -1824,9 +1865,9 @@ do_install_specific_version() {
         # Update UCI config
         create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
         
-        # Install scripts
-        install_init_script
-        install_update_script
+        # Install managed scripts
+        install_runtime_scripts || return 1
+        install_update_script || return 1
         if [ "$auto_update" = "1" ]; then
             setup_cron
         else
@@ -2167,7 +2208,7 @@ configure_tun_mode() {
     log_info "TUN mode set to: $mode"
     [ -n "$proxy_listen" ] && log_info "Proxy listen: $proxy_listen"
 
-    install_init_script || return 1
+    install_runtime_scripts || return 1
 
     if [ -x "$INIT_SCRIPT" ]; then
         log_info "Restarting Tailscale service..."

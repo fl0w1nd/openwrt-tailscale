@@ -15,6 +15,9 @@ log_msg() {
 OFFICIAL_API_URL="https://pkgs.tailscale.com/stable/?mode=json"
 SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest"
 
+# Source shared library for validate_version_format
+[ -f /usr/lib/tailscale/common.sh ] && . /usr/lib/tailscale/common.sh
+
 . /lib/functions.sh
 config_load tailscale
 config_get BIN_DIR settings bin_dir /opt/tailscale
@@ -58,6 +61,14 @@ fi
 if [ -z "$LATEST_VERSION" ]; then
     log_msg "Failed to fetch latest version"
     exit 1
+fi
+
+# Validate version format if common.sh was loaded
+if type validate_version_format >/dev/null 2>&1; then
+    if ! validate_version_format "$LATEST_VERSION"; then
+        log_msg "Invalid version format from API: $LATEST_VERSION"
+        exit 1
+    fi
 fi
 
 if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
