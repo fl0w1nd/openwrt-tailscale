@@ -1248,7 +1248,9 @@ install_luci_app() {
     # --- Success: clean backups, reload --------------------------------
     rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
 
-    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null || true
+    if [ -x /etc/init.d/rpcd ]; then
+        /etc/init.d/rpcd reload 2>/dev/null || true
+    fi
     rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
     log_info "Installed LuCI app files"
 }
@@ -1713,7 +1715,9 @@ do_uninstall() {
     rm -f /usr/share/rpcd/ucode/luci-tailscale.uc
     rm -f /usr/share/luci/menu.d/luci-app-tailscale.json
     rm -f /usr/share/rpcd/acl.d/luci-app-tailscale.json
-    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null || true
+    if [ -x /etc/init.d/rpcd ]; then
+        /etc/init.d/rpcd reload 2>/dev/null || true
+    fi
     rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
     
     # Remove config (optional, keep state)
