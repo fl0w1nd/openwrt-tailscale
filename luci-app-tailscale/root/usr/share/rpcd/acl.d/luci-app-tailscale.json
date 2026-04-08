@@ -10,7 +10,10 @@
 					"get_status",
 					"get_install_info",
 					"get_latest_version",
-					"list_versions"
+					"get_latest_versions",
+					"get_script_update_info",
+					"list_versions",
+					"list_official_releases"
 				]
 			}
 		},
@@ -26,7 +29,8 @@
 					"do_update",
 					"do_uninstall",
 					"setup_firewall",
-					"sync_scripts"
+					"sync_scripts",
+					"upgrade_scripts"
 				]
 			}
 		}
