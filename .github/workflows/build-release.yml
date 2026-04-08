@@ -31,6 +31,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Sanity check managed scripts
+        run: REQUIRE_SHELLCHECK=1 make lint
+
       - name: Check for new Tailscale version
         id: check
         run: |

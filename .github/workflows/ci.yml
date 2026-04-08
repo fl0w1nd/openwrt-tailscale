@@ -24,6 +24,10 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [busybox, dash]
 
     steps:
       - name: Checkout
@@ -32,7 +36,14 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y busybox
+          sudo apt-get install -y busybox dash
+
+      - name: Verify shell target
+        run: |
+          case "${{ matrix.shell }}" in
+            busybox) busybox sh -c 'echo ok' ;;
+            dash) dash -c 'echo ok' ;;
+          esac
 
       - name: Run shell test suite
-        run: TEST_SHELL=busybox make test
+        run: TEST_SHELL=${{ matrix.shell }} make test

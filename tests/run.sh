@@ -6,7 +6,6 @@ REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 ORIGINAL_PATH=$PATH
 TEST_SHELL=${TEST_SHELL:-sh}
 TEST_INDEX=0
-PASS_COUNT=0
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -50,6 +49,11 @@ EOF
 }
 
 cleanup_test_env() {
+    if [ "${KEEP_TEST_DIR:-0}" = "1" ]; then
+        printf 'keeping test directory: %s\n' "$TEST_DIR" >&2
+        return 0
+    fi
+
     rm -rf "$TEST_DIR"
 }
 
@@ -92,7 +96,6 @@ run_test() {
     set -e
 
     if [ "$status" -eq 0 ]; then
-        PASS_COUNT=$((PASS_COUNT + 1))
         printf 'ok %s - %s\n' "$TEST_INDEX" "$name"
         cleanup_test_env
     else
@@ -211,6 +214,47 @@ export WGET_SCENARIO
 if get_small_latest_version >/dev/null 2>&1; then
     exit 1
 fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_version_lt_covers_sort_and_fallback() {
+    new_script manager-version-lt.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+expect_lt() {
+    version_lt "\$1" "\$2"
+}
+
+expect_not_lt() {
+    if version_lt "\$1" "\$2"; then
+        exit 1
+    fi
+}
+
+run_cases() {
+    expect_lt 1.76.0 1.76.1
+    expect_not_lt 1.76.1 1.76.1
+    expect_not_lt 1.77.0 1.76.1
+    expect_lt 1.9.0 1.10.0
+    expect_lt 1.76 1.76.1
+}
+
+run_cases
+
+cat > "$STUB_BIN/sort" <<'SCRIPT'
+#!/bin/sh
+exit 1
+SCRIPT
+chmod +x "$STUB_BIN/sort"
+hash -r 2>/dev/null || true
+
+run_cases
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -378,6 +422,7 @@ EOF
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
 run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
 run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
+run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
 run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts
 run_test 'tailscale-update rejects malformed upstream versions' test_update_script_rejects_invalid_version
