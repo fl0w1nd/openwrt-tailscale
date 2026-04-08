@@ -189,7 +189,6 @@ EOF
 #!/bin/sh
 set -eu
 TAILSCALE_MANAGER_SOURCE_ONLY=1
-export PATH="$STUB_BIN:$ORIGINAL_PATH"
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -214,6 +213,39 @@ export WGET_SCENARIO
 if get_small_latest_version >/dev/null 2>&1; then
     exit 1
 fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_list_official_versions_parsing() {
+    write_stub wget <<'EOF'
+#!/bin/sh
+cat <<'HTML'
+<html>
+<body>
+<select>
+<option value="1.82.0">1.82.0</option>
+<option value="1.81.3">1.81.3</option>
+<option value="stable">stable</option>
+<option value="1.81.3">1.81.3</option>
+<option value="1.80">1.80</option>
+</select>
+</body>
+</html>
+HTML
+EOF
+
+    new_script manager-official-versions.sh <<'EOF'
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+output=$(list_official_versions 2)
+expected=$(printf '1.82.0\n1.81.3\n')
+[ "$output" = "$expected" ]
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -804,6 +836,7 @@ test_luci_ucode_exposes_update_methods() {
     assert_file_contains "$ucode_file" "get_latest_versions:" 'LuCI ucode should expose both latest-version sources'
     assert_file_contains "$ucode_file" "get_script_update_info:" 'LuCI ucode should expose manager script update info'
     assert_file_contains "$ucode_file" "upgrade_scripts:" 'LuCI ucode should expose script upgrade action'
+    assert_file_contains "$ucode_file" "tailscale-manager list-official-versions" 'LuCI official release listing should delegate to tailscale-manager'
 }
 
 test_luci_urls_match_repo_paths() {
@@ -1070,6 +1103,7 @@ EOF
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
 run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
 run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
+run_test 'official version listing parses package page options' test_list_official_versions_parsing
 run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
 run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts

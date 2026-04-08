@@ -99,25 +99,6 @@ function get_latest_small_version() {
 	return v;
 }
 
-function fetch_official_versions(limit) {
-	let r = shell("wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/#static' 2>/dev/null | grep -o 'option value=\"[0-9.]*\"' | grep -o '[0-9.]*' | head -n " + limit);
-	if (r.code != 0 || !r.stdout)
-		return [];
-
-	let versions = [];
-	let seen = {};
-	let lines = split(trim(r.stdout), '\n');
-	for (let line in lines) {
-		let v = trim(line);
-		if (is_valid_version(v) && !seen[v]) {
-			seen[v] = true;
-			push(versions, v);
-		}
-	}
-
-	return versions;
-}
-
 function get_script_current_version() {
 	let r = shell("sed -n 's/^VERSION=\"\\([^\"]*\\)\"/\\1/p' /usr/bin/tailscale-manager | head -1");
 	if (r.code != 0 || !r.stdout)
@@ -390,8 +371,23 @@ const methods = {
 	},
 
 	list_official_releases: {
-		call: function() {
-			return { versions: fetch_official_versions(20) };
+		args: { limit: 0 },
+		call: function(req) {
+			let args = (req && req.args) ? req.args : {};
+			let limit = clamp_int(args.limit, 1, 100);
+			let r = shell('tailscale-manager list-official-versions ' + limit);
+			if (r.code != 0)
+				return { versions: [] };
+
+			let lines = split(trim(r.stdout), '\n');
+			let versions = [];
+			for (let l in lines) {
+				let v = trim(l);
+				if (length(v) > 0)
+					push(versions, v);
+			}
+
+			return { versions: versions };
 		}
 	},
 

@@ -33,6 +33,7 @@ var callListVersions = rpc.declare({
 var callListOfficialVersions = rpc.declare({
 	object: 'luci.tailscale',
 	method: 'list_official_releases',
+	params: ['limit'],
 	expect: { '': {} }
 });
 
@@ -75,7 +76,7 @@ return view.extend({
 			L.resolveDefault(callGetLatestVersions(), {}),
 			L.resolveDefault(callGetScriptUpdateInfo(), {}),
 			L.resolveDefault(callListVersions(20), {}),
-			L.resolveDefault(callListOfficialVersions(), {})
+			L.resolveDefault(callListOfficialVersions(20), {})
 		]);
 	},
 

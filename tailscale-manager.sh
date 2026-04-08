@@ -1866,6 +1866,27 @@ list_small_versions() {
     echo "$json_data" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | sed 's/^v//'
 }
 
+# List available versions from the official static packages page.
+list_official_versions() {
+    local limit="${1:-20}"
+    local html_data
+
+    html_data=$(wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/#static' 2>/dev/null) || {
+        log_error "Failed to fetch versions from Tailscale packages page"
+        return 1
+    }
+
+    echo "$html_data" \
+        | sed -n 's/.*option value="\([0-9.][0-9.]*\)".*/\1/p' \
+        | while IFS= read -r version; do
+            if validate_version_format "$version"; then
+                echo "$version"
+            fi
+        done \
+        | awk '!seen[$0]++' \
+        | sed -n "1,${limit}p"
+}
+
 # Install a specific version
 do_install_specific_version() {
     echo ""
@@ -2675,7 +2696,7 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")"
 
     case "${1:-}" in
-        self-update|sync-scripts|install-quiet|install-version|list-versions) ;;
+        self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions) ;;
         *) check_script_update "$@" || true ;;
     esac
     
@@ -2705,6 +2726,9 @@ main() {
             ;;
         list-versions)
             list_small_versions "${2:-10}"
+            ;;
+        list-official-versions)
+            list_official_versions "${2:-20}"
             ;;
         setup-firewall)
             do_setup_subnet_routing
@@ -2791,6 +2815,7 @@ main() {
             echo "  uninstall        Remove Tailscale (use --yes to skip confirmation)"
             echo "  status           Show current status"
             echo "  list-versions    List available small binary versions"
+            echo "  list-official-versions List available official package versions"
             echo "  setup-firewall   Configure network/firewall for subnet routing"
             echo "  download-only    Download binaries only (for RAM mode)"
             echo "  self-update      Update this script to latest version"
