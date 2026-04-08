@@ -47,6 +47,12 @@ INIT_SCRIPT_URL="${RAW_BASE_URL}/etc/init.d/tailscale"
 UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-update"
 COMMON_LIB_URL="${RAW_BASE_URL}/usr/lib/tailscale/common.sh"
 COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
+
+# LuCI app file URLs
+LUCI_VIEW_BASE_URL="${RAW_BASE_URL}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale"
+LUCI_UCODE_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+LUCI_MENU_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
+LUCI_ACL_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
 # ============================================================================
 # Logging Functions
 # ============================================================================
@@ -1150,9 +1156,37 @@ install_runtime_scripts() {
     install_init_script || return 1
 }
 
+install_luci_app() {
+    local luci_view_dir="/www/luci-static/resources/view/tailscale"
+    local installed_any=0
+
+    # Download view files
+    for view_file in config.js status.js; do
+        if download_repo_file "${LUCI_VIEW_BASE_URL}/${view_file}" "${luci_view_dir}/${view_file}" 644; then
+            installed_any=1
+        else
+            log_warn "Failed to download LuCI view: ${view_file} (LuCI app may not be available yet)"
+            return 0
+        fi
+    done
+
+    download_repo_file "$LUCI_UCODE_URL" "/usr/share/rpcd/ucode/luci-tailscale.uc" 644 || return 0
+    download_repo_file "$LUCI_MENU_URL" "/usr/share/luci/menu.d/luci-app-tailscale.json" 644 || return 0
+    download_repo_file "$LUCI_ACL_URL" "/usr/share/rpcd/acl.d/luci-app-tailscale.json" 644 || return 0
+
+    if [ "$installed_any" = "1" ]; then
+        # Reload rpcd to pick up new ACL and ucode
+        [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null || true
+        # Clear LuCI cache so new menu entries appear
+        rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+        log_info "Installed LuCI app files"
+    fi
+}
+
 sync_managed_scripts() {
     install_runtime_scripts || return 1
     install_update_script || return 1
+    install_luci_app
 
     if [ "$(get_auto_update_config)" = "1" ]; then
         setup_cron
@@ -1599,6 +1633,14 @@ do_uninstall() {
     rm -f "$COMMON_LIB_PATH"
     rmdir /usr/lib/tailscale 2>/dev/null || true
     rm -f /usr/bin/tailscale_update_check  # Old script
+    
+    # Remove LuCI app files
+    rm -rf /www/luci-static/resources/view/tailscale
+    rm -f /usr/share/rpcd/ucode/luci-tailscale.uc
+    rm -f /usr/share/luci/menu.d/luci-app-tailscale.json
+    rm -f /usr/share/rpcd/acl.d/luci-app-tailscale.json
+    [ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null || true
+    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
     
     # Remove config (optional, keep state)
     rm -f "$CONFIG_FILE"
