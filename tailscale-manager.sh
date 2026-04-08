@@ -47,6 +47,18 @@ INIT_SCRIPT_URL="${RAW_BASE_URL}/etc/init.d/tailscale"
 UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-update"
 COMMON_LIB_URL="${RAW_BASE_URL}/usr/lib/tailscale/common.sh"
 COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
+
+# LuCI app file URLs
+LUCI_VIEW_BASE_URL="${RAW_BASE_URL}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale"
+LUCI_UCODE_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+LUCI_MENU_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
+LUCI_ACL_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
+
+# LuCI app destination paths (overridable for testing)
+LUCI_VIEW_DIR="${LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}"
+LUCI_UCODE_DEST="${LUCI_UCODE_DEST:-/usr/share/rpcd/ucode/luci-tailscale.uc}"
+LUCI_MENU_DEST="${LUCI_MENU_DEST:-/usr/share/luci/menu.d/luci-app-tailscale.json}"
+LUCI_ACL_DEST="${LUCI_ACL_DEST:-/usr/share/rpcd/acl.d/luci-app-tailscale.json}"
 # ============================================================================
 # Logging Functions
 # ============================================================================
@@ -1150,15 +1162,113 @@ install_runtime_scripts() {
     install_init_script || return 1
 }
 
+install_luci_app() {
+    local f1="${LUCI_VIEW_DIR}/config.js"
+    local f2="${LUCI_VIEW_DIR}/status.js"
+    local f3="$LUCI_UCODE_DEST"
+    local f4="$LUCI_MENU_DEST"
+    local f5="$LUCI_ACL_DEST"
+    local stag=".staging.$$"
+    local bak=".bak.$$"
+    local f
+
+    mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$f3")" "$(dirname "$f4")" "$(dirname "$f5")"
+
+    # --- Download: all files go to same-dir staging --------------------
+    if ! download_repo_file "${LUCI_VIEW_BASE_URL}/config.js" "${f1}${stag}" 644; then
+        rm -f "${f1}${stag}"
+        log_warn "LuCI app not available yet, skipping"
+        return 0
+    fi
+
+    local failed=0
+    download_repo_file "${LUCI_VIEW_BASE_URL}/status.js" "${f2}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_UCODE_URL" "${f3}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_MENU_URL"  "${f4}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_ACL_URL"   "${f5}${stag}" 644 || failed=1
+
+    if [ "$failed" = "1" ]; then
+        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+        log_error "LuCI app download incomplete: some files failed to fetch"
+        return 1
+    fi
+
+    # --- Pre-flight: verify targets are writable -----------------------
+    for f in "$f1" "$f2" "$f3" "$f4" "$f5"; do
+        if [ -e "$f" ] && [ ! -w "$f" ]; then
+            rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+            log_error "LuCI pre-flight failed: ${f} is not writable"
+            return 1
+        fi
+    done
+
+    # --- Backup existing live files (abort if cp fails) ----------------
+    for f in "$f1" "$f2" "$f3" "$f4" "$f5"; do
+        if [ -f "$f" ] && ! cp -f "$f" "${f}${bak}" 2>/dev/null; then
+            rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" \
+                  "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+            log_error "LuCI backup failed for ${f}, aborting deploy"
+            return 1
+        fi
+    done
+
+    # --- Deploy: rename staging → live, rollback on any failure --------
+    # Run once; break on first mv failure so $deployed stays accurate.
+    local deployed=0
+    while true; do
+        mv -f "${f1}${stag}" "$f1" || break; deployed=1
+        mv -f "${f2}${stag}" "$f2" || break; deployed=2
+        mv -f "${f3}${stag}" "$f3" || break; deployed=3
+        mv -f "${f4}${stag}" "$f4" || break; deployed=4
+        mv -f "${f5}${stag}" "$f5" || break; deployed=5
+        break
+    done
+
+    if [ "$deployed" -lt 5 ]; then
+        log_error "LuCI deploy failed at step $((deployed + 1)), rolling back"
+        # Restore from backup if it exists; otherwise remove the new file
+        # (first-install case where no prior version existed).
+        if [ "$deployed" -ge 1 ]; then
+            if [ -f "${f1}${bak}" ]; then mv -f "${f1}${bak}" "$f1" 2>/dev/null; else rm -f "$f1" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 2 ]; then
+            if [ -f "${f2}${bak}" ]; then mv -f "${f2}${bak}" "$f2" 2>/dev/null; else rm -f "$f2" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 3 ]; then
+            if [ -f "${f3}${bak}" ]; then mv -f "${f3}${bak}" "$f3" 2>/dev/null; else rm -f "$f3" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 4 ]; then
+            if [ -f "${f4}${bak}" ]; then mv -f "${f4}${bak}" "$f4" 2>/dev/null; else rm -f "$f4" 2>/dev/null; fi || true
+        fi
+        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" \
+              "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
+        return 1
+    fi
+
+    # --- Success: clean backups, reload --------------------------------
+    rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
+
+    if [ -x /etc/init.d/rpcd ]; then
+        /etc/init.d/rpcd reload 2>/dev/null || true
+    fi
+    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+    log_info "Installed LuCI app files"
+}
+
 sync_managed_scripts() {
+    local luci_rc=0
+
     install_runtime_scripts || return 1
     install_update_script || return 1
+    install_luci_app || luci_rc=1
 
     if [ "$(get_auto_update_config)" = "1" ]; then
         setup_cron
     else
         remove_cron
     fi
+
+    return "$luci_rc"
 }
 
 setup_cron() {
@@ -1403,6 +1513,7 @@ do_install() {
     # Install managed scripts
     install_runtime_scripts || return 1
     install_update_script || return 1
+    install_luci_app || return 1
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else
@@ -1549,27 +1660,31 @@ do_update() {
 # ============================================================================
 
 do_uninstall() {
-    echo ""
-    echo "============================================="
-    echo "  Tailscale Uninstallation"
-    echo "============================================="
-    echo ""
-    echo "This will remove:"
-    echo "  - Tailscale binaries"
-    echo "  - Init scripts"
-    echo "  - Configuration files"
-    echo "  - Cron jobs"
-    echo ""
-    echo "Note: Tailscale state (/etc/config/tailscaled.state) will be preserved."
-    echo "      Delete it manually if you want a clean uninstall."
-    echo ""
-    printf "Are you sure you want to uninstall? [y/N]: "
-    read -r answer
-    
-    case "$answer" in
-        [Yy]*) ;;
-        *) echo "Uninstall cancelled."; return 0 ;;
-    esac
+    local force="${1:-}"
+
+    if [ "$force" != "--yes" ]; then
+        echo ""
+        echo "============================================="
+        echo "  Tailscale Uninstallation"
+        echo "============================================="
+        echo ""
+        echo "This will remove:"
+        echo "  - Tailscale binaries"
+        echo "  - Init scripts"
+        echo "  - Configuration files"
+        echo "  - Cron jobs"
+        echo ""
+        echo "Note: Tailscale state (/etc/config/tailscaled.state) will be preserved."
+        echo "      Delete it manually if you want a clean uninstall."
+        echo ""
+        printf "Are you sure you want to uninstall? [y/N]: "
+        read -r answer
+        
+        case "$answer" in
+            [Yy]*) ;;
+            *) echo "Uninstall cancelled."; return 0 ;;
+        esac
+    fi
     
     log_info "Uninstalling Tailscale..."
     
@@ -1595,6 +1710,16 @@ do_uninstall() {
     rm -f "$COMMON_LIB_PATH"
     rmdir /usr/lib/tailscale 2>/dev/null || true
     rm -f /usr/bin/tailscale_update_check  # Old script
+    
+    # Remove LuCI app files
+    rm -rf "$LUCI_VIEW_DIR"
+    rm -f "$LUCI_UCODE_DEST"
+    rm -f "$LUCI_MENU_DEST"
+    rm -f "$LUCI_ACL_DEST"
+    if [ -x /etc/init.d/rpcd ]; then
+        /etc/init.d/rpcd reload 2>/dev/null || true
+    fi
+    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
     
     # Remove config (optional, keep state)
     rm -f "$CONFIG_FILE"
@@ -1899,6 +2024,7 @@ do_install_specific_version() {
         # Install managed scripts
         install_runtime_scripts || return 1
         install_update_script || return 1
+        install_luci_app || return 1
         if [ "$auto_update" = "1" ]; then
             setup_cron
         else
@@ -1944,6 +2070,207 @@ do_download_only() {
     version=$(get_latest_version) || return 1
     
     download_tailscale "$version" "$arch" "$bin_dir"
+}
+
+# ============================================================================
+# Non-Interactive Install (for LuCI / automation)
+# ============================================================================
+
+# Fully non-interactive install.
+# Reads settings from UCI if config exists, otherwise uses defaults.
+# Accepts optional overrides via arguments:
+#   install-quiet [--source official|small] [--storage persistent|ram] [--auto-update 0|1]
+do_install_quiet() {
+    local opt_source="" opt_storage="" opt_auto_update=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --source)    opt_source="$2";      shift 2 ;;
+            --storage)   opt_storage="$2";     shift 2 ;;
+            --auto-update) opt_auto_update="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
+
+    # Defaults
+    local download_source="${opt_source:-small}"
+    local storage_mode="${opt_storage:-persistent}"
+    local auto_update="${opt_auto_update:-1}"
+    local bin_dir="$PERSISTENT_DIR"
+
+    # If UCI config already exists, read from it (CLI args still override)
+    if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        [ -z "$opt_source" ]      && config_get download_source settings download_source "$download_source"
+        [ -z "$opt_storage" ]     && config_get storage_mode settings storage_mode "$storage_mode"
+        [ -z "$opt_auto_update" ] && config_get auto_update settings auto_update "$auto_update"
+    fi
+
+    case "$storage_mode" in
+        ram) bin_dir="$RAM_DIR" ;;
+        *)   bin_dir="$PERSISTENT_DIR"; storage_mode="persistent" ;;
+    esac
+
+    DOWNLOAD_SOURCE="$download_source"
+
+    # Detect architecture
+    local arch
+    arch=$(get_arch) || {
+        log_error "Architecture detection failed"
+        return 1
+    }
+    log_info "Architecture: $arch"
+
+    # Auto-fallback if small doesn't support this arch
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        if ! is_arch_supported_by_small "$arch"; then
+            log_warn "Architecture '$arch' not supported by small binaries, falling back to official"
+            DOWNLOAD_SOURCE="official"
+        fi
+    fi
+
+    # Check dependencies
+    check_dependencies
+
+    # Get latest version
+    local version
+    version=$(get_latest_version) || {
+        log_error "Failed to get latest version"
+        return 1
+    }
+    log_info "Installing Tailscale v${version} (source=${DOWNLOAD_SOURCE}, storage=${storage_mode})"
+
+    # Download and install
+    download_tailscale "$version" "$arch" "$bin_dir" || {
+        log_error "Installation failed"
+        return 1
+    }
+
+    create_symlinks "$bin_dir"
+    mkdir -p "$STATE_DIR"
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+
+    install_runtime_scripts || return 1
+    install_update_script || return 1
+    install_luci_app || return 1
+    if [ "$auto_update" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
+
+    "$INIT_SCRIPT" enable
+    "$INIT_SCRIPT" start
+
+    if wait_for_tailscaled 10; then
+        show_service_status
+        log_info "Installation complete"
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
+}
+
+# Non-interactive install of a specific version.
+# Usage: install-version <version> [--source official|small]
+do_install_version_quiet() {
+    local target_version="$1"
+    shift || true
+    local opt_source=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --source) opt_source="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
+
+    if [ -z "$target_version" ]; then
+        log_error "Version required. Usage: $0 install-version <version>"
+        return 1
+    fi
+
+    # Strip leading 'v' if present
+    target_version="${target_version#v}"
+
+    if ! validate_version_format "$target_version"; then
+        log_error "Invalid version format: $target_version"
+        return 1
+    fi
+
+    # Load existing config or use defaults
+    local download_source="${opt_source:-official}"
+    local storage_mode="persistent"
+    local bin_dir="$PERSISTENT_DIR"
+    local auto_update="0"
+
+    if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        [ -z "$opt_source" ] && config_get download_source settings download_source "$download_source"
+        config_get storage_mode settings storage_mode "$storage_mode"
+        config_get bin_dir settings bin_dir "$bin_dir"
+        config_get auto_update settings auto_update "$auto_update"
+    fi
+
+    case "$storage_mode" in
+        ram) bin_dir="$RAM_DIR" ;;
+        *)   bin_dir="$PERSISTENT_DIR" ;;
+    esac
+
+    DOWNLOAD_SOURCE="$download_source"
+
+    local arch
+    arch=$(get_arch) || {
+        log_error "Architecture detection failed"
+        return 1
+    }
+
+    if [ "$DOWNLOAD_SOURCE" = "small" ]; then
+        if ! is_arch_supported_by_small "$arch"; then
+            log_warn "Architecture '$arch' not supported by small binaries, falling back to official"
+            DOWNLOAD_SOURCE="official"
+        fi
+    fi
+
+    log_info "Installing Tailscale v${target_version} (source=${DOWNLOAD_SOURCE}, arch=${arch})"
+
+    # Stop service if running
+    if [ -x "$INIT_SCRIPT" ]; then
+        "$INIT_SCRIPT" stop 2>/dev/null || true
+        sleep 1
+    fi
+
+    download_tailscale "$target_version" "$arch" "$bin_dir" || {
+        log_error "Installation of v${target_version} failed"
+        [ -x "$INIT_SCRIPT" ] && "$INIT_SCRIPT" start 2>/dev/null
+        return 1
+    }
+
+    create_symlinks "$bin_dir"
+    mkdir -p "$STATE_DIR"
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+
+    install_runtime_scripts || return 1
+    install_update_script || return 1
+    install_luci_app || return 1
+    if [ "$auto_update" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
+
+    "$INIT_SCRIPT" enable
+    "$INIT_SCRIPT" start
+
+    if wait_for_tailscaled 10; then
+        show_service_status
+        log_info "Installed Tailscale v${target_version}"
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
 }
 
 # ============================================================================
@@ -2030,6 +2357,9 @@ version_lt() {
 #   20 update check failed
 #   30 update available but skipped by user
 check_script_update() {
+    # Non-interactive context (RPC / cron) — skip update prompt entirely
+    [ -t 0 ] || return 10
+
     echo "[INFO] Checking for script updates..."
     
     local remote_version
@@ -2335,9 +2665,10 @@ main() {
     # Ensure log directory exists
     mkdir -p "$(dirname "$LOG_FILE")"
 
-    if [ "${1:-}" != "self-update" ] && [ "${1:-}" != "sync-scripts" ]; then
-        check_script_update "$@" || true
-    fi
+    case "${1:-}" in
+        self-update|sync-scripts|install-quiet|install-version|list-versions) ;;
+        *) check_script_update "$@" || true ;;
+    esac
     
     case "${1:-}" in
         install)
@@ -2347,13 +2678,24 @@ main() {
             do_update "$2"
             ;;
         uninstall)
-            do_uninstall
+            do_uninstall "$2"
             ;;
         status)
             do_status
             ;;
         download-only)
             do_download_only
+            ;;
+        install-quiet)
+            shift
+            do_install_quiet "$@"
+            ;;
+        install-version)
+            shift
+            do_install_version_quiet "$@"
+            ;;
+        list-versions)
+            list_small_versions "${2:-10}"
             ;;
         setup-firewall)
             do_setup_subnet_routing
@@ -2433,17 +2775,20 @@ main() {
             echo "Usage: $0 [command]"
             echo ""
             echo "Commands:"
-            echo "  install        Install Tailscale"
-            echo "  update         Update to latest version"
-            echo "  uninstall      Remove Tailscale"
-            echo "  status         Show current status"
-            echo "  setup-firewall Configure network/firewall for subnet routing"
-            echo "  download-only  Download binaries only (for RAM mode)"
-            echo "  self-update    Update this script to latest version"
-            echo "  sync-scripts   Download and install managed auxiliary files"
-            echo "  auto-update    Configure auto-update (on/off/status)"
-            echo "  network-mode   Configure network mode (auto/kernel/userspace/status)"
-            echo "  help           Show this help"
+            echo "  install          Install Tailscale (interactive)"
+            echo "  install-quiet    Install Tailscale (non-interactive, for LuCI/automation)"
+            echo "  install-version  Install specific version (non-interactive)"
+            echo "  update           Update to latest version"
+            echo "  uninstall        Remove Tailscale (use --yes to skip confirmation)"
+            echo "  status           Show current status"
+            echo "  list-versions    List available small binary versions"
+            echo "  setup-firewall   Configure network/firewall for subnet routing"
+            echo "  download-only    Download binaries only (for RAM mode)"
+            echo "  self-update      Update this script to latest version"
+            echo "  sync-scripts     Download and install managed auxiliary files"
+            echo "  auto-update      Configure auto-update (on/off/status)"
+            echo "  network-mode     Configure network mode (auto/kernel/userspace/status)"
+            echo "  help             Show this help"
             echo ""
             echo "Environment variables:"
             echo "  TAILSCALE_SOURCE=official|small"
