@@ -340,3 +340,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: false
+
+      - name: Note Pages refresh
+        run: |
+          echo "Download index refresh is handled by the Pages workflow on release publication." >> $GITHUB_STEP_SUMMARY

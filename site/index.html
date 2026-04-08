@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenWrt Tailscale Docs</title>
+  <meta name="description" content="Docs, downloads, and script updates for openwrt-tailscale.">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-manifest="manifest.json" data-updates="script-updates.json">
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">openwrt-tailscale</p>
+      <h1>Docs, downloads, and release index</h1>
+      <p class="lede">Use GitHub Releases for small binary artifacts and GitHub Pages for install guides, the latest download index, and script update history.</p>
+      <nav class="nav">
+        <a href="#quickstart">Quickstart</a>
+        <a href="#guides">Guides</a>
+        <a href="#downloads">Downloads</a>
+        <a href="#updates">Script Updates</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap stack">
+    <section id="quickstart" class="panel">
+      <h2>Quickstart</h2>
+      <p>Install the manager script on your OpenWrt router, then choose the small binary source from the interactive menu.</p>
+      <pre><code>wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh
+chmod +x /usr/bin/tailscale-manager
+tailscale-manager</code></pre>
+      <p class="muted">The manager script and runtime shell helpers continue to come from this repository. Compressed binaries are published as GitHub Release assets.</p>
+    </section>
+
+    <section id="guides" class="panel">
+      <h2>Guides</h2>
+      <div class="grid two-up">
+        <article class="card">
+          <h3>Install on OpenWrt</h3>
+          <p>Use the interactive installer to choose official or small binaries, persistent or RAM storage, and kernel or userspace networking.</p>
+        </article>
+        <article class="card">
+          <h3>Update strategy</h3>
+          <p>Small binary releases are indexed below. Script updates are tracked separately so runtime fixes and new features stay visible even when the Tailscale version does not change.</p>
+        </article>
+        <article class="card">
+          <h3>Userspace mode</h3>
+          <p>Prefer userspace mode when the kernel TUN module is unavailable. The manager script can switch modes and refresh runtime scripts automatically.</p>
+        </article>
+        <article class="card">
+          <h3>Release artifacts</h3>
+          <p>Use the downloads table to copy the latest asset URL directly. Every published small binary release refreshes the manifest on this site.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="downloads" class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Downloads</h2>
+          <p class="muted">Latest small binary release published from GitHub Releases.</p>
+        </div>
+        <a class="button ghost" id="release-link" href="https://github.com/fl0w1nd/openwrt-tailscale/releases">Open Releases</a>
+      </div>
+      <div class="meta-grid">
+        <div>
+          <span class="label">Latest release</span>
+          <strong id="release-tag">Loading...</strong>
+        </div>
+        <div>
+          <span class="label">Published</span>
+          <strong id="release-date">-</strong>
+        </div>
+        <div>
+          <span class="label">Manager install</span>
+          <strong><a id="manager-link" href="https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh">tailscale-manager.sh</a></strong>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Arch</th>
+              <th>File</th>
+              <th>Size</th>
+              <th>Download</th>
+            </tr>
+          </thead>
+          <tbody id="downloads-body">
+            <tr>
+              <td colspan="4" class="muted">Loading manifest...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="updates" class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Script updates</h2>
+          <p class="muted">Latest commit-driven updates for manager and runtime shell scripts.</p>
+        </div>
+        <span class="badge" id="manager-version">Manager v-</span>
+      </div>
+      <ul class="update-list" id="updates-list">
+        <li class="muted">Loading script updates...</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Hosted on GitHub Pages. Binary assets stay in GitHub Releases.</p>
+  </footer>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

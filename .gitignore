@@ -9,3 +9,6 @@ Thumbs.db
 /build/
 /dist/
 /scripts/
+!scripts/
+!scripts/build-pages.sh
+/.site/
