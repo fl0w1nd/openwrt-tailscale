@@ -10,5 +10,6 @@ Thumbs.db
 /dist/
 /scripts/
 !scripts/
+scripts/*
 !scripts/build-pages.sh
 /.site/
