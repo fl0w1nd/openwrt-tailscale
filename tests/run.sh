@@ -386,6 +386,291 @@ EOF
     assert_file_contains "$TEST_DIR/calls.log" 'status' 'network-mode should run the status check after restart'
 }
 
+test_install_interactive_installs_luci_app() {
+    new_script manager-install.sh <<'EOF'
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
+RAM_DIR="$TEST_DIR/root/tmp/tailscale"
+STATE_DIR="$TEST_DIR/root/etc/tailscale"
+STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
+CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
+INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
+CALLS="$TEST_DIR/calls.log"
+export CALLS
+
+mkdir -p "$(dirname "$INIT_SCRIPT")" "$(dirname "$CONFIG_FILE")"
+cat > "$INIT_SCRIPT" <<'SCRIPT'
+#!/bin/sh
+printf 'init %s\n' "$*" >> "$CALLS"
+SCRIPT
+chmod +x "$INIT_SCRIPT"
+
+get_arch() {
+    echo x86_64
+}
+
+check_dependencies() {
+    return 0
+}
+
+get_latest_version() {
+    echo 1.76.1
+}
+
+download_tailscale() {
+    mkdir -p "$3"
+    printf '%s\n' "$1" > "$3/version"
+}
+
+create_symlinks() {
+    echo symlinks >> "$CALLS"
+}
+
+create_uci_config() {
+    echo "uci $1 $2 $3 $4" >> "$CALLS"
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    : > "$CONFIG_FILE"
+}
+
+install_runtime_scripts() {
+    echo runtime >> "$CALLS"
+}
+
+install_update_script() {
+    echo update >> "$CALLS"
+}
+
+install_luci_app() {
+    echo luci >> "$CALLS"
+}
+
+setup_cron() {
+    echo cron-on >> "$CALLS"
+}
+
+remove_cron() {
+    echo cron-off >> "$CALLS"
+}
+
+wait_for_tailscaled() {
+    return 0
+}
+
+show_service_status() {
+    echo status >> "$CALLS"
+}
+
+get_configured_tun_mode() {
+    echo userspace
+}
+
+get_effective_tun_mode() {
+    echo userspace
+}
+
+show_userspace_subnet_guidance() {
+    echo userspace-guidance >> "$CALLS"
+}
+
+printf '\n\n\n' | do_install >/dev/null
+
+grep -Fq 'runtime' "$CALLS"
+grep -Fq 'update' "$CALLS"
+grep -Fq 'luci' "$CALLS"
+grep -Fq 'cron-off' "$CALLS"
+grep -Fq 'init enable' "$CALLS"
+grep -Fq 'init start' "$CALLS"
+grep -Fq 'status' "$CALLS"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_quiet_installs_luci_app() {
+    new_script manager-install-quiet.sh <<'EOF'
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
+RAM_DIR="$TEST_DIR/root/tmp/tailscale"
+STATE_DIR="$TEST_DIR/root/etc/tailscale"
+STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
+CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
+INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
+CALLS="$TEST_DIR/calls.log"
+export CALLS
+
+mkdir -p "$(dirname "$INIT_SCRIPT")"
+cat > "$INIT_SCRIPT" <<'SCRIPT'
+#!/bin/sh
+printf 'init %s\n' "$*" >> "$CALLS"
+SCRIPT
+chmod +x "$INIT_SCRIPT"
+
+get_arch() {
+    echo x86_64
+}
+
+check_dependencies() {
+    return 0
+}
+
+get_latest_version() {
+    echo 1.76.1
+}
+
+download_tailscale() {
+    mkdir -p "$3"
+    printf '%s\n' "$1" > "$3/version"
+}
+
+create_symlinks() {
+    echo symlinks >> "$CALLS"
+}
+
+create_uci_config() {
+    echo "uci $1 $2 $3 $4" >> "$CALLS"
+}
+
+install_runtime_scripts() {
+    echo runtime >> "$CALLS"
+}
+
+install_update_script() {
+    echo update >> "$CALLS"
+}
+
+install_luci_app() {
+    echo luci >> "$CALLS"
+}
+
+setup_cron() {
+    echo cron-on >> "$CALLS"
+}
+
+remove_cron() {
+    echo cron-off >> "$CALLS"
+}
+
+wait_for_tailscaled() {
+    return 0
+}
+
+show_service_status() {
+    echo status >> "$CALLS"
+}
+
+do_install_quiet --source official --storage ram --auto-update 1 >/dev/null
+
+[ -f "$RAM_DIR/version" ]
+grep -Fq 'runtime' "$CALLS"
+grep -Fq 'update' "$CALLS"
+grep -Fq 'luci' "$CALLS"
+grep -Fq 'cron-on' "$CALLS"
+grep -Fq 'init enable' "$CALLS"
+grep -Fq 'init start' "$CALLS"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_version_quiet_installs_luci_app() {
+    new_script manager-install-version-quiet.sh <<'EOF'
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
+RAM_DIR="$TEST_DIR/root/tmp/tailscale"
+STATE_DIR="$TEST_DIR/root/etc/tailscale"
+STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
+CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
+INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
+CALLS="$TEST_DIR/calls.log"
+export CALLS
+
+mkdir -p "$(dirname "$INIT_SCRIPT")"
+cat > "$INIT_SCRIPT" <<'SCRIPT'
+#!/bin/sh
+printf 'init %s\n' "$*" >> "$CALLS"
+SCRIPT
+chmod +x "$INIT_SCRIPT"
+
+get_arch() {
+    echo x86_64
+}
+
+is_arch_supported_by_small() {
+    return 0
+}
+
+download_tailscale() {
+    echo "download $1 $2 $3" >> "$CALLS"
+    mkdir -p "$3"
+    printf '%s\n' "$1" > "$3/version"
+}
+
+create_symlinks() {
+    echo symlinks >> "$CALLS"
+}
+
+create_uci_config() {
+    echo "uci $1 $2 $3 $4" >> "$CALLS"
+}
+
+install_runtime_scripts() {
+    echo runtime >> "$CALLS"
+}
+
+install_update_script() {
+    echo update >> "$CALLS"
+}
+
+install_luci_app() {
+    echo luci >> "$CALLS"
+}
+
+setup_cron() {
+    echo cron-on >> "$CALLS"
+}
+
+remove_cron() {
+    echo cron-off >> "$CALLS"
+}
+
+wait_for_tailscaled() {
+    return 0
+}
+
+show_service_status() {
+    echo status >> "$CALLS"
+}
+
+do_install_version_quiet 1.77.0 --source small >/dev/null
+
+[ -f "$PERSISTENT_DIR/version" ]
+grep -Fq 'download 1.77.0 x86_64' "$CALLS"
+grep -Fq 'runtime' "$CALLS"
+grep -Fq 'update' "$CALLS"
+grep -Fq 'luci' "$CALLS"
+grep -Fq 'init stop' "$CALLS"
+grep -Fq 'init enable' "$CALLS"
+grep -Fq 'init start' "$CALLS"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_update_script_rejects_invalid_version() {
     mkdir -p "$TEST_DIR/binroot"
     printf '1.76.1\n' > "$TEST_DIR/binroot/version"
@@ -485,6 +770,21 @@ test_luci_ucode_version_checks_use_timeouts() {
 
     assert_file_contains "$ucode_file" "wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/?mode=json'" 'Official latest-version check should set a wget timeout'
     assert_file_contains "$ucode_file" "wget -T 5 -qO- 'https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest'" 'Small latest-version check should set a wget timeout'
+}
+
+test_luci_ucode_reports_arch_when_not_installed() {
+    ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+
+    assert_file_contains "$ucode_file" "let arch_r = shell('uname -m');" 'LuCI install info should detect architecture before installation check'
+    assert_file_contains "$ucode_file" "return { installed: false, version: null, source: null, bin_dir: null, arch: arch };" 'LuCI install info should expose architecture before install'
+}
+
+test_luci_ucode_setup_firewall_propagates_failures() {
+    ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+
+    assert_file_contains "$ucode_file" "set -e;" 'LuCI setup_firewall RPC should stop on the first failure'
+    assert_file_contains "$ucode_file" "/etc/init.d/network reload >/dev/null 2>&1 || { echo \"Failed to reload network\"; exit 1; };" 'LuCI setup_firewall RPC should fail when network reload fails'
+    assert_file_contains "$ucode_file" "/etc/init.d/firewall reload >/dev/null 2>&1 || { echo \"Failed to reload firewall\"; exit 1; };" 'LuCI setup_firewall RPC should fail when firewall reload fails'
 }
 
 test_luci_urls_match_repo_paths() {
@@ -688,11 +988,16 @@ run_test 'version fetchers validate official and small API payloads' test_versio
 run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
 run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts
+run_test 'interactive install deploys LuCI app files' test_install_interactive_installs_luci_app
+run_test 'install-quiet deploys LuCI app files' test_install_quiet_installs_luci_app
+run_test 'install-version deploys LuCI app files' test_install_version_quiet_installs_luci_app
 run_test 'tailscale-update rejects malformed upstream versions' test_update_script_rejects_invalid_version
 run_test 'LuCI source files exist in repo' test_luci_source_files_exist_in_repo
 run_test 'LuCI JSON files are valid' test_luci_json_files_valid
 run_test 'LuCI ucode detects source type fallbacks' test_luci_ucode_source_detection_fallbacks
 run_test 'LuCI ucode version checks use network timeouts' test_luci_ucode_version_checks_use_timeouts
+run_test 'LuCI install info reports architecture before install' test_luci_ucode_reports_arch_when_not_installed
+run_test 'LuCI setup_firewall propagates command failures' test_luci_ucode_setup_firewall_propagates_failures
 run_test 'LuCI URLs in manager match repo file paths' test_luci_urls_match_repo_paths
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure

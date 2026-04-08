@@ -77,19 +77,23 @@ const methods = {
 	get_install_info: {
 		call: function() {
 			let bin_dir = find_bin_dir();
+			let arch_r = shell('uname -m');
+			let arch = trim(arch_r.stdout);
+			if (!length(arch))
+				arch = null;
+
 			if (!bin_dir)
-				return { installed: false, version: null, source: null, bin_dir: null, arch: null };
+				return { installed: false, version: null, source: null, bin_dir: null, arch: arch };
 
 			let version = read_first_line(bin_dir + '/version');
 			let source = get_installed_source(bin_dir);
-			let arch_r = shell('uname -m');
 
 			return {
 				installed: true,
 				version: version,
 				source: source,
 				bin_dir: bin_dir,
-				arch: trim(arch_r.stdout)
+				arch: arch
 			};
 		}
 	},
@@ -291,13 +295,14 @@ const methods = {
 		call: function() {
 			let r = shell(
 				'(' +
-				'TAILSCALE_MANAGER_SOURCE_ONLY=1 . /usr/bin/tailscale-manager;' +
-				'set +e;' +
+				'set -e;' +
+				'TAILSCALE_MANAGER_SOURCE_ONLY=1;' +
 				'LOG_FILE=/tmp/tailscale-fw-setup.log;' +
+				'. /usr/bin/tailscale-manager;' +
 				'setup_tailscale_interface;' +
 				'setup_tailscale_firewall_zone;' +
-				'/etc/init.d/network reload 2>/dev/null;' +
-				'/etc/init.d/firewall reload 2>/dev/null;' +
+				'/etc/init.d/network reload >/dev/null 2>&1 || { echo "Failed to reload network"; exit 1; };' +
+				'/etc/init.d/firewall reload >/dev/null 2>&1 || { echo "Failed to reload firewall"; exit 1; };' +
 				'echo done)'
 			);
 			return { success: (r.code == 0), stdout: r.stdout };

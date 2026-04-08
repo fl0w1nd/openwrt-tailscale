@@ -1513,6 +1513,7 @@ do_install() {
     # Install managed scripts
     install_runtime_scripts || return 1
     install_update_script || return 1
+    install_luci_app || return 1
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else
@@ -2023,6 +2024,7 @@ do_install_specific_version() {
         # Install managed scripts
         install_runtime_scripts || return 1
         install_update_script || return 1
+        install_luci_app || return 1
         if [ "$auto_update" = "1" ]; then
             setup_cron
         else
@@ -2151,6 +2153,7 @@ do_install_quiet() {
 
     install_runtime_scripts || return 1
     install_update_script || return 1
+    install_luci_app || return 1
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else
@@ -2251,6 +2254,7 @@ do_install_version_quiet() {
 
     install_runtime_scripts || return 1
     install_update_script || return 1
+    install_luci_app || return 1
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else
