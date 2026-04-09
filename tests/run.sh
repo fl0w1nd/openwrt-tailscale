@@ -105,13 +105,21 @@ run_test() {
     fi
 }
 
+# Helper: source entry script with LIB_DIR pointing to repo libraries
+source_manager() {
+    cat <<SRCEOF
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+SRCEOF
+}
+
 test_validate_version_format() {
     new_script manager-validate.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 for version in 1.76 1.76.1 1.2.3.4; do
     validate_version_format "\$version" || exit 1
@@ -131,9 +139,7 @@ test_effective_tun_mode() {
     new_script manager-tun-mode.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 kernel_tun_available() {
     return 1
@@ -188,9 +194,7 @@ EOF
     new_script manager-api.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 WGET_SCENARIO=official-valid
 export WGET_SCENARIO
@@ -239,6 +243,7 @@ EOF
     new_script manager-official-versions.sh <<'EOF'
 #!/bin/sh
 set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
@@ -255,9 +260,7 @@ test_version_lt_covers_sort_and_fallback() {
     new_script manager-version-lt.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 expect_lt() {
     version_lt "\$1" "\$2"
@@ -296,13 +299,12 @@ test_sync_managed_scripts_installs_all_files() {
     new_script manager-sync.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 ROOT="$TEST_DIR/root"
 CALLS="$TEST_DIR/calls.log"
 COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
+LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
 
@@ -358,6 +360,11 @@ sync_managed_scripts
 [ -f "\$LUCI_UCODE_DEST" ]
 grep -Fq 'remove' "\$CALLS"
 grep -Fq 'luci_installed' "\$CALLS"
+
+# Verify new library files were installed
+for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
+    [ -f "\$LIB_DIR/\$lib" ] || { echo "MISSING: \$LIB_DIR/\$lib"; exit 1; }
+done
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -373,11 +380,10 @@ EOF
     new_script manager-network-mode.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
+LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
 CALLS="$TEST_DIR/calls.log"
@@ -423,6 +429,7 @@ test_install_interactive_installs_luci_app() {
     new_script manager-install.sh <<'EOF'
 #!/bin/sh
 set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
@@ -528,6 +535,7 @@ test_install_quiet_installs_luci_app() {
     new_script manager-install-quiet.sh <<'EOF'
 #!/bin/sh
 set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
@@ -619,6 +627,7 @@ test_install_version_quiet_installs_luci_app() {
     new_script manager-install-version-quiet.sh <<'EOF'
 #!/bin/sh
 set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
@@ -843,9 +852,7 @@ test_luci_urls_match_repo_paths() {
     new_script manager-luci-urls.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 base="\$RAW_BASE_URL"
 
@@ -876,10 +883,8 @@ EOF
     new_script manager-selfupdate-guard.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
 export PATH="$STUB_BIN:$ORIGINAL_PATH"
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 # In test context stdin is a pipe, not a tty — check_script_update
 # must return 10 immediately without calling wget.
@@ -895,9 +900,7 @@ test_install_luci_app_reports_partial_failure() {
     new_script manager-luci-partial.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
+$(source_manager)
 
 download_call=0
 download_repo_file() {
@@ -918,7 +921,6 @@ test_install_luci_app_deploy_rollback_first_install() {
     new_script manager-luci-rollback.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
 
 # Point LuCI destinations into the test directory
 LUCI_VIEW_DIR="$TEST_DIR/luci/view"
@@ -927,6 +929,8 @@ LUCI_MENU_DEST="$TEST_DIR/luci/menu/luci-app-tailscale.json"
 LUCI_ACL_DEST="$TEST_DIR/luci/acl/luci-app-tailscale.json"
 export LUCI_VIEW_DIR LUCI_UCODE_DEST LUCI_MENU_DEST LUCI_ACL_DEST
 
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -938,7 +942,6 @@ download_repo_file() {
 }
 
 # Wrap mv so the 3rd deploy-phase rename fails (simulates I/O error).
-# Deploy calls mv -f six times; rollback also calls mv -f but must succeed.
 _real_mv=\$(command -v mv)
 _mv_count=0
 _mv_fail_at=3
@@ -981,7 +984,6 @@ test_install_luci_app_deploy_rollback_upgrade() {
     new_script manager-luci-rollback-upgrade.sh <<EOF
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
 
 LUCI_VIEW_DIR="$TEST_DIR/luci/view"
 LUCI_UCODE_DEST="$TEST_DIR/luci/ucode/luci-tailscale.uc"
@@ -989,6 +991,8 @@ LUCI_MENU_DEST="$TEST_DIR/luci/menu/luci-app-tailscale.json"
 LUCI_ACL_DEST="$TEST_DIR/luci/acl/luci-app-tailscale.json"
 export LUCI_VIEW_DIR LUCI_UCODE_DEST LUCI_MENU_DEST LUCI_ACL_DEST
 
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -1042,7 +1046,6 @@ test_uninstall_removes_overridden_luci_paths() {
     new_script manager-uninstall-luci.sh <<'EOF'
 #!/bin/sh
 set -eu
-TAILSCALE_MANAGER_SOURCE_ONLY=1
 
 LUCI_VIEW_DIR="$TEST_DIR/custom/view/tailscale"
 LUCI_UCODE_DEST="$TEST_DIR/custom/ucode/luci-tailscale.uc"
@@ -1050,6 +1053,8 @@ LUCI_MENU_DEST="$TEST_DIR/custom/menu/luci-app-tailscale.json"
 LUCI_ACL_DEST="$TEST_DIR/custom/acl/luci-app-tailscale.json"
 export LUCI_VIEW_DIR LUCI_UCODE_DEST LUCI_MENU_DEST LUCI_ACL_DEST
 
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -1057,14 +1062,14 @@ PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
 RAM_DIR="$TEST_DIR/root/tmp/tailscale"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
-COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
+LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
 STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
 
 mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$LUCI_UCODE_DEST")" \
          "$(dirname "$LUCI_MENU_DEST")" "$(dirname "$LUCI_ACL_DEST")" \
          "$(dirname "$INIT_SCRIPT")" "$(dirname "$CRON_SCRIPT")" \
-         "$(dirname "$COMMON_LIB_PATH")" "$(dirname "$CONFIG_FILE")" \
+         "$LIB_DIR" "$(dirname "$CONFIG_FILE")" \
          "$PERSISTENT_DIR" "$RAM_DIR"
 
 printf 'config\n' > "$LUCI_VIEW_DIR/config.js"
@@ -1074,7 +1079,8 @@ printf 'menu\n' > "$LUCI_MENU_DEST"
 printf 'acl\n' > "$LUCI_ACL_DEST"
 printf 'init\n' > "$INIT_SCRIPT"
 printf 'cron\n' > "$CRON_SCRIPT"
-printf 'common\n' > "$COMMON_LIB_PATH"
+printf 'common\n' > "$LIB_DIR/common.sh"
+printf 'version\n' > "$LIB_DIR/version.sh"
 printf 'config\n' > "$CONFIG_FILE"
 
 remove_cron() {
@@ -1095,10 +1101,327 @@ do_uninstall --yes >/dev/null
 [ ! -e "$LUCI_UCODE_DEST" ]
 [ ! -e "$LUCI_MENU_DEST" ]
 [ ! -e "$LUCI_ACL_DEST" ]
+[ ! -e "$LIB_DIR" ]
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
 }
+
+# ============================================================================
+# New tests for modular library structure
+# ============================================================================
+
+test_library_files_exist_in_repo() {
+    for lib in common.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+        assert_file_exists "$REPO_ROOT/usr/lib/tailscale/$lib" "Library file should exist: $lib"
+    done
+}
+
+test_library_files_sourceable_independently() {
+    new_script lib-source-test.sh <<EOF
+#!/bin/sh
+set -eu
+
+$(source_manager)
+
+# Verify key functions from each library are available
+type get_arch >/dev/null 2>&1 || { echo "MISSING: get_arch"; exit 1; }
+type validate_version_format >/dev/null 2>&1 || { echo "MISSING: validate_version_format"; exit 1; }
+type get_latest_version >/dev/null 2>&1 || { echo "MISSING: get_latest_version"; exit 1; }
+type version_lt >/dev/null 2>&1 || { echo "MISSING: version_lt"; exit 1; }
+type get_remote_script_version >/dev/null 2>&1 || { echo "MISSING: get_remote_script_version"; exit 1; }
+type download_tailscale >/dev/null 2>&1 || { echo "MISSING: download_tailscale"; exit 1; }
+type is_arch_supported_by_small >/dev/null 2>&1 || { echo "MISSING: is_arch_supported_by_small"; exit 1; }
+type create_symlinks >/dev/null 2>&1 || { echo "MISSING: create_symlinks"; exit 1; }
+type detect_firewall_backend >/dev/null 2>&1 || { echo "MISSING: detect_firewall_backend"; exit 1; }
+type setup_tailscale_interface >/dev/null 2>&1 || { echo "MISSING: setup_tailscale_interface"; exit 1; }
+type remove_subnet_routing_config >/dev/null 2>&1 || { echo "MISSING: remove_subnet_routing_config"; exit 1; }
+type install_runtime_scripts >/dev/null 2>&1 || { echo "MISSING: install_runtime_scripts"; exit 1; }
+type install_luci_app >/dev/null 2>&1 || { echo "MISSING: install_luci_app"; exit 1; }
+type sync_managed_scripts >/dev/null 2>&1 || { echo "MISSING: sync_managed_scripts"; exit 1; }
+    type check_script_update >/dev/null 2>&1 || { echo "MISSING: check_script_update"; exit 1; }
+    type do_self_update >/dev/null 2>&1 || { echo "MISSING: do_self_update"; exit 1; }
+    type create_uci_config >/dev/null 2>&1 || { echo "MISSING: create_uci_config"; exit 1; }
+    type setup_cron >/dev/null 2>&1 || { echo "MISSING: setup_cron"; exit 1; }
+    type remove_cron >/dev/null 2>&1 || { echo "MISSING: remove_cron"; exit 1; }
+    type do_install >/dev/null 2>&1 || { echo "MISSING: do_install"; exit 1; }
+    type do_install_quiet >/dev/null 2>&1 || { echo "MISSING: do_install_quiet"; exit 1; }
+    type do_install_version_quiet >/dev/null 2>&1 || { echo "MISSING: do_install_version_quiet"; exit 1; }
+    type do_status >/dev/null 2>&1 || { echo "MISSING: do_status"; exit 1; }
+    type show_menu >/dev/null 2>&1 || { echo "MISSING: show_menu"; exit 1; }
+    type interactive_menu >/dev/null 2>&1 || { echo "MISSING: interactive_menu"; exit 1; }
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_lib_dir_override_works() {
+    new_script lib-dir-override.sh <<EOF
+#!/bin/sh
+set -eu
+
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+# verify version.sh functions are loaded from the overridden path
+type get_latest_version >/dev/null 2>&1 || exit 1
+type download_tailscale >/dev/null 2>&1 || exit 1
+    type install_runtime_scripts >/dev/null 2>&1 || exit 1
+    type do_install >/dev/null 2>&1 || exit 1
+    type interactive_menu >/dev/null 2>&1 || exit 1
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+    return 0
+}
+
+test_install_runtime_scripts_installs_library_files() {
+    new_script manager-install-libs.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+ROOT="$TEST_DIR/root"
+COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
+LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
+INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
+
+download_repo_file() {
+    mkdir -p "\$(dirname "\$2")"
+    printf 'downloaded from %s\n' "\$1" > "\$2"
+    chmod "\${3:-644}" "\$2" 2>/dev/null || true
+}
+
+install_runtime_scripts
+
+# Verify common.sh was installed
+[ -f "\$COMMON_LIB_PATH" ] || { echo "MISSING: common.sh"; exit 1; }
+
+# Verify init script was installed
+[ -f "\$INIT_SCRIPT" ] || { echo "MISSING: init script"; exit 1; }
+
+# Verify all module libraries were installed
+    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+        [ -f "\$LIB_DIR/\$lib" ] || { echo "MISSING: \$lib"; exit 1; }
+    done
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_ensure_libraries_bootstraps_all_modules() {
+    new_script manager-bootstrap-libs.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+LIB_DIR="$TEST_DIR/boot-libs"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+download_repo_file() {
+    printf '%s\n' "$1" >> "$TEST_DIR/downloads.log"
+    mkdir -p "$(dirname "$2")"
+    case "${2##*/}" in
+        version.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+get_latest_version() { :; }
+SCRIPT
+            ;;
+        download.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+download_tailscale() { :; }
+SCRIPT
+            ;;
+        deploy.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+sync_managed_scripts() { :; }
+SCRIPT
+            ;;
+        commands.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+do_install() { :; }
+do_install_quiet() { :; }
+do_install_version_quiet() { :; }
+do_status() { :; }
+SCRIPT
+            ;;
+        menu.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+show_menu() { :; }
+interactive_menu() { :; }
+SCRIPT
+            ;;
+        selfupdate.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+check_script_update() { :; }
+SCRIPT
+            ;;
+        *)
+            printf '#!/bin/sh\n' > "$2"
+            ;;
+    esac
+}
+
+_ensure_libraries
+
+for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    [ -f "$LIB_DIR/$lib" ] || { echo "missing $lib"; exit 1; }
+    grep -Fq "https://example.test/runtime-libs/$lib" "$TEST_DIR/downloads.log" || {
+        echo "unexpected download path for $lib"
+        exit 1
+    }
+done
+
+type get_latest_version >/dev/null 2>&1 || exit 1
+type download_tailscale >/dev/null 2>&1 || exit 1
+type sync_managed_scripts >/dev/null 2>&1 || exit 1
+type check_script_update >/dev/null 2>&1 || exit 1
+type do_install >/dev/null 2>&1 || exit 1
+    type interactive_menu >/dev/null 2>&1 || exit 1
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+    return 0
+}
+
+test_ensure_libraries_repairs_partial_library_sets() {
+    new_script manager-bootstrap-partial-libs.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+LIB_DIR="$TEST_DIR/partial-libs"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+mkdir -p "$LIB_DIR"
+printf '#!/bin/sh\n' > "$LIB_DIR/version.sh"
+
+download_repo_file() {
+    printf '%s\n' "$1" >> "$TEST_DIR/downloads.log"
+    mkdir -p "$(dirname "$2")"
+    case "${2##*/}" in
+        version.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+get_latest_version() { :; }
+SCRIPT
+            ;;
+        download.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+download_tailscale() { :; }
+SCRIPT
+            ;;
+        deploy.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+sync_managed_scripts() { :; }
+SCRIPT
+            ;;
+        commands.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+do_install() { :; }
+do_install_quiet() { :; }
+do_install_version_quiet() { :; }
+do_status() { :; }
+SCRIPT
+            ;;
+        menu.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+show_menu() { :; }
+interactive_menu() { :; }
+SCRIPT
+            ;;
+        selfupdate.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+check_script_update() { :; }
+SCRIPT
+            ;;
+        *)
+            printf '#!/bin/sh\n' > "$2"
+            ;;
+    esac
+}
+
+_ensure_libraries
+
+for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    [ -f "$LIB_DIR/$lib" ] || { echo "missing $lib"; exit 1; }
+done
+
+[ "$(wc -l < "$TEST_DIR/downloads.log")" -eq 7 ] || {
+    echo "expected full library refresh"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+    return 0
+}
+
+test_main_fails_when_library_bootstrap_fails() {
+    new_script manager-bootstrap-failure.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+PATH="$STUB_BIN:$PATH"
+export PATH
+
+cat > "$STUB_BIN/wget" <<'SCRIPT'
+#!/bin/sh
+exit 1
+SCRIPT
+chmod +x "$STUB_BIN/wget"
+
+LIB_DIR="$TEST_DIR/missing-libs"
+TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
+TAILSCALE_RAW_BASE_URL="https://example.test"
+
+set +e
+output=
+output=$(
+    TEST_DIR="$TEST_DIR" \
+    STUB_BIN="$STUB_BIN" \
+    LIB_DIR="$LIB_DIR" \
+    TAILSCALE_LIB_BASE_URL="$TAILSCALE_LIB_BASE_URL" \
+    TAILSCALE_RAW_BASE_URL="$TAILSCALE_RAW_BASE_URL" \
+    sh "$REPO_ROOT/tailscale-manager.sh" sync-scripts 2>&1
+)
+status=$?
+set -e
+
+[ "$status" -eq 1 ] || [ "$status" -eq 2 ] || {
+    echo "expected failure exit code, got $status"
+    exit 1
+}
+
+printf '%s\n' "$output" | grep -Fq 'Failed to initialize runtime libraries from https://example.test/runtime-libs' || {
+    echo "missing bootstrap failure message"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+# ============================================================================
+# Run all tests
+# ============================================================================
 
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
 run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
@@ -1125,5 +1448,12 @@ run_test 'install_luci_app reports partial download failure' test_install_luci_a
 run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
 run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
 run_test 'uninstall removes overridden LuCI paths' test_uninstall_removes_overridden_luci_paths
+run_test 'library files exist in repository' test_library_files_exist_in_repo
+run_test 'all library functions are loadable via source' test_library_files_sourceable_independently
+run_test 'LIB_DIR override loads libraries from custom path' test_lib_dir_override_works
+run_test 'install_runtime_scripts installs all library files' test_install_runtime_scripts_installs_library_files
+run_test 'ensure_libraries bootstraps all runtime modules' test_ensure_libraries_bootstraps_all_modules
+run_test 'ensure_libraries repairs partial library sets' test_ensure_libraries_repairs_partial_library_sets
+run_test 'main exits when library bootstrap fails' test_main_fails_when_library_bootstrap_fails
 
 printf '1..%s\n' "$TEST_INDEX"
