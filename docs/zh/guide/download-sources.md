@@ -6,7 +6,7 @@
 
 | 来源 | 大小 | 说明 |
 |------|------|------|
-| **Official（官方）** | ~50 MB | 来自 `pkgs.tailscale.com` 的完整二进制 |
+| **Official（官方）** | ~30-35 MB | 来自 `pkgs.tailscale.com` 的完整二进制 |
 | **Small（小体积）** | ~5 MB | 来自 GitHub Releases 的 UPX 压缩版本 |
 
 **Small** 版本将 `tailscale` + `tailscaled` 合并为单个可执行文件并使用 UPX 压缩。功能与官方版本完全相同，但体积缩小约 **80%**。

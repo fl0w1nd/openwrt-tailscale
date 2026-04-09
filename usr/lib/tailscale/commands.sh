@@ -71,7 +71,7 @@ do_install() {
     echo ""
     echo "  1) Official (default)"
     echo "     - Full binaries from pkgs.tailscale.com"
-    echo "     - Size: ~50MB"
+    echo "     - Size: ~30-35MB"
     echo "     - Always up-to-date"
     echo ""
     echo "  2) Small (compressed) - Recommended for embedded devices"
@@ -133,7 +133,7 @@ do_install() {
     if [ "$DOWNLOAD_SOURCE" = "small" ]; then
         echo "     - Uses ~5MB disk space"
     else
-        echo "     - Uses ~50MB disk space"
+        echo "     - Uses ~30-35MB disk space"
     fi
     echo ""
     echo "  2) RAM"

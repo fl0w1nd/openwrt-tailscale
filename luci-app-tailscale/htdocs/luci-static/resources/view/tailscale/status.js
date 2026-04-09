@@ -237,7 +237,7 @@ return view.extend({
 	renderInstallWizard: function(installInfo) {
 		var sourceSelect = E('select', { 'class': 'cbi-input-select', 'id': 'ts-install-source' }, [
 			E('option', { 'value': 'small', 'selected': 'selected' }, 'Small (Compressed, ~5MB) - Recommended'),
-			E('option', { 'value': 'official' }, 'Official (~50MB)')
+			E('option', { 'value': 'official' }, 'Official (~30-35MB)')
 		]);
 
 		var storageSelect = E('select', { 'class': 'cbi-input-select', 'id': 'ts-install-storage' }, [

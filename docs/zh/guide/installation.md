@@ -4,7 +4,7 @@
 
 - 可访问互联网的 OpenWrt 路由器
 - SSH 访问权限
-- 至少 **5 MB** 可用空间（Small 模式）或 **50 MB**（官方模式）
+- 至少 **5 MB** 可用空间（Small 模式）或 **30-35 MB**（官方模式）
 
 ## 快速安装
 
@@ -24,7 +24,7 @@ wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/ope
 
 安装向导将引导你完成：
 
-1. **下载源** — 选择官方版（~50 MB）或小体积版（~5 MB）
+1. **下载源** — 选择官方版（~30-35 MB）或小体积版（~5 MB）
 2. **存储模式** — 持久化（`/opt/tailscale`）或内存（`/tmp/tailscale`）
 3. **下载安装** — 自动获取适配你设备架构的二进制文件
 4. **启动服务** — 通过 procd 初始化系统启动 Tailscale
