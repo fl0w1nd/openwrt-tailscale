@@ -58,13 +58,13 @@ LIB_BASE_URL="${TAILSCALE_LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
 
 # LuCI app file URLs
 LUCI_VIEW_BASE_URL="${RAW_BASE_URL}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale"
-LUCI_UCODE_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+LUCI_RPC_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 LUCI_MENU_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
 LUCI_ACL_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
 
 # LuCI app destination paths (overridable for testing)
 LUCI_VIEW_DIR="${LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}"
-LUCI_UCODE_DEST="${LUCI_UCODE_DEST:-/usr/share/rpcd/ucode/luci-tailscale.uc}"
+LUCI_RPC_DEST="${LUCI_RPC_DEST:-/usr/libexec/rpcd/luci-tailscale}"
 LUCI_MENU_DEST="${LUCI_MENU_DEST:-/usr/share/luci/menu.d/luci-app-tailscale.json}"
 LUCI_ACL_DEST="${LUCI_ACL_DEST:-/usr/share/rpcd/acl.d/luci-app-tailscale.json}"
 
@@ -302,7 +302,7 @@ fi
 # install_runtime_scripts(). During bootstrap (first install), they may not
 # exist yet — the _ensure_libraries() function handles downloading them.
 
-for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
     if [ -f "$LIB_DIR/$_lib" ]; then
         # shellcheck source=/dev/null
         . "$LIB_DIR/$_lib"
@@ -317,7 +317,7 @@ _ensure_libraries() {
     local _lib
     local _missing=0
 
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
         if [ ! -f "$LIB_DIR/$_lib" ]; then
             _missing=1
             break
@@ -326,10 +326,10 @@ _ensure_libraries() {
 
     [ "$_missing" -eq 0 ] && return 0
 
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
         download_repo_file "${LIB_BASE_URL}/${_lib}" "${LIB_DIR}/${_lib}" 644 || return 1
     done
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
         [ -f "$LIB_DIR/$_lib" ] || {
             log_error "Missing module library after bootstrap: ${LIB_DIR}/${_lib}"
             return 1
@@ -623,7 +623,7 @@ main() {
     # Check for script updates (only if selfupdate module is loaded)
     if type check_script_update >/dev/null 2>&1; then
         case "${1:-}" in
-            self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions) ;;
+            self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
             *) check_script_update "$@" || true ;;
         esac
     fi
@@ -729,6 +729,21 @@ main() {
                     exit 1
                     ;;
             esac
+            ;;
+        json-status)
+            cmd_json_status
+            ;;
+        json-install-info)
+            cmd_json_install_info
+            ;;
+        json-latest-versions)
+            cmd_json_latest_versions
+            ;;
+        json-latest-version)
+            cmd_json_latest_version
+            ;;
+        json-script-info)
+            cmd_json_script_info
             ;;
         -h|--help|help)
             echo "OpenWRT Tailscale Manager v${VERSION}"

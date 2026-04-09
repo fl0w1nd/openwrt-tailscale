@@ -1,0 +1,293 @@
+#!/bin/sh
+
+# LuCI RPC bridge for Tailscale management via rpcd exec plugin.
+
+MANAGER_BIN="/usr/bin/tailscale-manager"
+TASK_DIR="/tmp/tailscale-rpc-tasks"
+
+json_escape_inline() {
+    printf '%s' "$1" | awk 'BEGIN { ORS="" } {
+        gsub(/\\/, "\\\\");
+        gsub(/"/, "\\\"");
+        gsub(/\r/, "\\r");
+        gsub(/\t/, "\\t");
+        if (NR > 1)
+            printf "\\n";
+        printf "%s", $0;
+    }'
+}
+
+json_array_from_lines_inline() {
+    local first=1
+    printf '['
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        [ "$first" = "1" ] || printf ','
+        printf '"%s"' "$(json_escape_inline "$line")"
+        first=0
+    done
+    printf ']'
+}
+
+read_input() {
+    cat
+}
+
+json_get_param() {
+    local input="$1"
+    local key="$2"
+
+    if command -v jsonfilter >/dev/null 2>&1; then
+        printf '%s' "$input" | jsonfilter -e "$.${key}" 2>/dev/null || true
+        return 0
+    fi
+
+    printf '%s' "$input" | sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | sed -n '1p'
+}
+
+json_get_int_param() {
+    local input="$1"
+    local key="$2"
+    local value=""
+
+    if command -v jsonfilter >/dev/null 2>&1; then
+        value=$(printf '%s' "$input" | jsonfilter -e "$.${key}" 2>/dev/null || true)
+    else
+        value=$(printf '%s' "$input" | sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | sed -n '1p')
+    fi
+
+    case "$value" in
+        ''|*[!0-9]*) return 1 ;;
+        *) printf '%s' "$value" ;;
+    esac
+}
+
+print_code_stdout() {
+    local code="$1"
+    local stdout="$2"
+    printf '{"code":%s,"stdout":"%s"}' "$code" "$(json_escape_inline "$stdout")"
+}
+
+print_success_stdout() {
+    local success="$1"
+    local stdout="$2"
+    printf '{"success":%s,"stdout":"%s"}' "$success" "$(json_escape_inline "$stdout")"
+}
+
+task_path() {
+    printf '%s/%s' "$TASK_DIR" "$1"
+}
+
+new_task_id() {
+    local prefix="$1"
+    local now rand
+
+    now=$(date +%s 2>/dev/null || printf '0')
+    rand=$$
+    printf '%s-%s-%s' "$prefix" "$now" "$rand"
+}
+
+start_background_task() {
+    local task_prefix="$1"
+    shift
+
+    local task base pid_file status_file log_file
+    task=$(new_task_id "$task_prefix")
+    base=$(task_path "$task")
+    pid_file="${base}.pid"
+    status_file="${base}.status"
+    log_file="${base}.log"
+
+    mkdir -p "$TASK_DIR"
+
+    (
+        "$@" >"$log_file" 2>&1
+        printf '%s' "$?" >"$status_file"
+        rm -f "$pid_file"
+    ) &
+
+    printf '%s' "$!" >"$pid_file"
+    printf '{"code":0,"started":true,"task":"%s","stdout":"Task started"}' "$task"
+}
+
+print_task_status() {
+    local task="$1"
+    local base pid_file status_file log_file pid code stdout
+    base=$(task_path "$task")
+    pid_file="${base}.pid"
+    status_file="${base}.status"
+    log_file="${base}.log"
+
+    if [ -f "$status_file" ]; then
+        code=$(cat "$status_file" 2>/dev/null)
+        stdout=$(cat "$log_file" 2>/dev/null)
+        printf '{"done":true,"code":%s,"stdout":"%s"}' "${code:-1}" "$(json_escape_inline "$stdout")"
+        rm -f "$pid_file" "$status_file" "$log_file"
+        return 0
+    fi
+
+    if [ -f "$pid_file" ]; then
+        pid=$(cat "$pid_file" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            printf '{"done":false}'
+            return 0
+        fi
+        rm -f "$pid_file"
+    fi
+
+    printf '{"done":false}'
+}
+
+case "$1" in
+list)
+    cat <<'EOF'
+{
+    "get_status": {},
+    "get_install_info": {},
+    "get_latest_version": {},
+    "get_latest_versions": {},
+    "get_script_update_info": {},
+    "get_task_status": { "task": "" },
+    "list_versions": { "limit": 0 },
+    "list_official_releases": { "limit": 0 },
+    "service_control": { "action": "" },
+    "do_install": { "source": "", "storage": "", "auto_update": "" },
+    "do_install_version": { "version": "", "source": "" },
+    "do_update": {},
+    "do_uninstall": {},
+    "setup_firewall": {},
+    "sync_scripts": {},
+    "upgrade_scripts": {}
+}
+EOF
+    ;;
+call)
+    case "$2" in
+        get_status)
+            exec "$MANAGER_BIN" json-status
+            ;;
+        get_install_info)
+            exec "$MANAGER_BIN" json-install-info
+            ;;
+        get_latest_version)
+            exec "$MANAGER_BIN" json-latest-version
+            ;;
+        get_latest_versions)
+            exec "$MANAGER_BIN" json-latest-versions
+            ;;
+        get_script_update_info)
+            exec "$MANAGER_BIN" json-script-info
+            ;;
+        get_task_status)
+            input=$(read_input)
+            task=$(json_get_param "$input" task)
+            case "$task" in
+                install-*|install-version-*|update-*|upgrade-scripts-*) ;;
+                *) printf '{"done":true,"code":-1,"stdout":"Unknown task"}' ; exit 0 ;;
+            esac
+            print_task_status "$task"
+            ;;
+        list_versions)
+            input=$(read_input)
+            limit=$(json_get_int_param "$input" limit 2>/dev/null || true)
+            [ -n "$limit" ] || limit=20
+            versions=$("$MANAGER_BIN" list-versions "$limit" 2>/dev/null || true)
+            printf '{"versions":'
+            printf '%s\n' "$versions" | json_array_from_lines_inline
+            printf '}'
+            ;;
+        list_official_releases)
+            input=$(read_input)
+            limit=$(json_get_int_param "$input" limit 2>/dev/null || true)
+            [ -n "$limit" ] || limit=20
+            versions=$("$MANAGER_BIN" list-official-versions "$limit" 2>/dev/null || true)
+            printf '{"versions":'
+            printf '%s\n' "$versions" | json_array_from_lines_inline
+            printf '}'
+            ;;
+        service_control)
+            input=$(read_input)
+            action=$(json_get_param "$input" action)
+            case "$action" in
+                start|stop|restart) ;;
+                *) printf '{"code":-1,"stdout":"Invalid action"}' ; exit 0 ;;
+            esac
+            stdout=$(/etc/init.d/tailscale "$action" 2>&1)
+            code=$?
+            print_code_stdout "$code" "$stdout"
+            ;;
+        do_install)
+            input=$(read_input)
+            source=$(json_get_param "$input" source)
+            storage=$(json_get_param "$input" storage)
+            auto_update=$(json_get_param "$input" auto_update)
+            set -- "$MANAGER_BIN" install-quiet
+            [ -n "$source" ] && set -- "$@" --source "$source"
+            [ -n "$storage" ] && set -- "$@" --storage "$storage"
+            [ -n "$auto_update" ] && set -- "$@" --auto-update "$auto_update"
+            start_background_task install "$@"
+            ;;
+        do_install_version)
+            input=$(read_input)
+            version=$(json_get_param "$input" version)
+            source=$(json_get_param "$input" source)
+            set -- "$MANAGER_BIN" install-version "$version"
+            [ -n "$source" ] && set -- "$@" --source "$source"
+            start_background_task install-version "$@"
+            ;;
+        do_update)
+            start_background_task update "$MANAGER_BIN" update --auto
+            ;;
+        do_uninstall)
+            stdout=$("$MANAGER_BIN" uninstall --yes 2>&1)
+            code=$?
+            print_code_stdout "$code" "$stdout"
+            ;;
+        setup_firewall)
+            stdout=$(
+                set -e
+                TAILSCALE_MANAGER_SOURCE_ONLY=1
+                LOG_FILE=/tmp/tailscale-fw-setup.log
+                export TAILSCALE_MANAGER_SOURCE_ONLY LOG_FILE
+                . "$MANAGER_BIN"
+                setup_tailscale_interface
+                setup_tailscale_firewall_zone
+                /etc/init.d/network reload >/dev/null 2>&1 || { echo "Failed to reload network"; exit 1; }
+                /etc/init.d/firewall reload >/dev/null 2>&1 || { echo "Failed to reload firewall"; exit 1; }
+                echo done
+            ) 2>&1
+            code=$?
+            if [ "$code" -eq 0 ]; then
+                print_success_stdout true "$stdout"
+            else
+                print_success_stdout false "$stdout"
+            fi
+            ;;
+        sync_scripts)
+            stdout=$("$MANAGER_BIN" sync-scripts 2>&1)
+            code=$?
+            print_code_stdout "$code" "$stdout"
+            ;;
+        upgrade_scripts)
+            start_background_task upgrade-scripts sh -c '
+                TAILSCALE_MANAGER_SOURCE_ONLY=1
+                export TAILSCALE_MANAGER_SOURCE_ONLY
+                . "$1"
+                remote=$(get_remote_script_version) || exit 1
+                if version_lt "$VERSION" "$remote"; then
+                    do_self_update sync-scripts
+                else
+                    echo "Already up to date"
+                fi
+            ' sh "$MANAGER_BIN"
+            ;;
+        *)
+            printf '{"error":"Method not found"}'
+            ;;
+    esac
+    ;;
+*)
+    printf '{"error":"Unsupported action"}'
+    exit 1
+    ;;
+esac

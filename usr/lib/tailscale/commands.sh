@@ -332,9 +332,10 @@ do_uninstall() {
     rm -f /usr/bin/tailscale_update_check
 
     rm -rf "$LUCI_VIEW_DIR"
-    rm -f "$LUCI_UCODE_DEST"
+    rm -f "$LUCI_RPC_DEST"
     rm -f "$LUCI_MENU_DEST"
     rm -f "$LUCI_ACL_DEST"
+    rm -f /usr/share/rpcd/ucode/luci-tailscale.uc
     if [ -x /etc/init.d/rpcd ]; then
         /etc/init.d/rpcd reload 2>/dev/null || true
     fi
