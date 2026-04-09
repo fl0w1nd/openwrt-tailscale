@@ -22,3 +22,4 @@ docs/node_modules/
 /.agents
 /.claude
 /local-docs
+scripts/build-small.sh
