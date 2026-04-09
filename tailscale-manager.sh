@@ -350,62 +350,118 @@ _ensure_libraries() {
 check_dependencies() {
     log_info "Checking system dependencies..."
 
+    local has_opkg=0
     local deps_to_install=""
     local need_update=0
+    local warn_count=0
 
-    if ! command -v opkg >/dev/null 2>&1; then
-        log_warn "opkg not found, cannot auto-install dependencies"
-        return 0
+    if command -v opkg >/dev/null 2>&1; then
+        has_opkg=1
     fi
 
-    if [ ! -d "/sys/module/tun" ] && ! opkg list-installed | grep -q "kmod-tun"; then
-        log_warn "kmod-tun is missing"
-        deps_to_install="$deps_to_install kmod-tun"
-        need_update=1
-    elif [ ! -d "/sys/module/tun" ]; then
+    # --- wget ---
+    if ! command -v wget >/dev/null 2>&1; then
+        warn_count=$((warn_count + 1))
+        log_warn "wget not found (required for downloading binaries)"
+        if [ "$has_opkg" = "1" ]; then
+            deps_to_install="$deps_to_install wget-ssl"
+            need_update=1
+        else
+            log_warn "  Please install wget manually: opkg install wget-ssl"
+        fi
+    fi
+
+    # --- HTTPS support (libustream-*) ---
+    if ! wget -q --spider https://pkgs.tailscale.com 2>/dev/null; then
+        if command -v wget >/dev/null 2>&1; then
+            warn_count=$((warn_count + 1))
+            log_warn "HTTPS support may be missing (wget cannot reach https endpoint)"
+            if [ "$has_opkg" = "1" ]; then
+                if opkg list-installed 2>/dev/null | grep -q "libustream-mbedtls\|libustream-openssl\|libustream-wolfssl"; then
+                    : # already installed, likely a transient network issue
+                else
+                    deps_to_install="$deps_to_install libustream-mbedtls"
+                    need_update=1
+                fi
+            else
+                log_warn "  Please install SSL support: opkg install libustream-mbedtls"
+            fi
+        fi
+    fi
+
+    # --- CA certificates ---
+    if [ ! -f "/etc/ssl/certs/ca-certificates.crt" ]; then
+        if [ "$has_opkg" = "0" ] || ! opkg list-installed 2>/dev/null | grep -q "ca-bundle"; then
+            warn_count=$((warn_count + 1))
+            log_warn "ca-bundle is missing (needed for HTTPS verification)"
+            if [ "$has_opkg" = "1" ]; then
+                deps_to_install="$deps_to_install ca-bundle"
+                need_update=1
+            else
+                log_warn "  Please install ca-bundle manually: opkg install ca-bundle"
+            fi
+        fi
+    fi
+
+    # --- kmod-tun ---
+    if [ ! -d "/sys/module/tun" ]; then
         modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
     fi
-
-    if [ ! -f "/etc/ssl/certs/ca-certificates.crt" ]; then
-        if ! opkg list-installed | grep -q "ca-bundle"; then
-             log_warn "ca-bundle is missing"
-             deps_to_install="$deps_to_install ca-bundle"
-             need_update=1
-        fi
-    fi
-
-    if ! command -v iptables >/dev/null 2>&1; then
-        log_warn "iptables command is missing"
-        if [ -x /sbin/fw4 ]; then
-            deps_to_install="$deps_to_install iptables-nft"
+    if [ ! -d "/sys/module/tun" ] && ! kernel_has_builtin_tun; then
+        warn_count=$((warn_count + 1))
+        log_warn "kmod-tun is missing (TUN device not available)"
+        if [ "$has_opkg" = "1" ]; then
+            deps_to_install="$deps_to_install kmod-tun"
+            need_update=1
         else
-            deps_to_install="$deps_to_install iptables"
+            log_warn "  Tailscale will fall back to userspace networking mode"
+            log_warn "  To use kernel TUN mode, install kmod-tun manually"
         fi
-        need_update=1
     fi
 
-    if [ -n "$deps_to_install" ]; then
-        log_info "Installing missing dependencies:$deps_to_install..."
+    # --- iptables ---
+    if ! command -v iptables >/dev/null 2>&1; then
+        warn_count=$((warn_count + 1))
+        log_warn "iptables command is missing"
+        if [ "$has_opkg" = "1" ]; then
+            if [ -x /sbin/fw4 ]; then
+                deps_to_install="$deps_to_install iptables-nft"
+            else
+                deps_to_install="$deps_to_install iptables"
+            fi
+            need_update=1
+        fi
+    fi
+
+    # --- Try auto-install via opkg ---
+    if [ -n "$deps_to_install" ] && [ "$has_opkg" = "1" ]; then
+        log_info "Attempting to install missing dependencies:$deps_to_install ..."
 
         if [ "$need_update" -eq 1 ]; then
             log_info "Running opkg update..."
             opkg update >/dev/null 2>&1 || log_warn "opkg update failed, trying install anyway"
         fi
 
-        # shellcheck disable=SC2086
-        set -- $deps_to_install
-        if opkg install "$@"; then
-            log_info "Dependencies installed successfully"
-
-            if echo "$deps_to_install" | grep -q "kmod-tun"; then
-                modprobe tun 2>/dev/null || true
+        local dep
+        for dep in $deps_to_install; do
+            if opkg install "$dep" >/dev/null 2>&1; then
+                log_info "Installed $dep"
+            else
+                log_warn "Failed to install $dep (non-fatal, continuing)"
             fi
-        else
-            log_error "Failed to install dependencies"
-            return 1
+        done
+
+        if echo "$deps_to_install" | grep -q "kmod-tun"; then
+            modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
         fi
-    else
-        log_info "All dependencies seem to be met"
+    fi
+
+    if [ "$has_opkg" = "0" ] && [ "$warn_count" -gt 0 ]; then
+        log_warn "opkg not available, cannot auto-install dependencies"
+    fi
+
+    if [ "$warn_count" -eq 0 ]; then
+        log_info "All dependencies are met"
     fi
 
     setup_tun_device
