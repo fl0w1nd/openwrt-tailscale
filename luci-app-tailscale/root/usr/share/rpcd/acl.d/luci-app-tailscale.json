@@ -9,9 +9,10 @@
 				"luci-tailscale": [
 					"get_status",
 					"get_install_info",
-					"get_latest_version",
-					"get_latest_versions",
-					"get_script_update_info",
+				"get_latest_version",
+				"get_latest_versions",
+				"get_script_local_info",
+				"get_script_update_info",
 					"get_task_status",
 					"list_versions",
 					"list_official_releases"

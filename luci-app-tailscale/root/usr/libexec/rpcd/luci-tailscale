@@ -146,6 +146,7 @@ list)
     "get_install_info": {},
     "get_latest_version": {},
     "get_latest_versions": {},
+    "get_script_local_info": {},
     "get_script_update_info": {},
     "get_task_status": { "task": "" },
     "list_versions": { "limit": 0 },
@@ -174,6 +175,9 @@ call)
             ;;
         get_latest_versions)
             exec "$MANAGER_BIN" json-latest-versions
+            ;;
+        get_script_local_info)
+            exec "$MANAGER_BIN" json-script-local-info
             ;;
         get_script_update_info)
             exec "$MANAGER_BIN" json-script-info

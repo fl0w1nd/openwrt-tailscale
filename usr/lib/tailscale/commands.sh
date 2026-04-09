@@ -802,9 +802,6 @@ do_install_version_quiet() {
     mkdir -p "$STATE_DIR"
     create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
 
-    install_runtime_scripts || return 1
-    install_update_script || return 1
-    install_luci_app || return 1
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else

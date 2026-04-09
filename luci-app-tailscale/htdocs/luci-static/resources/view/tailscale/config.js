@@ -77,38 +77,23 @@ return view.extend({
 		s.anonymous = false;
 		s.addremove = false;
 
-		o = s.option(form.Flag, 'enabled', 'Enable', 'Enable or disable the Tailscale service.');
-		o.default = '1';
-		o.rmempty = false;
-
 		o = s.option(form.Value, 'port', 'Port', 'UDP port for WireGuard traffic.');
 		o.datatype = 'port';
 		o.default = '41641';
 		o.rmempty = false;
 
-		o = s.option(form.ListValue, 'tun_mode', 'TUN Mode', 'Network mode for Tailscale.');
-		o.value('auto', 'Auto (prefer kernel, fallback to userspace)');
-		o.value('kernel', 'Kernel');
-		o.value('userspace', 'Userspace');
+		o = s.option(form.ListValue, 'tun_mode', 'Networking Mode', 'Choose between TUN mode and userspace networking mode.');
+		o.value('auto', 'Auto (prefer TUN mode, fallback to userspace networking mode)');
+		o.value('kernel', 'TUN mode');
+		o.value('userspace', 'Userspace networking mode');
 		o.default = 'auto';
 
 		o = s.option(form.ListValue, 'proxy_listen', 'Proxy Listen',
-			'Proxy listen scope for SOCKS5/HTTP proxy in userspace mode.');
+			'Proxy listen scope for SOCKS5/HTTP proxy in userspace networking mode.');
 		o.value('localhost', 'Localhost only');
 		o.value('lan', 'LAN (0.0.0.0)');
 		o.default = 'localhost';
 		o.depends('tun_mode', 'userspace');
-
-		o = s.option(form.ListValue, 'fw_mode', 'Firewall Mode',
-			'Firewall backend used by tailscaled.');
-		o.value('nftables', 'nftables (fw4)');
-		o.value('iptables', 'iptables (fw3)');
-		o.default = 'nftables';
-
-		o = s.option(form.Flag, 'auto_update', 'Auto Update',
-			'Automatically check for and install Tailscale updates via cron.');
-		o.default = '0';
-		o.rmempty = false;
 
 		o = s.option(form.Flag, 'log_stdout', 'Log stdout', 'Enable stdout logging for tailscaled.');
 		o.default = '1';

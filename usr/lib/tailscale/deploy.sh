@@ -14,7 +14,6 @@
 #
 # Required functions:
 #   log_info(), log_error(), log_warn(), download_repo_file()
-#   detect_firewall_backend() (from firewall.sh)
 #   get_auto_update_config() (from entry script)
 
 # Create UCI tailscale configuration
@@ -23,14 +22,6 @@ create_uci_config() {
     local bin_dir="$2"
     local download_source="${3:-official}"
     local auto_update="${4:-0}"
-
-    local fw_backend
-    fw_backend=$(detect_firewall_backend)
-    local fw_mode="nftables"
-    case "$fw_backend" in
-        fw3) fw_mode="iptables" ;;
-        fw4) fw_mode="nftables" ;;
-    esac
 
     if ! command -v uci >/dev/null 2>&1; then
         log_error "uci not found, cannot create config"
@@ -46,7 +37,6 @@ set tailscale.settings.storage_mode='${storage_mode}'
 set tailscale.settings.bin_dir='${bin_dir}'
 set tailscale.settings.state_file='${STATE_FILE}'
 set tailscale.settings.statedir='${STATE_DIR}'
-set tailscale.settings.fw_mode='${fw_mode}'
 set tailscale.settings.download_source='${download_source}'
 set tailscale.settings.auto_update='${auto_update}'
 set tailscale.settings.tun_mode='auto'

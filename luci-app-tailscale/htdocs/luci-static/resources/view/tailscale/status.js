@@ -70,6 +70,22 @@ function statusIndicator(running) {
 	}, (running ? '\u25cf ' : '\u25cf ') + (running ? 'Running' : 'Stopped'));
 }
 
+function formatFirewallBackend(backend) {
+	if (backend === 'fw4')
+		return 'fw4 (nftables)';
+	if (backend === 'fw3')
+		return 'fw3 (iptables)';
+	return backend || '-';
+}
+
+function formatNetworkingMode(mode) {
+	if (mode === 'kernel')
+		return 'TUN mode';
+	if (mode === 'userspace')
+		return 'Userspace networking mode';
+	return mode || '-';
+}
+
 function makeInfoRow(label, value) {
 	return E('div', { 'style': 'display:flex;padding:4px 0' }, [
 		E('span', { 'style': 'min-width:160px;font-weight:bold;color:#666' }, label),
@@ -94,6 +110,29 @@ return view.extend({
 	statusElements: {},
 	currentStatus: null,
 
+	setButtonDisabled: function(button, disabled) {
+		if (!button)
+			return;
+
+		if (disabled)
+			button.setAttribute('disabled', 'disabled');
+		else
+			button.removeAttribute('disabled');
+	},
+
+	getDynamicSectionType: function(status) {
+		if (!status || !status.running)
+			return null;
+
+		if (status.backend_state === 'NeedsLogin')
+			return 'needs-login';
+
+		if (status.peers)
+			return 'peers';
+
+		return null;
+	},
+
 	load: function() {
 		return Promise.all([
 			L.resolveDefault(callGetStatus(), {}),
@@ -116,13 +155,11 @@ return view.extend({
 			container.appendChild(this.renderInstallWizard(installInfo));
 		}
 		else {
+			this.statusElements.dynamicSection = E('div');
 			container.appendChild(this.renderServiceControl(status));
 			container.appendChild(this.renderServiceStatus(status));
-
-			if (status.running && status.backend_state === 'NeedsLogin')
-				container.appendChild(this.renderNeedsLogin());
-			else if (status.running && status.peers)
-				container.appendChild(this.renderPeerTable(status));
+			container.appendChild(this.statusElements.dynamicSection);
+			this.updateDynamicSection(status);
 		}
 
 		poll.add(L.bind(this.pollStatus, this), 10);
@@ -159,18 +196,42 @@ return view.extend({
 			dom.content(el.version, status.installed_version
 				? status.installed_version + (status.source_type ? ' (' + status.source_type + ')' : '')
 				: '-');
-		if (el.tunMode)
-			dom.content(el.tunMode, status.tun_mode || '-');
+		if (el.networkingMode)
+			dom.content(el.networkingMode, formatNetworkingMode(status.tun_mode));
 		if (el.backendState)
 			dom.content(el.backendState, status.backend_state || '-');
+		if (el.firewallBackend)
+			dom.content(el.firewallBackend, formatFirewallBackend(status.firewall_backend));
 		if (el.ips)
 			dom.content(el.ips, (status.tailscale_ips && status.tailscale_ips.length)
 				? status.tailscale_ips.join(', ') : '-');
 		if (el.deviceName)
 			dom.content(el.deviceName, status.device_name || '-');
 
-		if (el.peerTableBody && status.peers)
-			this.updatePeerTableBody(el.peerTableBody, status.peers);
+		this.setButtonDisabled(el.startButton, status.running);
+		this.setButtonDisabled(el.stopButton, !status.running);
+
+		this.updateDynamicSection(status);
+	},
+
+	updateDynamicSection: function(status) {
+		var el = this.statusElements;
+		var type = this.getDynamicSectionType(status);
+
+		if (!el.dynamicSection)
+			return;
+
+		if (el.dynamicSectionType !== type) {
+			el.peerTableBody = null;
+			el.dynamicSectionType = type;
+
+			dom.content(el.dynamicSection, type === 'needs-login'
+				? this.renderNeedsLogin()
+				: (type === 'peers' ? this.renderPeerTable(status) : null));
+		}
+
+		if (type === 'peers' && el.peerTableBody)
+			this.updatePeerTableBody(el.peerTableBody, status.peers || []);
 	},
 
 	renderInstallWizard: function(installInfo) {
@@ -269,8 +330,9 @@ return view.extend({
 		el.running = E('span');
 		el.pid = E('span');
 		el.version = E('span');
-		el.tunMode = E('span');
+		el.networkingMode = E('span');
 		el.backendState = E('span');
+		el.firewallBackend = E('span');
 		el.ips = E('span');
 		el.deviceName = E('span');
 
@@ -279,8 +341,9 @@ return view.extend({
 		dom.content(el.version, status.installed_version
 			? status.installed_version + (status.source_type ? ' (' + status.source_type + ')' : '')
 			: '-');
-		dom.content(el.tunMode, status.tun_mode || '-');
+		dom.content(el.networkingMode, formatNetworkingMode(status.tun_mode));
 		dom.content(el.backendState, status.backend_state || '-');
+		dom.content(el.firewallBackend, formatFirewallBackend(status.firewall_backend));
 		dom.content(el.ips, (status.tailscale_ips && status.tailscale_ips.length)
 			? status.tailscale_ips.join(', ') : '-');
 		dom.content(el.deviceName, status.device_name || '-');
@@ -292,8 +355,9 @@ return view.extend({
 				makeInfoRow('Device Name', el.deviceName),
 				makeInfoRow('PID', el.pid),
 				makeInfoRow('Version', el.version),
-				makeInfoRow('Network Mode', el.tunMode),
+				makeInfoRow('Networking Mode', el.networkingMode),
 				makeInfoRow('Backend State', el.backendState),
+				makeInfoRow('Firewall Backend', el.firewallBackend),
 				makeInfoRow('Tailscale IPs', el.ips)
 			])
 		]);
@@ -360,14 +424,15 @@ return view.extend({
 		for (var i = 0; i < sorted.length; i++) {
 			var p = sorted[i];
 			var traffic = '';
+			var nameCell = [ p.name || '-' ];
 			if (p.rx_bytes != null || p.tx_bytes != null)
 				traffic = '\u2191' + formatBytes(p.tx_bytes) + ' \u2193' + formatBytes(p.rx_bytes);
 
+			if (p.self)
+				nameCell.push(E('div', { 'style': 'font-size:11px;color:#666;margin-top:2px' }, 'This device'));
+
 			tbody.appendChild(E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td' }, [
-					p.name || '-',
-					p.self ? E('div', { 'style': 'font-size:11px;color:#666;margin-top:2px' }, 'This device') : null
-				]),
+				E('td', { 'class': 'td' }, nameCell),
 				E('td', { 'class': 'td' }, p.ip || '-'),
 				E('td', { 'class': 'td' }, p.os || '-'),
 				E('td', { 'class': 'td' },
@@ -382,19 +447,25 @@ return view.extend({
 	},
 
 	renderServiceControl: function(status) {
+		var el = this.statusElements;
+
+		el.startButton = E('button', {
+			'class': 'cbi-button cbi-button-apply',
+			'click': ui.createHandlerFn(this, 'handleServiceAction', 'start'),
+			'disabled': status.running ? 'disabled' : null
+		}, 'Start');
+
+		el.stopButton = E('button', {
+			'class': 'cbi-button cbi-button-reset',
+			'click': ui.createHandlerFn(this, 'handleServiceAction', 'stop'),
+			'disabled': !status.running ? 'disabled' : null
+		}, 'Stop');
+
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, 'Service Control'),
 			E('div', { 'style': 'display:flex;gap:8px;padding:8px 16px;flex-wrap:wrap' }, [
-				E('button', {
-					'class': 'cbi-button cbi-button-apply',
-					'click': ui.createHandlerFn(this, 'handleServiceAction', 'start'),
-					'disabled': status.running ? 'disabled' : null
-				}, 'Start'),
-				E('button', {
-					'class': 'cbi-button cbi-button-reset',
-					'click': ui.createHandlerFn(this, 'handleServiceAction', 'stop'),
-					'disabled': !status.running ? 'disabled' : null
-				}, 'Stop'),
+				el.startButton,
+				el.stopButton,
 				E('button', {
 					'class': 'cbi-button cbi-button-save',
 					'click': ui.createHandlerFn(this, 'handleServiceAction', 'restart')
@@ -403,14 +474,45 @@ return view.extend({
 		]);
 	},
 
-	handleServiceAction: function(ev, action) {
-		return callServiceControl(action).then(function(result) {
+	refreshServiceState: function(action, attempt) {
+		attempt = attempt || 0;
+
+		return callGetStatus().then(L.bind(function(status) {
+			var targetRunning = action !== 'stop';
+			var hasDynamicContent = status && (status.backend_state === 'NeedsLogin' || (status.peers && status.peers.length));
+
+			if (status) {
+				this.currentStatus = status;
+				this.updateStatusDisplay(status);
+			}
+
+			if (!status || attempt >= 9)
+				return;
+
+			if (status.running === targetRunning && (!targetRunning || hasDynamicContent))
+				return;
+
+			return new Promise(function(resolve) {
+				window.setTimeout(resolve, 2000);
+			}).then(L.bind(function() {
+				return this.refreshServiceState(action, attempt + 1);
+			}, this));
+		}, this));
+	},
+
+	handleServiceAction: function(action) {
+		return callServiceControl(action).then(L.bind(function(result) {
 			if (result && result.code === 0)
 				ui.addNotification(null, E('p', {}, 'Service ' + action + ' completed.'), 'info');
 			else
 				ui.addNotification(null,
 					E('p', {}, 'Service ' + action + ' failed: ' + ((result && result.stdout) || 'Unknown error')),
 					'danger');
+
+			if (result && result.code === 0)
+				return this.refreshServiceState(action);
+		}, this)).catch(function(err) {
+			ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
 		});
 	},
 
