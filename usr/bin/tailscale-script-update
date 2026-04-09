@@ -50,6 +50,13 @@ if version_lt "$VERSION" "$remote"; then
     log_msg "Script update available: v${VERSION} -> v${remote}"
     do_self_update sync-scripts
     log_msg "Script update completed"
+elif ! managed_sync_is_current; then
+    log_msg "Managed files out of sync for v${VERSION}, syncing"
+    sync_managed_scripts || {
+        log_msg "Managed file sync failed"
+        exit 1
+    }
+    log_msg "Managed files synced for v${VERSION}"
 else
     log_msg "Management scripts already up to date (v${VERSION})"
 fi

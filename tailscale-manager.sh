@@ -72,6 +72,7 @@ LUCI_ACL_DEST="${LUCI_ACL_DEST:-/usr/share/rpcd/acl.d/luci-app-tailscale.json}"
 
 # Module library directory (overridable for testing)
 LIB_DIR="${LIB_DIR:-/usr/lib/tailscale}"
+MANAGED_SYNC_VERSION_FILE="${MANAGED_SYNC_VERSION_FILE:-${LIB_DIR}/.managed-version}"
 
 # Module libraries sourced from $LIB_DIR
 MODULE_LIBS="version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh"

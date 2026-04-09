@@ -12,6 +12,7 @@
 #   LUCI_ACL_URL, LUCI_ACL_DEST,
 #   CONFIG_TEMPLATE_URL, CONFIG_FILE,
 #   RAW_BASE_URL, LIB_DIR
+#   VERSION, MANAGED_SYNC_VERSION_FILE
 #   MODULE_LIBS (optional; defaults to the standard module set)
 #
 # Required functions:
@@ -84,6 +85,33 @@ install_update_script() {
 install_script_update_script() {
     download_repo_file "$SCRIPT_UPDATE_SCRIPT_URL" "$SCRIPT_UPDATE_CRON_SCRIPT" 755 || return 1
     log_info "Installed script update script at ${SCRIPT_UPDATE_CRON_SCRIPT}"
+}
+
+get_managed_sync_version() {
+    [ -f "$MANAGED_SYNC_VERSION_FILE" ] || return 1
+    sed -n '1p' "$MANAGED_SYNC_VERSION_FILE"
+}
+
+managed_sync_is_current() {
+    local synced_version=""
+
+    synced_version=$(get_managed_sync_version 2>/dev/null) || return 1
+    [ -n "$synced_version" ] || return 1
+    [ "$synced_version" = "$VERSION" ]
+}
+
+mark_managed_sync_version() {
+    local tmp_file="${MANAGED_SYNC_VERSION_FILE}.tmp.$$"
+
+    mkdir -p "$(dirname "$MANAGED_SYNC_VERSION_FILE")" || return 1
+    printf '%s\n' "$VERSION" > "$tmp_file" || {
+        rm -f "$tmp_file"
+        return 1
+    }
+    mv -f "$tmp_file" "$MANAGED_SYNC_VERSION_FILE" || {
+        rm -f "$tmp_file"
+        return 1
+    }
 }
 
 # Install all runtime scripts (common lib, module libs, init script)
@@ -224,9 +252,12 @@ sync_managed_scripts() {
     install_update_script || return 1
     install_luci_app || luci_rc=1
 
-    setup_cron
+    setup_cron || return 1
 
-    return "$luci_rc"
+    [ "$luci_rc" -eq 0 ] || return "$luci_rc"
+    mark_managed_sync_version || return 1
+
+    return 0
 }
 
 # Reconcile cron jobs from UCI configuration

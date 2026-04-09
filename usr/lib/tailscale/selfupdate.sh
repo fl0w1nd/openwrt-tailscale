@@ -9,6 +9,18 @@
 #   log_info(), log_error(), log_warn()
 #   version_lt() (from version.sh)
 #   download_repo_file() (from entry script)
+#   sync_managed_scripts(), managed_sync_is_current() (from deploy.sh)
+
+sync_current_managed_files() {
+    if managed_sync_is_current; then
+        return 10
+    fi
+
+    log_info "Managed files are out of sync for v${VERSION}, syncing..."
+    sync_managed_scripts || return 1
+    log_info "Managed files synced for v${VERSION}"
+    return 0
+}
 
 # Check for script updates and prompt user
 # Return codes:
@@ -52,7 +64,17 @@ check_script_update() {
         esac
     fi
 
-    return 10
+    if sync_current_managed_files; then
+        return 0
+    fi
+
+    case "$?" in
+        10) return 10 ;;
+        *)
+            echo "[WARN] Failed to sync managed files for v${VERSION}"
+            return 20
+            ;;
+    esac
 }
 
 # Perform script self-update: download, replace, re-exec

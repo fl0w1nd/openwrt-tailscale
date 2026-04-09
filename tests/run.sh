@@ -305,6 +305,7 @@ ROOT="$TEST_DIR/root"
 CALLS="$TEST_DIR/calls.log"
 COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
 LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
+MANAGED_SYNC_VERSION_FILE="\$LIB_DIR/.managed-version"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
 SCRIPT_UPDATE_CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-script-update"
@@ -357,11 +358,13 @@ sync_managed_scripts
 [ -f "\$INIT_SCRIPT" ]
 [ -f "\$CRON_SCRIPT" ]
 [ -f "\$SCRIPT_UPDATE_CRON_SCRIPT" ]
+[ -f "\$MANAGED_SYNC_VERSION_FILE" ]
 [ -f "\$LUCI_VIEW_DIR/config.js" ]
 [ -f "\$LUCI_VIEW_DIR/maintenance.js" ]
 [ -f "\$LUCI_RPC_DEST" ]
 grep -Fq 'setup' "\$CALLS"
 grep -Fq 'luci_installed' "\$CALLS"
+grep -Fxq "\$VERSION" "\$MANAGED_SYNC_VERSION_FILE"
 
 # Verify new library files were installed
 for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh json.sh; do
@@ -889,6 +892,105 @@ do_self_update sync-scripts >/dev/null 2>&1 || {
 
 [ -f "$TEST_DIR/sync-called" ] || {
     echo "sync-scripts should run via the real script path"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_sync_managed_scripts_marks_version_only_after_full_success() {
+    new_script manager-sync-marker.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
+MANAGED_SYNC_VERSION_FILE="\$LIB_DIR/.managed-version"
+CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
+SCRIPT_UPDATE_CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-script-update"
+INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
+COMMON_LIB_PATH="\$LIB_DIR/common.sh"
+
+download_repo_file() {
+    mkdir -p "$(dirname "\$2")"
+    printf 'downloaded\n' > "\$2"
+    chmod "\${3:-644}" "\$2" 2>/dev/null || true
+}
+
+install_luci_app() {
+    return 1
+}
+
+setup_cron() {
+    return 0
+}
+
+if sync_managed_scripts; then
+    echo "sync-scripts should fail when LuCI sync fails"
+    exit 1
+fi
+
+[ ! -f "\$MANAGED_SYNC_VERSION_FILE" ] || {
+    echo "managed sync marker should be written only after full success"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_script_auto_update_syncs_managed_files_when_version_matches() {
+    new_script script-auto-update-sync.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+MANAGER_BIN="$TEST_DIR/fake-manager.sh"
+FUNCTIONS_LIB="$TEST_DIR/functions.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+CALLS="$TEST_DIR/calls.log"
+
+cat > "$FUNCTIONS_LIB" <<'LIB'
+config_load() { :; }
+config_get() {
+    eval "$1=1"
+}
+LIB
+
+cat > "$MANAGER_BIN" <<'MANAGER'
+#!/bin/sh
+VERSION="4.0.4"
+
+get_remote_script_version() {
+    echo "4.0.4"
+}
+
+version_lt() {
+    [ "$1" != "$2" ]
+}
+
+managed_sync_is_current() {
+    return 1
+}
+
+sync_managed_scripts() {
+    echo sync >> "$CALLS"
+}
+MANAGER
+chmod +x "$MANAGER_BIN"
+
+TAILSCALE_MANAGER_BIN="$MANAGER_BIN" \
+TAILSCALE_FUNCTIONS_PATH="$FUNCTIONS_LIB" \
+TAILSCALE_SCRIPT_UPDATE_LOG_FILE="$LOG_FILE" \
+    CALLS="$CALLS" sh "$REPO_ROOT/usr/bin/tailscale-script-update"
+
+grep -Fq 'sync' "$CALLS" || {
+    echo "script auto-update should sync managed files when marker is stale"
+    exit 1
+}
+
+grep -Fq 'Managed files synced for v4.0.4' "$LOG_FILE" || {
+    echo "missing managed file sync log entry"
     exit 1
 }
 EOF
@@ -2005,6 +2107,8 @@ run_test 'rpcd exec bridge reports async task status' test_rpcd_bridge_reports_t
 run_test 'rpcd exec bridge keeps multiline output valid JSON' test_rpcd_bridge_multiline_output_stays_valid_json
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'do_self_update respects explicit script path when sourced' test_do_self_update_uses_explicit_script_path_when_sourced
+run_test 'sync-scripts writes marker only after full success' test_sync_managed_scripts_marks_version_only_after_full_success
+run_test 'script auto-update syncs managed files when version matches' test_script_auto_update_syncs_managed_files_when_version_matches
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
 run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
 run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
