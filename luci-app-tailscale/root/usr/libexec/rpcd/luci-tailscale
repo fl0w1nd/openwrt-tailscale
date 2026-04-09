@@ -267,7 +267,8 @@ call)
         upgrade_scripts)
             start_background_task upgrade-scripts sh -c '
                 TAILSCALE_MANAGER_SOURCE_ONLY=1
-                export TAILSCALE_MANAGER_SOURCE_ONLY
+                TAILSCALE_MANAGER_SCRIPT_PATH="$1"
+                export TAILSCALE_MANAGER_SOURCE_ONLY TAILSCALE_MANAGER_SCRIPT_PATH
                 . "$1"
                 remote=$(get_remote_script_version) || exit 1
                 if version_lt "$VERSION" "$remote"; then

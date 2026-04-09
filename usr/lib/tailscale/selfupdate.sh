@@ -60,7 +60,10 @@ do_self_update() {
     local script_path
     local tmp_script="/tmp/tailscale-manager.sh.new"
 
-    script_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
+    script_path="${TAILSCALE_MANAGER_SCRIPT_PATH:-}"
+    if [ -z "$script_path" ]; then
+        script_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
+    fi
 
     echo ""
     log_info "Downloading latest script..."
