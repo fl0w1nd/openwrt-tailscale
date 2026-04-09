@@ -3,7 +3,8 @@
 # Sourced by tailscale-manager entry script.
 #
 # Provides: cmd_json_status, cmd_json_install_info, cmd_json_latest_versions,
-#           cmd_json_latest_version, cmd_json_script_info
+#           cmd_json_latest_version, cmd_json_script_info,
+#           cmd_json_script_local_info
 #
 # Required variables (set by entry script):
 #   VERSION, DOWNLOAD_SOURCE, PERSISTENT_DIR, RAM_DIR, CONFIG_FILE
@@ -116,52 +117,49 @@ _get_display_name() {
 # Peer Extraction from tailscale status JSON
 # ============================================================================
 
-# Format remote peers via jsonfilter wildcard extraction + awk.
+# Format remote peers via per-peer jsonfilter extraction.
 # Outputs comma-separated peer JSON objects (no surrounding brackets).
 _extract_peers_jsonfilter() {
     local ts_file="$1"
     local _tmp="/tmp/.ts-peers.$$.d"
+    local _objects="$_tmp/objects"
+    local first=1
+    local peer_json dns host ip os online exit_n exit_opt rx tx seen
+
     mkdir -p "$_tmp"
 
-    jsonfilter -i "$ts_file" -e '$.Peer.*.DNSName' > "$_tmp/dns" 2>/dev/null || true
-    [ -s "$_tmp/dns" ] || { rm -rf "$_tmp"; return 0; }
+    jsonfilter -i "$ts_file" -e '@.Peer[*]' > "$_objects" 2>/dev/null || true
 
-    jsonfilter -i "$ts_file" -e '$.Peer.*.HostName' > "$_tmp/host" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.TailscaleIPs[0]' > "$_tmp/ip" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.OS' > "$_tmp/os" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.Online' > "$_tmp/online" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.ExitNode' > "$_tmp/exit" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.RxBytes' > "$_tmp/rx" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.TxBytes' > "$_tmp/tx" 2>/dev/null || true
-    jsonfilter -i "$ts_file" -e '$.Peer.*.LastSeen' > "$_tmp/seen" 2>/dev/null || true
+    if [ ! -s "$_objects" ]; then
+        jsonfilter -i "$ts_file" -e '@.Peer' 2>/dev/null | jsonfilter -e '@[*]' > "$_objects" 2>/dev/null || true
+    fi
 
-    paste "$_tmp/dns" "$_tmp/host" "$_tmp/ip" "$_tmp/os" \
-          "$_tmp/online" "$_tmp/exit" "$_tmp/rx" "$_tmp/tx" "$_tmp/seen" | \
-    awk -F'\t' '
-    function jesc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
-    function jstr(s) { return (s == "" || s == "(null)") ? "null" : "\"" jesc(s) "\"" }
-    function jbool(s) { return (s == "true") ? "true" : "false" }
-    function jnum(s) { return (s != "" && s+0 == s) ? s+0 : 0 }
-    BEGIN { n = 0 }
-    {
-        if ($1 == "" && $2 == "") next
-        if (n > 0) printf ","
-        n++
-        dns = $1; host = $2
-        name = host; d = dns; sub(/\.$/, "", d)
-        split(d, labels, "."); if (labels[1] != "") name = labels[1]
-        printf "{\"name\":" jstr(name)
-        printf ",\"hostname\":" jstr(host)
-        printf ",\"dns_name\":" jstr(dns)
-        printf ",\"ip\":" jstr($3)
-        printf ",\"os\":" jstr($4)
-        printf ",\"online\":" jbool($5)
-        printf ",\"exit_node\":" jbool($6)
-        printf ",\"rx_bytes\":" jnum($7)
-        printf ",\"tx_bytes\":" jnum($8)
-        printf ",\"last_seen\":" jstr($9)
-        printf ",\"self\":false}"
-    }'
+    [ -s "$_objects" ] || { rm -rf "$_tmp"; return 0; }
+
+    while IFS= read -r peer_json; do
+        [ -n "$peer_json" ] || continue
+
+        dns=$(jsonfilter -s "$peer_json" -e '@.DNSName' 2>/dev/null) || true
+        host=$(jsonfilter -s "$peer_json" -e '@.HostName' 2>/dev/null) || true
+        ip=$(jsonfilter -s "$peer_json" -e '@.TailscaleIPs[0]' 2>/dev/null) || true
+        os=$(jsonfilter -s "$peer_json" -e '@.OS' 2>/dev/null) || true
+        online=$(jsonfilter -s "$peer_json" -e '@.Online' 2>/dev/null) || online="false"
+        exit_n=$(jsonfilter -s "$peer_json" -e '@.ExitNode' 2>/dev/null) || exit_n="false"
+        exit_opt=$(jsonfilter -s "$peer_json" -e '@.ExitNodeOption' 2>/dev/null) || exit_opt="false"
+        rx=$(jsonfilter -s "$peer_json" -e '@.RxBytes' 2>/dev/null) || rx="0"
+        tx=$(jsonfilter -s "$peer_json" -e '@.TxBytes' 2>/dev/null) || tx="0"
+        seen=$(jsonfilter -s "$peer_json" -e '@.LastSeen' 2>/dev/null) || true
+
+        case "$exit_n:$exit_opt" in
+            true:*|*:true) exit_n="true" ;;
+            *) exit_n="false" ;;
+        esac
+
+        [ "$first" = "1" ] || printf ','
+        _build_peer_json "$dns" "$host" "$ip" "$os" \
+            "$online" "$exit_n" "$rx" "$tx" "$seen" "false"
+        first=0
+    done < "$_objects"
 
     rm -rf "$_tmp"
 }
@@ -187,7 +185,7 @@ _extract_peers_jq() {
             ip: (if (.TailscaleIPs // [] | length) > 0 then .TailscaleIPs[0] else null end),
             os: (.OS // null),
             online: (.Online // false),
-            exit_node: (.ExitNode // false),
+            exit_node: ((.ExitNode // false) or (.ExitNodeOption // false)),
             rx_bytes: (.RxBytes // 0),
             tx_bytes: (.TxBytes // 0),
             last_seen: (.LastSeen // null),
@@ -202,10 +200,17 @@ _extract_peers_jq() {
 
 cmd_json_status() {
     local bin_dir=""
+    local firewall_backend=""
     bin_dir=$(_find_bin_dir) || true
 
+    if type detect_firewall_backend >/dev/null 2>&1; then
+        firewall_backend=$(detect_firewall_backend 2>/dev/null) || true
+    fi
+
     if [ -z "$bin_dir" ]; then
-        printf '{"installed":false,"running":false,"pid":null,"installed_version":null,"source_type":null,"tun_mode":null,"backend_state":null,"device_name":null,"tailscale_ips":[],"hostname":null,"peers":[]}'
+        printf '{"installed":false,"running":false,"pid":null,"installed_version":null,"source_type":null,"tun_mode":null,"backend_state":null,"device_name":null'
+        printf ','; _jstr firewall_backend "$firewall_backend"
+        printf ',"tailscale_ips":[],"hostname":null,"peers":[]}'
         return 0
     fi
 
@@ -264,6 +269,7 @@ cmd_json_status() {
     printf ','; _jstr tun_mode "$tun_mode"
     printf ','; _jstr backend_state "$backend_state"
     printf ','; _jstr device_name "$device_name"
+    printf ','; _jstr firewall_backend "$firewall_backend"
     printf ',"tailscale_ips":%s' "$self_ips_json"
     printf ','; _jstr hostname "$hostname"
     printf ',"peers":%s' "$peers_json"
@@ -277,7 +283,7 @@ _parse_status_jsonfilter() {
     backend_state=$(jsonfilter -i "$ts_file" -e '$.BackendState' 2>/dev/null) || true
 
     local self_dns="" self_host="" self_ip="" self_os=""
-    local self_online="" self_exit="" self_rx="" self_tx="" self_seen=""
+    local self_online="" self_exit="" self_exit_opt="" self_rx="" self_tx="" self_seen=""
 
     self_dns=$(jsonfilter -i "$ts_file" -e '$.Self.DNSName' 2>/dev/null) || true
     self_host=$(jsonfilter -i "$ts_file" -e '$.Self.HostName' 2>/dev/null) || true
@@ -285,9 +291,15 @@ _parse_status_jsonfilter() {
     self_os=$(jsonfilter -i "$ts_file" -e '$.Self.OS' 2>/dev/null) || true
     self_online=$(jsonfilter -i "$ts_file" -e '$.Self.Online' 2>/dev/null) || self_online="false"
     self_exit=$(jsonfilter -i "$ts_file" -e '$.Self.ExitNode' 2>/dev/null) || self_exit="false"
+    self_exit_opt=$(jsonfilter -i "$ts_file" -e '$.Self.ExitNodeOption' 2>/dev/null) || self_exit_opt="false"
     self_rx=$(jsonfilter -i "$ts_file" -e '$.Self.RxBytes' 2>/dev/null) || self_rx="0"
     self_tx=$(jsonfilter -i "$ts_file" -e '$.Self.TxBytes' 2>/dev/null) || self_tx="0"
     self_seen=$(jsonfilter -i "$ts_file" -e '$.Self.LastSeen' 2>/dev/null) || true
+
+    case "$self_exit:$self_exit_opt" in
+        true:*|*:true) self_exit="true" ;;
+        *) self_exit="false" ;;
+    esac
 
     device_name=$(_get_display_name "$self_dns" "$self_host") || true
     hostname="$self_host"
@@ -345,7 +357,7 @@ _parse_status_jq() {
                 ip: (if (.TailscaleIPs // [] | length) > 0 then .TailscaleIPs[0] else null end),
                 os: (.OS // null),
                 online: (.Online // false),
-                exit_node: (.ExitNode // false),
+                exit_node: ((.ExitNode // false) or (.ExitNodeOption // false)),
                 rx_bytes: (.RxBytes // 0),
                 tx_bytes: (.TxBytes // 0),
                 last_seen: (.LastSeen // null),
@@ -472,6 +484,12 @@ cmd_json_latest_version() {
 # ============================================================================
 # Subcommand: json-script-info
 # ============================================================================
+
+cmd_json_script_local_info() {
+    printf '{'
+    _jstr current "$VERSION"
+    printf '}'
+}
 
 cmd_json_script_info() {
     local current="$VERSION"

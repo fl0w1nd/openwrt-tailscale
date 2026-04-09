@@ -2,6 +2,7 @@
 'require view';
 'require rpc';
 'require ui';
+'require uci';
 
 var _ = function(s) { return s; };
 
@@ -14,6 +15,12 @@ var callGetStatus = rpc.declare({
 var callGetLatestVersions = rpc.declare({
 	object: 'luci-tailscale',
 	method: 'get_latest_versions',
+	expect: { '': {} }
+});
+
+var callGetScriptLocalInfo = rpc.declare({
+	object: 'luci-tailscale',
+	method: 'get_script_local_info',
 	expect: { '': {} }
 });
 
@@ -125,21 +132,102 @@ function handleAsyncTask(title, message, request, successMessage, errorPrefix, r
 }
 
 return view.extend({
-	load: function() {
-		return Promise.resolve({});
-	},
+	currentStatus: null,
+	currentScriptInfo: null,
 
-	loadData: function() {
+	load: function() {
 		return Promise.all([
+			uci.load('tailscale'),
 			L.resolveDefault(callGetStatus(), {}),
-			L.resolveDefault(callGetLatestVersions(), {}),
-			L.resolveDefault(callGetScriptUpdateInfo(), {}),
-			L.resolveDefault(callListVersions(20), {}),
-			L.resolveDefault(callListOfficialVersions(20), {})
+			L.resolveDefault(callGetScriptLocalInfo(), {})
 		]);
 	},
 
-	renderVersionManagement: function(status, latestVersions, versionList, officialVersionList) {
+	getAutoUpdateEnabled: function() {
+		return uci.get('tailscale', 'settings', 'auto_update') === '1';
+	},
+
+	renderVersionOverview: function(status) {
+		return E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, 'Tailscale Versions'),
+			E('div', { 'class': 'cbi-section-descr' },
+				'Remote version checks are only performed when you request them.'),
+			E('div', { 'style': 'padding:8px 16px' }, [
+				makeInfoRow('Installed', status.installed_version || '-'),
+				makeInfoRow('Current Source', status.source_type || '-'),
+				E('div', { 'style': 'margin-top:12px;display:flex;gap:8px;flex-wrap:wrap' }, [
+					E('button', {
+						'class': 'cbi-button cbi-button-action',
+						'click': ui.createHandlerFn(this, 'handleCheckVersions')
+					}, 'Check Remote Versions')
+				])
+			])
+		]);
+	},
+
+	renderAutoUpdateSettings: function() {
+		var checkbox = E('input', {
+			'type': 'checkbox',
+			'id': 'ts-maint-auto-update',
+			'checked': this.getAutoUpdateEnabled() ? 'checked' : null
+		});
+
+		return E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, 'Auto Update'),
+			E('div', { 'class': 'cbi-section-descr' },
+				'Configure whether Tailscale should automatically check for and install updates.'),
+			E('div', { 'style': 'padding:8px 16px' }, [
+				E('label', { 'style': 'display:flex;align-items:center;gap:8px' }, [
+					checkbox,
+					E('span', {}, 'Check for updates daily at 3:30 AM')
+				]),
+				E('div', { 'style': 'margin-top:12px' }, [
+					E('button', {
+						'class': 'cbi-button cbi-button-apply',
+						'click': ui.createHandlerFn(this, 'handleSaveAutoUpdate')
+					}, 'Save Auto Update Setting')
+				])
+			])
+		]);
+	},
+
+	renderScriptMaintenance: function(scriptInfo) {
+		return E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, 'Manager Scripts'),
+			E('div', { 'class': 'cbi-section-descr' },
+				'Current script information is local. Remote update checks run only when requested.'),
+			E('div', { 'style': 'padding:8px 16px' }, [
+				makeInfoRow('Current Version', scriptInfo.current || '-'),
+				E('div', { 'style': 'margin-top:12px' }, [
+					E('button', {
+						'class': 'cbi-button cbi-button-action',
+						'click': ui.createHandlerFn(this, 'handleCheckScriptUpdates')
+					}, 'Check for Script Updates')
+				])
+			])
+		]);
+	},
+
+	renderDangerZone: function() {
+		return E('div', { 'class': 'cbi-section' }, [
+			E('h3', { 'style': 'color:#d9534f' }, 'Danger Zone'),
+			E('div', { 'class': 'cbi-section-descr' },
+				'Remove Tailscale binaries, LuCI integration, and related managed files from this router.'),
+			E('div', {
+				'style': 'padding:12px 16px;border:1px solid #f1b0b7;background:#fff5f5;border-radius:4px'
+			}, [
+				E('p', { 'style': 'margin:0 0 12px;color:#666' },
+					'This action is destructive. Your Tailscale state file will be preserved, but the installed program and management files will be removed.'),
+				E('button', {
+					'class': 'cbi-button cbi-button-remove',
+					'click': ui.createHandlerFn(this, 'handleUninstall')
+				}, 'Uninstall Tailscale')
+			])
+		]);
+	},
+
+	renderVersionDialog: function(status, latestVersions, versionList, officialVersionList) {
+		var self = this;
 		var currentVer = status.installed_version || '-';
 		var sourceType = status.source_type || 'official';
 		var latestOfficial = latestVersions.official || null;
@@ -163,107 +251,147 @@ return view.extend({
 		if (officialVersions.length === 0)
 			officialSelect.appendChild(E('option', { 'value': '' }, '(no official versions available)'));
 
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Tailscale Versions'),
-			E('div', { 'style': 'padding:8px 16px' }, [
+		return [
+			E('p', {}, 'Remote version check completed.'),
+			E('div', { 'style': 'padding:4px 0 12px' }, [
 				makeInfoRow('Installed', currentVer),
 				makeInfoRow('Current Source', sourceType),
 				makeInfoRow('Latest Official', latestOfficial || '(check failed)'),
-				makeInfoRow('Latest Small', latestSmall || '(check failed)'),
-				updateAvailable ? E('div', { 'style': 'margin:12px 0' }, [
+				makeInfoRow('Latest Small', latestSmall || '(check failed)')
+			]),
+			updateAvailable
+				? E('div', { 'style': 'margin:0 0 16px' }, [
 					E('button', {
 						'class': 'cbi-button cbi-button-apply',
-						'click': ui.createHandlerFn(this, 'handleUpdate')
+						'click': function() {
+							ui.hideModal();
+							return self.handleUpdate();
+						}
 					}, 'Update Current Source to ' + currentLatest)
-				]) : E('div'),
-				E('div', { 'style': 'margin:16px 0 0;padding-top:12px;border-top:1px solid #eee' }, [
-					E('strong', {}, 'Install a specific official version'),
-					E('div', { 'style': 'display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap' }, [
-						officialSelect,
-						E('button', {
-							'class': 'cbi-button cbi-button-action',
-							'click': ui.createHandlerFn(this, 'handleInstallOfficialVersion')
-						}, 'Install Official')
-					])
-				]),
-				E('div', { 'style': 'margin:16px 0 0;padding-top:12px;border-top:1px solid #eee' }, [
-					E('strong', {}, 'Install a specific small version'),
-					E('div', { 'style': 'display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap' }, [
-						smallSelect,
-						E('button', {
-							'class': 'cbi-button cbi-button-action',
-							'click': ui.createHandlerFn(this, 'handleInstallSmallVersion')
-						}, 'Install Small')
-					])
 				])
+				: E('p', { 'style': 'color:#666' }, 'Current source is already up to date or could not be checked.'),
+			E('div', { 'style': 'margin:16px 0 0;padding-top:12px;border-top:1px solid #eee' }, [
+				E('strong', {}, 'Install a specific official version'),
+				E('div', { 'style': 'display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap' }, [
+					officialSelect,
+					E('button', {
+						'class': 'cbi-button cbi-button-action',
+						'click': function() {
+							ui.hideModal();
+							return self.handleInstallOfficialVersion();
+						}
+					}, 'Install Official')
+				])
+			]),
+			E('div', { 'style': 'margin:16px 0 0;padding-top:12px;border-top:1px solid #eee' }, [
+				E('strong', {}, 'Install a specific small version'),
+				E('div', { 'style': 'display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap' }, [
+					smallSelect,
+					E('button', {
+						'class': 'cbi-button cbi-button-action',
+						'click': function() {
+							ui.hideModal();
+							return self.handleInstallSmallVersion();
+						}
+					}, 'Install Small')
+				])
+			]),
+			E('div', { 'class': 'right', 'style': 'margin-top:16px' }, [
+				E('button', {
+					'class': 'cbi-button',
+					'click': ui.hideModal
+				}, 'Close')
 			])
-		]);
+		];
 	},
 
-	renderScriptMaintenance: function(scriptInfo) {
+	renderScriptUpdateDialog: function(scriptInfo) {
+		var self = this;
 		var statusText = scriptInfo.latest
 			? (scriptInfo.update_available ? 'Update available' : 'Up to date')
 			: '(check failed)';
+		var canUpgrade = !!(scriptInfo && scriptInfo.latest && scriptInfo.update_available);
+		var buttonLabel = !scriptInfo.latest
+			? 'Check Failed'
+			: (scriptInfo.update_available ? 'Upgrade Scripts' : 'Already Up to Date');
 
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Manager Scripts'),
-			E('div', { 'class': 'cbi-section-descr' },
-				'This page checks for manager script updates whenever it is opened.'),
-			E('div', { 'style': 'padding:8px 16px' }, [
+		return [
+			E('div', { 'style': 'padding:4px 0 12px' }, [
 				makeInfoRow('Current Version', scriptInfo.current || '-'),
 				makeInfoRow('Latest Version', scriptInfo.latest || '(check failed)'),
-				makeInfoRow('Status', statusText),
-				E('div', { 'style': 'margin-top:12px' }, [
-					E('button', {
-						'class': 'cbi-button cbi-button-action',
-						'click': ui.createHandlerFn(this, 'handleUpgradeScripts')
-					}, 'Upgrade Scripts')
-				])
-			])
-		]);
-	},
-
-	renderDangerZone: function() {
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Maintenance'),
-			E('div', { 'style': 'padding:8px 16px' }, [
+				makeInfoRow('Status', statusText)
+			]),
+			E('div', { 'class': 'right' }, [
 				E('button', {
-					'class': 'cbi-button cbi-button-remove',
-					'click': ui.createHandlerFn(this, 'handleUninstall')
-				}, 'Uninstall Tailscale')
+					'class': 'cbi-button',
+					'click': ui.hideModal
+				}, 'Close'),
+				' ',
+				E('button', {
+					'class': 'cbi-button cbi-button-action',
+					'disabled': canUpgrade ? null : 'disabled',
+					'click': function() {
+						ui.hideModal();
+						return self.handleUpgradeScripts(scriptInfo);
+					}
+				}, buttonLabel)
 			])
+		];
+	},
+
+	render: function(data) {
+		this.currentStatus = data[1] || {};
+		this.currentScriptInfo = data[2] || {};
+
+		return E('div', { 'class': 'cbi-map' }, [
+			E('h2', {}, 'Tailscale Maintenance'),
+			E('div', { 'class': 'cbi-map-descr' }, 'Version management, update policy, manager scripts, and uninstall actions.'),
+			this.renderVersionOverview(this.currentStatus),
+			this.renderAutoUpdateSettings(),
+			this.renderScriptMaintenance(this.currentScriptInfo),
+			this.renderDangerZone()
 		]);
 	},
 
-	renderLoaded: function(status, latestVersions, scriptInfo, versionList, officialVersionList) {
-		var container = E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, 'Tailscale Maintenance'),
-			E('div', { 'class': 'cbi-map-descr' }, 'Version management, manager script updates, and uninstall actions.')
+	handleCheckVersions: function() {
+		ui.showModal('Checking Remote Versions', [
+			E('p', { 'class': 'spinning' }, 'Fetching remote version information...')
 		]);
 
-		container.appendChild(this.renderVersionManagement(status, latestVersions, versionList, officialVersionList));
-		container.appendChild(this.renderScriptMaintenance(scriptInfo));
-		container.appendChild(this.renderDangerZone());
-		return container;
-	},
-
-	render: function() {
-		var placeholder = E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, 'Tailscale Maintenance'),
-			E('div', { 'class': 'cbi-map-descr' }, 'Version management, manager script updates, and uninstall actions.'),
-			E('div', { 'class': 'cbi-section' }, [
-				E('div', { 'style': 'padding:16px;color:#666' }, 'Loading maintenance data...')
-			])
-		]);
-
-		this.loadData().then(L.bind(function(data) {
-			var node = this.renderLoaded(data[0] || {}, data[1] || {}, data[2] || {}, data[3] || {}, data[4] || {});
-			placeholder.parentNode.replaceChild(node, placeholder);
+		return Promise.all([
+			L.resolveDefault(callGetLatestVersions(), {}),
+			L.resolveDefault(callListVersions(20), {}),
+			L.resolveDefault(callListOfficialVersions(20), {})
+		]).then(L.bind(function(data) {
+			ui.showModal('Tailscale Versions',
+				this.renderVersionDialog(this.currentStatus || {}, data[0] || {}, data[1] || {}, data[2] || {}));
 		}, this)).catch(function(err) {
-			ui.addNotification(null, E('p', {}, 'Failed to load maintenance data: ' + err.message), 'danger');
+			ui.hideModal();
+			ui.addNotification(null, E('p', {}, 'Failed to load remote versions: ' + err.message), 'danger');
 		});
+	},
 
-		return placeholder;
+	handleSaveAutoUpdate: function() {
+		var checkbox = document.getElementById('ts-maint-auto-update');
+		var enabled = checkbox && checkbox.checked ? '1' : '0';
+
+		uci.set('tailscale', 'settings', 'auto_update', enabled);
+
+		ui.showModal('Saving Auto Update Setting', [
+			E('p', { 'class': 'spinning' }, 'Saving update policy...')
+		]);
+
+		return uci.save().then(function() {
+			return uci.apply();
+		}).then(function() {
+			ui.hideModal();
+			ui.addNotification(null,
+				E('p', {}, enabled === '1' ? 'Auto Update enabled.' : 'Auto Update disabled.'),
+				'info');
+		}).catch(function(err) {
+			ui.hideModal();
+			ui.addNotification(null, E('p', {}, 'Failed to save Auto Update setting: ' + err.message), 'danger');
+		});
 	},
 
 	handleUpdate: function() {
@@ -303,15 +431,69 @@ return view.extend({
 		);
 	},
 
-	handleUpgradeScripts: function() {
-		return handleAsyncTask(
-			'Upgrading Scripts',
-			'Checking for manager updates and upgrading managed files...',
-			callUpgradeScripts(),
-			'Scripts upgraded successfully. Reloading page...',
-			'Script upgrade failed: ',
-			true
-		);
+	handleCheckScriptUpdates: function() {
+		ui.showModal('Checking Script Updates', [
+			E('p', { 'class': 'spinning' }, 'Checking remote script version...')
+		]);
+
+		return callGetScriptUpdateInfo().then(L.bind(function(scriptInfo) {
+			this.currentScriptInfo = scriptInfo || this.currentScriptInfo || {};
+			ui.showModal('Manager Script Updates', this.renderScriptUpdateDialog(this.currentScriptInfo));
+		}, this)).catch(function(err) {
+			ui.hideModal();
+			ui.addNotification(null, E('p', {}, 'Failed to check script updates: ' + err.message), 'danger');
+		});
+	},
+
+	handleUpgradeScripts: function(scriptInfo) {
+		if (!scriptInfo || !scriptInfo.latest) {
+			ui.addNotification(null, E('p', {}, 'Unable to determine the latest script version.'), 'warning');
+			return Promise.resolve();
+		}
+
+		if (!scriptInfo.update_available) {
+			ui.addNotification(null, E('p', {}, 'Manager scripts are already up to date.'), 'info');
+			return Promise.resolve();
+		}
+
+		ui.showModal('Upgrading Scripts', [
+			E('p', { 'class': 'spinning' }, 'Checking for manager updates and upgrading managed files...')
+		]);
+
+		return callUpgradeScripts().then(L.bind(function(result) {
+			if (result && result.started && result.task) {
+				return pollTaskStatus(result.task).then(L.bind(function(status) {
+					return this.handleUpgradeScriptsResult(status);
+				}, this));
+			}
+
+			return this.handleUpgradeScriptsResult(result);
+		}, this)).catch(function(err) {
+			ui.hideModal();
+			ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
+		});
+	},
+
+	handleUpgradeScriptsResult: function(result) {
+		var stdout = (result && result.stdout) || '';
+		var alreadyCurrent = /Already up to date/i.test(stdout);
+
+		ui.hideModal();
+
+		if (result && result.code === 0) {
+			if (alreadyCurrent) {
+				ui.addNotification(null, E('p', {}, 'Manager scripts are already up to date.'), 'info');
+				return;
+			}
+
+			ui.addNotification(null, E('p', {}, 'Scripts upgraded successfully. Reloading page...'), 'info');
+			window.setTimeout(function() { window.location.reload(); }, 2000);
+			return;
+		}
+
+		ui.addNotification(null,
+			E('p', {}, 'Script upgrade failed: ' + (stdout || 'Unknown error')),
+			'danger');
 	},
 
 	handleUninstall: function() {

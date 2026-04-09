@@ -623,7 +623,7 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_install_version_quiet_installs_luci_app() {
+test_install_version_quiet_does_not_reinstall_managed_files() {
     new_script manager-install-version-quiet.sh <<'EOF'
 #!/bin/sh
 set -eu
@@ -702,12 +702,21 @@ do_install_version_quiet 1.77.0 --source small >/dev/null
 
 [ -f "$PERSISTENT_DIR/version" ]
 grep -Fq 'download 1.77.0 x86_64' "$CALLS"
-grep -Fq 'runtime' "$CALLS"
-grep -Fq 'update' "$CALLS"
-grep -Fq 'luci' "$CALLS"
-grep -Fq 'init stop' "$CALLS"
-grep -Fq 'init enable' "$CALLS"
-grep -Fq 'init start' "$CALLS"
+    if grep -Fq 'runtime' "$CALLS"; then
+        echo "install-version should not reinstall runtime scripts"
+        exit 1
+    fi
+    if grep -Fq 'update' "$CALLS"; then
+        echo "install-version should not reinstall update script"
+        exit 1
+    fi
+    if grep -Fq 'luci' "$CALLS"; then
+        echo "install-version should not reinstall luci app"
+        exit 1
+    fi
+    grep -Fq 'init stop' "$CALLS"
+    grep -Fq 'init enable' "$CALLS"
+    grep -Fq 'init start' "$CALLS"
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -813,9 +822,10 @@ bridge="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 output=$(sh "$bridge" list)
 printf '%s' "$output" | python3 -m json.tool >/dev/null
 
-printf '%s' "$output" | grep -Fq '"get_status": {}'
-printf '%s' "$output" | grep -Fq '"do_install": { "source": "", "storage": "", "auto_update": "" }'
-printf '%s' "$output" | grep -Fq '"upgrade_scripts": {}'
+	printf '%s' "$output" | grep -Fq '"get_status": {}'
+	printf '%s' "$output" | grep -Fq '"get_script_local_info": {}'
+	printf '%s' "$output" | grep -Fq '"do_install": { "source": "", "storage": "", "auto_update": "" }'
+	printf '%s' "$output" | grep -Fq '"upgrade_scripts": {}'
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -961,6 +971,55 @@ test_luci_js_uses_correct_rpc_object() {
         fi
         grep -Fq "object: 'luci-tailscale'" "$f" || fail "new rpc object missing in $f"
     done
+}
+
+test_luci_config_hides_service_toggle() {
+    config_js="$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js"
+
+    if grep -Fq "option(form.Flag, 'enabled'" "$config_js"; then
+        fail "config page should not expose the service enabled toggle"
+    fi
+
+    if grep -Fq "option(form.Flag, 'auto_update'" "$config_js"; then
+        fail "config page should not expose the auto update toggle"
+    fi
+
+    if grep -Fq "option(form.ListValue, 'fw_mode'" "$config_js"; then
+        fail "config page should not expose the firewall backend setting"
+    fi
+}
+
+test_luci_maintenance_handles_up_to_date_scripts() {
+    maintenance_js="$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js"
+
+    grep -Fq 'Manager scripts are already up to date.' "$maintenance_js" ||
+        fail "maintenance page should show an already-up-to-date message"
+
+	grep -Fq 'Check Remote Versions' "$maintenance_js" ||
+		fail "maintenance page should check versions on demand"
+
+	grep -Fq 'Remote version checks are only performed when you request them.' "$maintenance_js" ||
+		fail "maintenance page should explain on-demand checks"
+
+	grep -Fq 'Save Auto Update Setting' "$maintenance_js" ||
+		fail "maintenance page should manage auto update"
+
+	if grep -Fq 'loadVersionData' "$maintenance_js"; then
+		fail "maintenance page should not preload remote version data"
+	fi
+}
+
+test_json_script_local_info_reports_current_version() {
+	new_script json-script-local-info.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+output=\$(cmd_json_script_local_info)
+printf '%s' "\$output" | grep -Fq '"current":"' || { echo "should include current script version: \$output"; exit 1; }
+EOF
+
+	run_with_test_shell "$LAST_SCRIPT"
 }
 
 test_luci_urls_match_repo_paths() {
@@ -1883,6 +1942,7 @@ cat <<'JSONEOF'
     "OS": "linux",
     "Online": true,
     "ExitNode": false,
+    "ExitNodeOption": true,
     "RxBytes": 12345,
     "TxBytes": 67890,
     "LastSeen": "2025-01-01T00:00:00Z"
@@ -1895,6 +1955,7 @@ cat <<'JSONEOF'
       "OS": "windows",
       "Online": true,
       "ExitNode": false,
+      "ExitNodeOption": true,
       "RxBytes": 111,
       "TxBytes": 222,
       "LastSeen": "2025-01-02T00:00:00Z"
@@ -1919,6 +1980,7 @@ printf '1.76.1\n' > "$TEST_DIR/opt/tailscale/version"
 printf 'small\n' > "$TEST_DIR/opt/tailscale/source"
 
 _find_bin_dir() { echo "$TEST_DIR/opt/tailscale"; }
+detect_firewall_backend() { echo fw4; }
 
 output=$(cmd_json_status)
 
@@ -1940,6 +2002,9 @@ pid=$(printf '%s' "$output" | jq -r '.pid')
 backend=$(printf '%s' "$output" | jq -r '.backend_state')
 [ "$backend" = "Running" ] || { echo "backend_state should be Running: $backend"; exit 1; }
 
+firewall_backend=$(printf '%s' "$output" | jq -r '.firewall_backend')
+[ "$firewall_backend" = "fw4" ] || { echo "firewall_backend should be fw4: $firewall_backend"; exit 1; }
+
 device=$(printf '%s' "$output" | jq -r '.device_name')
 [ "$device" = "my-router" ] || { echo "device_name should be my-router: $device"; exit 1; }
 
@@ -1958,10 +2023,172 @@ peer_count=$(printf '%s' "$output" | jq '.peers | length')
 self_peer=$(printf '%s' "$output" | jq '.peers[] | select(.self == true)')
 self_name=$(printf '%s' "$self_peer" | jq -r '.name')
 [ "$self_name" = "my-router" ] || { echo "self name should be my-router: $self_name"; exit 1; }
+self_exit=$(printf '%s' "$self_peer" | jq -r '.exit_node')
+[ "$self_exit" = "true" ] || { echo "self should offer exit node: $self_exit"; exit 1; }
 
 # Check remote peer if present
 remote_count=$(printf '%s' "$output" | jq '[.peers[] | select(.self == false)] | length')
 [ "$remote_count" -ge 1 ] || { echo "should have at least 1 remote peer: $remote_count"; exit 1; }
+printf '%s' "$output" | jq -e '.peers[] | select(.name == "laptop" and .exit_node == true)' >/dev/null
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_json_status_parses_remote_peers_with_jsonfilter_backend() {
+    REAL_JQ=$(command -v jq 2>/dev/null || true)
+    [ -n "$REAL_JQ" ] || return 0
+
+    write_stub pidof <<'EOF'
+#!/bin/sh
+printf '1234\n'
+EOF
+
+    write_stub tailscale <<'EOF'
+#!/bin/sh
+set -eu
+
+if [ "${1:-}" = "status" ] && [ "${2:-}" = "--json" ]; then
+    cat <<'JSONEOF'
+{
+  "BackendState": "Running",
+  "Self": {
+    "DNSName": "my-router.tail1234.ts.net.",
+    "HostName": "my-router",
+    "TailscaleIPs": ["100.64.0.1", "fd7a:115c:a1e0::1"],
+    "OS": "linux",
+    "Online": true,
+    "ExitNode": false,
+    "ExitNodeOption": true,
+    "RxBytes": 12345,
+    "TxBytes": 67890,
+    "LastSeen": "2025-01-01T00:00:00Z"
+  },
+  "Peer": {
+    "nodekey:abc123": {
+      "DNSName": "laptop.tail1234.ts.net.",
+      "HostName": "laptop",
+      "TailscaleIPs": ["100.64.0.2"],
+      "OS": "windows",
+      "Online": true,
+      "ExitNode": false,
+      "ExitNodeOption": true,
+      "RxBytes": 111,
+      "TxBytes": 222,
+      "LastSeen": "2025-01-02T00:00:00Z"
+    },
+    "nodekey:def456": {
+      "DNSName": "phone.tail1234.ts.net.",
+      "HostName": "phone",
+      "TailscaleIPs": ["100.64.0.3"],
+      "OS": "ios",
+      "Online": false,
+      "ExitNode": false,
+      "RxBytes": 333,
+      "TxBytes": 444,
+      "LastSeen": "2025-01-03T00:00:00Z"
+    }
+  }
+}
+JSONEOF
+    exit 0
+fi
+
+exit 1
+EOF
+
+    write_stub jsonfilter <<EOF
+#!/bin/sh
+set -eu
+
+jq_bin="$REAL_JQ"
+expr=""
+input=""
+
+while [ "\$#" -gt 0 ]; do
+    case "\$1" in
+        -e)
+            expr="\$2"
+            shift 2
+            ;;
+        -i)
+            input=\$(cat "\$2")
+            shift 2
+            ;;
+        -s)
+            input="\$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -z "\$input" ]; then
+    input=\$(cat)
+fi
+
+case "\$expr" in
+    '\$.BackendState') filter='.BackendState // empty' ;;
+    '\$.Self.DNSName') filter='.Self.DNSName // empty' ;;
+    '\$.Self.HostName') filter='.Self.HostName // empty' ;;
+    '\$.Self.TailscaleIPs[0]') filter='.Self.TailscaleIPs[0] // empty' ;;
+    '\$.Self.TailscaleIPs[*]') filter='.Self.TailscaleIPs[]?' ;;
+    '\$.Self.OS') filter='.Self.OS // empty' ;;
+    '\$.Self.Online') filter='.Self.Online // false' ;;
+    '\$.Self.ExitNode') filter='.Self.ExitNode // false' ;;
+    '\$.Self.ExitNodeOption') filter='.Self.ExitNodeOption // false' ;;
+    '\$.Self.RxBytes') filter='.Self.RxBytes // 0' ;;
+    '\$.Self.TxBytes') filter='.Self.TxBytes // 0' ;;
+    '\$.Self.LastSeen') filter='.Self.LastSeen // empty' ;;
+    '@.Peer[*]') filter='(.Peer // {}) | to_entries[]? | .value' ;;
+    '@.Peer') filter='.Peer // {}' ;;
+    '@[*]') filter='to_entries[]? | .value' ;;
+    '@.DNSName') filter='.DNSName // empty' ;;
+    '@.HostName') filter='.HostName // empty' ;;
+    '@.TailscaleIPs[0]') filter='.TailscaleIPs[0] // empty' ;;
+    '@.OS') filter='.OS // empty' ;;
+    '@.Online') filter='.Online // false' ;;
+    '@.ExitNode') filter='.ExitNode // false' ;;
+    '@.ExitNodeOption') filter='.ExitNodeOption // false' ;;
+    '@.RxBytes') filter='.RxBytes // 0' ;;
+    '@.TxBytes') filter='.TxBytes // 0' ;;
+    '@.LastSeen') filter='.LastSeen // empty' ;;
+    *)
+        echo "unsupported jsonfilter expression: \$expr" >&2
+        exit 1
+        ;;
+esac
+
+printf '%s' "\$input" | "\$jq_bin" -rc "\$filter"
+EOF
+
+    new_script json-status-jsonfilter-peers.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+PATH="$STUB_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+
+mkdir -p "$TEST_DIR/opt/tailscale"
+printf '1.76.1\n' > "$TEST_DIR/opt/tailscale/version"
+printf 'small\n' > "$TEST_DIR/opt/tailscale/source"
+
+_find_bin_dir() { echo "$TEST_DIR/opt/tailscale"; }
+detect_firewall_backend() { echo fw4; }
+
+output=\$(cmd_json_status)
+
+remote_count=\$(printf '%s' "\$output" | "$REAL_JQ" '[.peers[] | select(.self == false)] | length')
+[ "\$remote_count" = "2" ] || { echo "should have 2 remote peers: \$remote_count"; exit 1; }
+
+printf '%s' "\$output" | "$REAL_JQ" -e '.peers[] | select(.name == "laptop" and .self == false and .online == true)' >/dev/null
+printf '%s' "\$output" | "$REAL_JQ" -e '.peers[] | select(.name == "phone" and .self == false and .online == false)' >/dev/null
+printf '%s' "\$output" | "$REAL_JQ" -e '.peers[] | select(.name == "my-router" and .self == true and .exit_node == true)' >/dev/null
+printf '%s' "\$output" | "$REAL_JQ" -e '.peers[] | select(.name == "laptop" and .self == false and .exit_node == true)' >/dev/null
+printf '%s' "\$output" | "$REAL_JQ" -e '.firewall_backend == "fw4"' >/dev/null
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -2003,7 +2230,7 @@ get_official_latest_version() { return 1; }
 get_small_latest_version() { return 1; }
 
 # Verify all json-* commands are reachable from main dispatch
-for cmd in json-status json-install-info json-latest-versions json-latest-version json-script-info; do
+for cmd in json-status json-install-info json-latest-versions json-latest-version json-script-local-info json-script-info; do
     output=\$(main \$cmd 2>/dev/null)
     case "\$output" in
         '{'*'}'*)
@@ -2032,7 +2259,7 @@ run_test 'sync-scripts installs runtime files and update script together' test_s
 run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts
 run_test 'interactive install deploys LuCI app files' test_install_interactive_installs_luci_app
 run_test 'install-quiet deploys LuCI app files' test_install_quiet_installs_luci_app
-run_test 'install-version deploys LuCI app files' test_install_version_quiet_installs_luci_app
+run_test 'install-version avoids managed file reinstall' test_install_version_quiet_does_not_reinstall_managed_files
 run_test 'tailscale-update rejects malformed upstream versions' test_update_script_rejects_invalid_version
 run_test 'LuCI source files exist in repo' test_luci_source_files_exist_in_repo
 run_test 'LuCI JSON files are valid' test_luci_json_files_valid
@@ -2044,6 +2271,8 @@ run_test 'rpcd exec bridge passes install params' test_rpcd_bridge_install_passe
 run_test 'rpcd exec bridge reports async task status' test_rpcd_bridge_reports_task_status
 run_test 'rpcd exec bridge keeps multiline output valid JSON' test_rpcd_bridge_multiline_output_stays_valid_json
 run_test 'LuCI JS uses the new rpc object name' test_luci_js_uses_correct_rpc_object
+run_test 'LuCI config hides duplicate service toggle' test_luci_config_hides_service_toggle
+run_test 'LuCI maintenance distinguishes up-to-date scripts' test_luci_maintenance_handles_up_to_date_scripts
 run_test 'LuCI URLs in manager match repo file paths' test_luci_urls_match_repo_paths
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
@@ -2066,10 +2295,12 @@ run_test 'json-install-info reports arch when not installed' test_json_install_i
 run_test 'json-install-info reports installed state' test_json_install_info_installed
 run_test 'json-latest-versions fetches both sources' test_json_latest_versions_both_sources
 run_test 'json-latest-version respects installed source' test_json_latest_version_uses_installed_source
+run_test 'json-script-local-info reports current version' test_json_script_local_info_reports_current_version
 run_test 'json-script-info detects update available' test_json_script_info_update_available
 run_test 'json-script-info reports no update when current' test_json_script_info_no_update
 run_test 'all json-* commands produce valid JSON' test_json_output_valid
 run_test 'json-status parses tailscale status output' test_json_status_parses_tailscale_output
+run_test 'json-status keeps remote peers on jsonfilter backend' test_json_status_parses_remote_peers_with_jsonfilter_backend
 run_test '_get_display_name extracts names correctly' test_json_display_name_extraction
 run_test 'json-* subcommands are reachable from main' test_json_main_dispatch
 

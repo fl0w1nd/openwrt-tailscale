@@ -742,6 +742,9 @@ main() {
         json-latest-version)
             cmd_json_latest_version
             ;;
+        json-script-local-info)
+            cmd_json_script_local_info
+            ;;
         json-script-info)
             cmd_json_script_info
             ;;

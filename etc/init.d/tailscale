@@ -42,7 +42,7 @@ load_config() {
     config_get BIN_DIR settings bin_dir /opt/tailscale
     config_get STATE_FILE settings state_file /etc/config/tailscaled.state
     config_get STATE_DIR settings statedir /etc/tailscale
-    config_get FW_MODE settings fw_mode nftables
+    FW_MODE=$(detect_firewall_mode)
     config_get DOWNLOAD_SOURCE settings download_source official
     config_get TUN_MODE settings tun_mode auto
     config_get PROXY_LISTEN settings proxy_listen localhost
@@ -56,6 +56,20 @@ load_config() {
 
 # Check if tailscaled binary exists and is executable
 # Supports both official (separate binaries) and small (combined binary)
+detect_firewall_mode() {
+    if [ -x /sbin/fw4 ]; then
+        echo "nftables"
+    elif [ -x /sbin/fw3 ]; then
+        echo "iptables"
+    elif command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then
+        echo "nftables"
+    elif command -v iptables >/dev/null 2>&1; then
+        echo "iptables"
+    else
+        echo "nftables"
+    fi
+}
+
 check_binary() {
     [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
 }
