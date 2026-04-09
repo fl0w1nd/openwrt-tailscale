@@ -71,6 +71,9 @@ LUCI_ACL_DEST="${LUCI_ACL_DEST:-/usr/share/rpcd/acl.d/luci-app-tailscale.json}"
 # Module library directory (overridable for testing)
 LIB_DIR="${LIB_DIR:-/usr/lib/tailscale}"
 
+# Module libraries sourced from $LIB_DIR
+MODULE_LIBS="version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh"
+
 # ============================================================================
 # Logging Functions
 # ============================================================================
@@ -138,6 +141,7 @@ download_repo_file() {
 # Functions shared with init script and other components.
 # Canonical versions live in /usr/lib/tailscale/common.sh.
 # Inline fallback below is used during bootstrap (before first install).
+# This copy must stay in sync with common.sh — enforced by `make check-sync`.
 
 if [ -f "$COMMON_LIB_PATH" ]; then
     # shellcheck source=/dev/null
@@ -256,13 +260,13 @@ else
                 echo "userspace"
                 return 0
                 ;;
-            kernel)
-                kernel_tun_available && echo "kernel"
+            tun|kernel)
+                kernel_tun_available && echo "tun"
                 return $?
                 ;;
             auto|"")
                 if kernel_tun_available; then
-                    echo "kernel"
+                    echo "tun"
                 else
                     echo "userspace"
                 fi
@@ -270,7 +274,7 @@ else
                 ;;
             *)
                 if kernel_tun_available; then
-                    echo "kernel"
+                    echo "tun"
                 else
                     echo "userspace"
                 fi
@@ -302,7 +306,7 @@ fi
 # install_runtime_scripts(). During bootstrap (first install), they may not
 # exist yet — the _ensure_libraries() function handles downloading them.
 
-for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
+for _lib in $MODULE_LIBS; do
     if [ -f "$LIB_DIR/$_lib" ]; then
         # shellcheck source=/dev/null
         . "$LIB_DIR/$_lib"
@@ -317,7 +321,7 @@ _ensure_libraries() {
     local _lib
     local _missing=0
 
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
+    for _lib in $MODULE_LIBS; do
         if [ ! -f "$LIB_DIR/$_lib" ]; then
             _missing=1
             break
@@ -326,10 +330,10 @@ _ensure_libraries() {
 
     [ "$_missing" -eq 0 ] && return 0
 
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
+    for _lib in $MODULE_LIBS; do
         download_repo_file "${LIB_BASE_URL}/${_lib}" "${LIB_DIR}/${_lib}" 644 || return 1
     done
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
+    for _lib in $MODULE_LIBS; do
         [ -f "$LIB_DIR/$_lib" ] || {
             log_error "Missing module library after bootstrap: ${LIB_DIR}/${_lib}"
             return 1
@@ -404,12 +408,12 @@ check_dependencies() {
         log_info "All dependencies seem to be met"
     fi
 
-    ensure_tun_device
+    setup_tun_device
 
     return 0
 }
 
-ensure_tun_device() {
+setup_tun_device() {
     if [ ! -d "/sys/module/tun" ]; then
         modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
     fi
@@ -438,7 +442,7 @@ get_tailscaled_pid() {
     echo "${pids%% *}"
 }
 
-tailscaled_is_userspace() {
+is_tailscaled_userspace() {
     local pid cmd
     pid="$(get_tailscaled_pid)" || return 1
     cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" || return 1
@@ -479,10 +483,10 @@ show_service_status() {
         else
             log_info "tailscaled is running"
         fi
-        if tailscaled_is_userspace; then
+        if is_tailscaled_userspace; then
             log_info "Active mode: userspace"
         else
-            log_info "Active mode: kernel"
+            log_info "Active mode: tun"
         fi
     else
         log_error "tailscaled is not running"
@@ -501,6 +505,10 @@ get_configured_tun_mode() {
         config_load tailscale 2>/dev/null || true
         config_get tun_mode settings tun_mode auto
     fi
+
+    case "$tun_mode" in
+        kernel) tun_mode="tun" ;;
+    esac
 
     echo "${tun_mode:-auto}"
 }
@@ -558,7 +566,7 @@ configure_tun_mode() {
     local proxy_listen="${2:-}"
 
     case "$mode" in
-        auto|kernel|userspace) ;;
+        auto|tun|userspace) ;;
         *)
             log_error "Invalid tun mode: $mode"
             return 1
@@ -646,11 +654,11 @@ main() {
             ;;
         install-quiet)
             shift
-            do_install_quiet "$@"
+            cmd_install "$@"
             ;;
         install-version)
             shift
-            do_install_version_quiet "$@"
+            cmd_install_version "$@"
             ;;
         list-versions)
             list_small_versions "${2:-10}"
@@ -706,26 +714,26 @@ main() {
                     ;;
             esac
             ;;
-        network-mode)
+        tun-mode)
             case "${2:-status}" in
-                auto|kernel|userspace)
+                auto|tun|userspace)
                     configure_tun_mode "$2"
                     ;;
                 status|"")
                     echo ""
-                    echo "Network mode:"
+                    echo "TUN mode:"
                     echo "  Configured: $(get_configured_tun_mode)"
                     if pgrep -f "tailscaled.*userspace-networking" >/dev/null 2>&1; then
                         echo "  Active: userspace"
                     elif pgrep -f "tailscaled" >/dev/null 2>&1; then
-                        echo "  Active: kernel"
+                        echo "  Active: tun"
                     else
                         echo "  Active: not running"
                     fi
                     echo ""
                     ;;
                 *)
-                    echo "Usage: $0 network-mode [auto|kernel|userspace|status]"
+                    echo "Usage: $0 tun-mode [auto|tun|userspace|status]"
                     exit 1
                     ;;
             esac
@@ -762,12 +770,12 @@ main() {
             echo "  status           Show current status"
             echo "  list-versions    List available small binary versions"
             echo "  list-official-versions List available official package versions"
-            echo "  setup-firewall   Configure network/firewall for subnet routing"
+            echo "  setup-firewall   Configure network interface and firewall for subnet routing"
             echo "  download-only    Download binaries only (for RAM mode)"
             echo "  self-update      Update this script to latest version"
             echo "  sync-scripts     Download and install managed auxiliary files"
             echo "  auto-update      Configure auto-update (on/off/status)"
-            echo "  network-mode     Configure network mode (auto/kernel/userspace/status)"
+            echo "  tun-mode         Configure TUN mode (auto/tun/userspace/status)"
             echo "  help             Show this help"
             echo ""
             echo "Environment variables:"

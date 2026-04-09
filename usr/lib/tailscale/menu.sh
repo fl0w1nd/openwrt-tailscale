@@ -18,7 +18,7 @@ show_menu() {
     echo "  7) Setup Subnet Routing"
     echo "  8) Install Specific Version (Downgrade)"
     echo "  9) Auto-Update Settings"
-    echo " 10) Network Mode Settings"
+    echo " 10) TUN Mode Settings"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -93,18 +93,18 @@ do_auto_update_settings() {
     fi
 }
 
-do_network_mode_settings() {
+do_tun_mode_settings() {
     echo ""
     echo "============================================="
-    echo "  Network Mode Settings"
+    echo "  TUN Mode Settings"
     echo "============================================="
     echo ""
     echo "Current: $(get_configured_tun_mode)"
     echo ""
     echo "  1) Auto"
-    echo "     - Prefer kernel TUN, fall back to userspace if unavailable"
-    echo "  2) Kernel"
-    echo "     - Require /dev/net/tun and normal kernel networking"
+    echo "     - Prefer TUN mode, fall back to userspace if unavailable"
+    echo "  2) TUN"
+    echo "     - Require /dev/net/tun device"
     echo "  3) Userspace"
     echo "     - Force userspace networking mode"
     echo ""
@@ -113,7 +113,7 @@ do_network_mode_settings() {
 
     case "$answer" in
         1) configure_tun_mode "auto" ;;
-        2) configure_tun_mode "kernel" ;;
+        2) configure_tun_mode "tun" ;;
         3)
             echo ""
             echo "  Proxy listen scope for userspace mode:"
@@ -145,9 +145,9 @@ interactive_menu() {
             5) do_status; printf "Press Enter to continue..."; read -r _ ;;
             6) do_view_logs ;;
             7) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
-            8) do_install_specific_version; printf "Press Enter to continue..."; read -r _ ;;
+            8) do_install_version; printf "Press Enter to continue..."; read -r _ ;;
             9) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
-            10) do_network_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
+            10) do_tun_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac

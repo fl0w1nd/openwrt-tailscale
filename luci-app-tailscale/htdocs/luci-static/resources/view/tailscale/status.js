@@ -79,7 +79,7 @@ function formatFirewallBackend(backend) {
 }
 
 function formatNetworkingMode(mode) {
-	if (mode === 'kernel')
+	if (mode === 'tun')
 		return 'TUN mode';
 	if (mode === 'userspace')
 		return 'Userspace networking mode';

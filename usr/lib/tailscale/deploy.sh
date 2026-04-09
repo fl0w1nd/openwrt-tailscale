@@ -11,6 +11,7 @@
 #   LUCI_ACL_URL, LUCI_ACL_DEST,
 #   CONFIG_TEMPLATE_URL, CONFIG_FILE,
 #   RAW_BASE_URL, LIB_DIR
+#   MODULE_LIBS (optional; defaults to the standard module set)
 #
 # Required functions:
 #   log_info(), log_error(), log_warn(), download_repo_file()
@@ -75,8 +76,9 @@ install_runtime_scripts() {
     install_common_lib || return 1
 
     local lib_base_url="${LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
+    local module_libs="${MODULE_LIBS:-version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh}"
     local lib
-    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
+    for lib in $module_libs; do
         download_repo_file "${lib_base_url}/${lib}" "${LIB_DIR}/${lib}" 644 || return 1
     done
 
@@ -85,91 +87,107 @@ install_runtime_scripts() {
 
 # Deploy LuCI app files with atomic staging and rollback
 install_luci_app() {
-    local f1="${LUCI_VIEW_DIR}/config.js"
-    local f2="${LUCI_VIEW_DIR}/status.js"
-    local f3="${LUCI_VIEW_DIR}/maintenance.js"
-    local f4="$LUCI_RPC_DEST"
-    local f5="$LUCI_MENU_DEST"
-    local f6="$LUCI_ACL_DEST"
     local stag=".staging.$$"
     local bak=".bak.$$"
-    local f
 
-    mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$f4")" "$(dirname "$f5")" "$(dirname "$f6")"
+    # File list: "url|dest|mode" triples
+    local _luci_files="
+${LUCI_VIEW_BASE_URL}/config.js|${LUCI_VIEW_DIR}/config.js|644
+${LUCI_VIEW_BASE_URL}/status.js|${LUCI_VIEW_DIR}/status.js|644
+${LUCI_VIEW_BASE_URL}/maintenance.js|${LUCI_VIEW_DIR}/maintenance.js|644
+${LUCI_RPC_URL}|${LUCI_RPC_DEST}|755
+${LUCI_MENU_URL}|${LUCI_MENU_DEST}|644
+${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
+"
 
-    if ! download_repo_file "${LUCI_VIEW_BASE_URL}/config.js" "${f1}${stag}" 644; then
-        rm -f "${f1}${stag}"
+    # Collect destination paths for later loops
+    local _dests="" _first_url="" _first_dest=""
+    local _entry _url _dest _mode
+    for _entry in $_luci_files; do
+        [ -n "$_entry" ] || continue
+        _url="${_entry%%|*}"
+        _dest="${_entry#*|}" ; _dest="${_dest%%|*}"
+        _mode="${_entry##*|}"
+        if [ -z "$_first_dest" ]; then
+            _first_url="$_url"; _first_dest="$_dest"
+        fi
+        _dests="$_dests $_dest"
+    done
+
+    # Ensure parent directories exist
+    local _d
+    for _d in $_dests; do
+        mkdir -p "$(dirname "$_d")"
+    done
+
+    # Stage: download all files to staging paths
+    if ! download_repo_file "$_first_url" "${_first_dest}${stag}" 644; then
+        rm -f "${_first_dest}${stag}"
         log_warn "LuCI app not available yet, skipping"
         return 0
     fi
 
-    local failed=0
-    download_repo_file "${LUCI_VIEW_BASE_URL}/status.js" "${f2}${stag}" 644 || failed=1
-    download_repo_file "${LUCI_VIEW_BASE_URL}/maintenance.js" "${f3}${stag}" 644 || failed=1
-    download_repo_file "$LUCI_RPC_URL" "${f4}${stag}" 755 || failed=1
-    download_repo_file "$LUCI_MENU_URL"  "${f5}${stag}" 644 || failed=1
-    download_repo_file "$LUCI_ACL_URL"   "${f6}${stag}" 644 || failed=1
+    local _failed=0
+    for _entry in $_luci_files; do
+        [ -n "$_entry" ] || continue
+        _url="${_entry%%|*}"
+        _dest="${_entry#*|}" ; _dest="${_dest%%|*}"
+        _mode="${_entry##*|}"
+        [ "$_dest" = "$_first_dest" ] && continue
+        download_repo_file "$_url" "${_dest}${stag}" "$_mode" || _failed=1
+    done
 
-    if [ "$failed" = "1" ]; then
-        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" "${f6}${stag}"
+    if [ "$_failed" = "1" ]; then
+        for _d in $_dests; do rm -f "${_d}${stag}"; done
         log_error "LuCI app download incomplete: some files failed to fetch"
         return 1
     fi
 
-    for f in "$f1" "$f2" "$f3" "$f4" "$f5" "$f6"; do
-        if [ -e "$f" ] && [ ! -w "$f" ]; then
-            rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" "${f6}${stag}"
-            log_error "LuCI pre-flight failed: ${f} is not writable"
+    # Pre-flight: check writability
+    for _d in $_dests; do
+        if [ -e "$_d" ] && [ ! -w "$_d" ]; then
+            for _d in $_dests; do rm -f "${_d}${stag}"; done
+            log_error "LuCI pre-flight failed: ${_d} is not writable"
             return 1
         fi
     done
 
-    for f in "$f1" "$f2" "$f3" "$f4" "$f5" "$f6"; do
-        if [ -f "$f" ] && ! cp -f "$f" "${f}${bak}" 2>/dev/null; then
-            rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}" \
-                  "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" "${f6}${stag}"
-            log_error "LuCI backup failed for ${f}, aborting deploy"
+    # Backup existing files
+    for _d in $_dests; do
+        if [ -f "$_d" ] && ! cp -f "$_d" "${_d}${bak}" 2>/dev/null; then
+            for _d in $_dests; do rm -f "${_d}${stag}" "${_d}${bak}"; done
+            log_error "LuCI backup failed for ${_d}, aborting deploy"
             return 1
         fi
     done
 
-    local deployed=0
-    while true; do
-        mv -f "${f1}${stag}" "$f1" || break; deployed=1
-        mv -f "${f2}${stag}" "$f2" || break; deployed=2
-        mv -f "${f3}${stag}" "$f3" || break; deployed=3
-        mv -f "${f4}${stag}" "$f4" || break; deployed=4
-        mv -f "${f5}${stag}" "$f5" || break; deployed=5
-        mv -f "${f6}${stag}" "$f6" || break; deployed=6
-        break
+    # Deploy: atomically move staging files into place
+    local _deployed=""
+    local _deploy_ok=1
+    for _d in $_dests; do
+        if mv -f "${_d}${stag}" "$_d" 2>/dev/null; then
+            _deployed="$_deployed $_d"
+        else
+            _deploy_ok=0
+            break
+        fi
     done
 
-    if [ "$deployed" -lt 6 ]; then
-        log_error "LuCI deploy failed at step $((deployed + 1)), rolling back"
-        if [ "$deployed" -ge 1 ]; then
-            if [ -f "${f1}${bak}" ]; then mv -f "${f1}${bak}" "$f1" 2>/dev/null; else rm -f "$f1" 2>/dev/null; fi || true
-        fi
-        if [ "$deployed" -ge 2 ]; then
-            if [ -f "${f2}${bak}" ]; then mv -f "${f2}${bak}" "$f2" 2>/dev/null; else rm -f "$f2" 2>/dev/null; fi || true
-        fi
-        if [ "$deployed" -ge 3 ]; then
-            if [ -f "${f3}${bak}" ]; then mv -f "${f3}${bak}" "$f3" 2>/dev/null; else rm -f "$f3" 2>/dev/null; fi || true
-        fi
-        if [ "$deployed" -ge 4 ]; then
-            if [ -f "${f4}${bak}" ]; then mv -f "${f4}${bak}" "$f4" 2>/dev/null; else rm -f "$f4" 2>/dev/null; fi || true
-        fi
-        if [ "$deployed" -ge 5 ]; then
-            if [ -f "${f5}${bak}" ]; then mv -f "${f5}${bak}" "$f5" 2>/dev/null; else rm -f "$f5" 2>/dev/null; fi || true
-        fi
-        if [ "$deployed" -ge 6 ]; then
-            if [ -f "${f6}${bak}" ]; then mv -f "${f6}${bak}" "$f6" 2>/dev/null; else rm -f "$f6" 2>/dev/null; fi || true
-        fi
-        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" \
-              "${f6}${stag}" "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}"
+    if [ "$_deploy_ok" = "0" ]; then
+        log_error "LuCI deploy failed, rolling back"
+        for _d in $_deployed; do
+            if [ -f "${_d}${bak}" ]; then
+                mv -f "${_d}${bak}" "$_d" 2>/dev/null || true
+            else
+                rm -f "$_d" 2>/dev/null || true
+            fi
+        done
+        for _d in $_dests; do rm -f "${_d}${stag}" "${_d}${bak}"; done
         return 1
     fi
 
-    rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}"
+    # Cleanup backups and staging leftovers
+    for _d in $_dests; do rm -f "${_d}${bak}" "${_d}${stag}"; done
 
     # Cleanup legacy ucode bridge on upgrade to exec-based rpcd bridge.
     rm -f /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
