@@ -2,6 +2,33 @@
 # Core install, update, uninstall, status, and automation commands
 # Sourced by tailscale-manager entry script.
 
+# Shared post-install flow: deploy managed files, configure cron, enable and
+# start the service, then verify it came up.  Returns 1 if tailscaled fails
+# to start so callers can decide whether to abort or continue.
+_finalize_install() {
+    local auto_update="${1:-0}"
+
+    install_runtime_scripts || return 1
+    install_update_script || return 1
+    install_luci_app || return 1
+    if [ "$auto_update" = "1" ]; then
+        setup_cron
+    else
+        remove_cron
+    fi
+
+    "$INIT_SCRIPT" enable
+    "$INIT_SCRIPT" start
+
+    if wait_for_tailscaled 10; then
+        show_service_status
+        return 0
+    else
+        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
+}
+
 do_install() {
     echo ""
     echo "============================================="
@@ -153,25 +180,9 @@ do_install() {
 
     create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
 
-    install_runtime_scripts || return 1
-    install_update_script || return 1
-    install_luci_app || return 1
-    if [ "$auto_update" = "1" ]; then
-        setup_cron
-    else
-        remove_cron
-    fi
-
     echo ""
     echo "Enabling and starting Tailscale service..."
-    "$INIT_SCRIPT" enable
-    "$INIT_SCRIPT" start
-
-    if wait_for_tailscaled 10; then
-        show_service_status
-    else
-        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
-    fi
+    _finalize_install "$auto_update" || return 1
 
     echo ""
     local configured_tun_mode
@@ -420,10 +431,10 @@ do_status() {
         else
             echo "  tailscaled: running"
         fi
-        if tailscaled_is_userspace; then
+        if is_tailscaled_userspace; then
             echo "  Active mode: userspace"
         else
-            echo "  Active mode: kernel"
+            echo "  Active mode: tun"
         fi
     else
         echo "  tailscaled: not running"
@@ -447,7 +458,7 @@ do_status() {
     echo ""
 }
 
-do_install_specific_version() {
+do_install_version() {
     echo ""
     echo "============================================="
     echo "  Install Specific Version"
@@ -594,26 +605,10 @@ do_install_specific_version() {
         mkdir -p "$STATE_DIR"
         create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
 
-        install_runtime_scripts || return 1
-        install_update_script || return 1
-        install_luci_app || return 1
-        if [ "$auto_update" = "1" ]; then
-            setup_cron
-        else
-            remove_cron
-        fi
-
         echo ""
         echo "Installation success!"
         echo "Starting service..."
-        "$INIT_SCRIPT" enable
-        "$INIT_SCRIPT" start
-
-        if wait_for_tailscaled 10; then
-            show_service_status
-        else
-            log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
-        fi
+        _finalize_install "$auto_update" || return 1
     else
         echo "Installation failed."
         return 1
@@ -642,7 +637,7 @@ do_download_only() {
     download_tailscale "$version" "$arch" "$bin_dir"
 }
 
-do_install_quiet() {
+cmd_install() {
     local opt_source="" opt_storage="" opt_auto_update=""
 
     while [ $# -gt 0 ]; do
@@ -706,28 +701,11 @@ do_install_quiet() {
     mkdir -p "$STATE_DIR"
     create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
 
-    install_runtime_scripts || return 1
-    install_update_script || return 1
-    install_luci_app || return 1
-    if [ "$auto_update" = "1" ]; then
-        setup_cron
-    else
-        remove_cron
-    fi
-
-    "$INIT_SCRIPT" enable
-    "$INIT_SCRIPT" start
-
-    if wait_for_tailscaled 10; then
-        show_service_status
-        log_info "Installation complete"
-    else
-        log_error "tailscaled failed to start. Check logs: cat /var/log/tailscale.log"
-        return 1
-    fi
+    _finalize_install "$auto_update" || return 1
+    log_info "Installation complete"
 }
 
-do_install_version_quiet() {
+cmd_install_version() {
     local target_version="$1"
     shift || true
     local opt_source=""

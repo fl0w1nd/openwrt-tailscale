@@ -30,14 +30,6 @@ json_escape() {
     }'
 }
 
-json_kv() {
-    printf '"%s":"%s"' "$1" "$(json_escape "$2")"
-}
-
-json_kv_raw() {
-    printf '"%s":%s' "$1" "$2"
-}
-
 json_array_from_lines() {
     local first=1
     printf '['
@@ -229,7 +221,7 @@ cmd_json_status() {
     local self_ips_json="[]" peers_json="[]"
 
     if [ "$running" = "true" ]; then
-        tun_mode="kernel"
+        tun_mode="tun"
         local cmdline=""
         cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || cmdline=""
         case " $cmdline " in

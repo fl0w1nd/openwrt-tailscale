@@ -129,9 +129,10 @@ kernel_tun_available() {
 # ============================================================================
 
 # Determine effective TUN mode based on config and hardware
-# Args: $1 = requested mode (auto|kernel|userspace)
-# Output: "kernel" or "userspace"
-# Returns: 0 on success, 1 if kernel mode is required but unavailable
+# Args: $1 = requested mode (auto|tun|kernel|userspace)
+#        "kernel" is accepted for backward compatibility and treated as "tun".
+# Output: "tun" or "userspace"
+# Returns: 0 on success, 1 if TUN mode is required but unavailable
 get_effective_tun_mode() {
     local requested_mode="${1:-auto}"
 
@@ -140,13 +141,13 @@ get_effective_tun_mode() {
             echo "userspace"
             return 0
             ;;
-        kernel)
-            kernel_tun_available && echo "kernel"
+        tun|kernel)
+            kernel_tun_available && echo "tun"
             return $?
             ;;
         auto|"")
             if kernel_tun_available; then
-                echo "kernel"
+                echo "tun"
             else
                 echo "userspace"
             fi
@@ -154,7 +155,7 @@ get_effective_tun_mode() {
             ;;
         *)
             if kernel_tun_available; then
-                echo "kernel"
+                echo "tun"
             else
                 echo "userspace"
             fi

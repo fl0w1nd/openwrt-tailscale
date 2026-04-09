@@ -84,7 +84,7 @@ return view.extend({
 
 		o = s.option(form.ListValue, 'tun_mode', 'Networking Mode', 'Choose between TUN mode and userspace networking mode.');
 		o.value('auto', 'Auto (prefer TUN mode, fallback to userspace networking mode)');
-		o.value('kernel', 'TUN mode');
+		o.value('tun', 'TUN mode');
 		o.value('userspace', 'Userspace networking mode');
 		o.default = 'auto';
 
@@ -117,7 +117,7 @@ return view.extend({
 
 		return callSetupFirewall().then(function(result) {
 			ui.hideModal();
-			if (result && result.success)
+			if (result && result.code === 0)
 				ui.addNotification(null,
 					E('p', {}, 'Network interface and firewall zone configured successfully.'), 'info');
 			else

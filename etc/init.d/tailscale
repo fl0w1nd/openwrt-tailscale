@@ -42,7 +42,7 @@ load_config() {
     config_get BIN_DIR settings bin_dir /opt/tailscale
     config_get STATE_FILE settings state_file /etc/config/tailscaled.state
     config_get STATE_DIR settings statedir /etc/tailscale
-    FW_MODE=$(detect_firewall_mode)
+    FW_MODE=$(detect_ts_firewall_mode)
     config_get DOWNLOAD_SOURCE settings download_source official
     config_get TUN_MODE settings tun_mode auto
     config_get PROXY_LISTEN settings proxy_listen localhost
@@ -54,9 +54,10 @@ load_config() {
 # Helper Functions
 # ============================================================================
 
-# Check if tailscaled binary exists and is executable
-# Supports both official (separate binaries) and small (combined binary)
-detect_firewall_mode() {
+# Detect firewall mode for TS_DEBUG_FIREWALL_MODE env var.
+# Returns "nftables" or "iptables" — distinct from detect_firewall_backend()
+# in firewall.sh which returns "fw4" or "fw3" for UCI operations.
+detect_ts_firewall_mode() {
     if [ -x /sbin/fw4 ]; then
         echo "nftables"
     elif [ -x /sbin/fw3 ]; then
@@ -176,7 +177,7 @@ start_service() {
     effective_tun_mode="$(get_effective_tun_mode "$TUN_MODE")" || effective_tun_mode=""
 
     if [ -z "$effective_tun_mode" ]; then
-        log_msg "error" "/dev/net/tun is not available and kernel mode is explicitly configured"
+        log_msg "error" "/dev/net/tun is not available and TUN mode is explicitly configured"
         log_msg "info" "Set tun_mode to 'userspace' or 'auto' to allow fallback"
         return 1
     fi

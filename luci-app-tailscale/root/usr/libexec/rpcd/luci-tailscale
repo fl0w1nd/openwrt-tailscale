@@ -68,12 +68,6 @@ print_code_stdout() {
     printf '{"code":%s,"stdout":"%s"}' "$code" "$(json_escape_inline "$stdout")"
 }
 
-print_success_stdout() {
-    local success="$1"
-    local stdout="$2"
-    printf '{"success":%s,"stdout":"%s"}' "$success" "$(json_escape_inline "$stdout")"
-}
-
 task_path() {
     printf '%s/%s' "$TASK_DIR" "$1"
 }
@@ -261,11 +255,7 @@ call)
                 echo done
             ) 2>&1
             code=$?
-            if [ "$code" -eq 0 ]; then
-                print_success_stdout true "$stdout"
-            else
-                print_success_stdout false "$stdout"
-            fi
+            print_code_stdout "$code" "$stdout"
             ;;
         sync_scripts)
             stdout=$("$MANAGER_BIN" sync-scripts 2>&1)

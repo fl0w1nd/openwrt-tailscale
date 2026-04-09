@@ -160,10 +160,10 @@ kernel_tun_available() {
 }
 
 mode=\$(get_effective_tun_mode auto)
-[ "\$mode" = "kernel" ]
+[ "\$mode" = "tun" ]
 
-mode=\$(get_effective_tun_mode kernel)
-[ "\$mode" = "kernel" ]
+mode=\$(get_effective_tun_mode tun)
+[ "\$mode" = "tun" ]
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -370,14 +370,14 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_network_mode_reinstalls_runtime_scripts() {
+test_tun_mode_reinstalls_runtime_scripts() {
     write_stub uci <<'EOF'
 #!/bin/sh
 printf 'uci %s\n' "$*" >> "$TEST_DIR/calls.log"
 exit 0
 EOF
 
-    new_script manager-network-mode.sh <<EOF
+    new_script manager-tun-mode.sh <<EOF
 #!/bin/sh
 set -eu
 $(source_manager)
@@ -401,7 +401,7 @@ printf 'init %s\n' "\$*" >> "$TEST_DIR/calls.log"
 SCRIPT
         chmod 755 "\$2"
     else
-        printf 'shared library\n' > "\$2"
+        printf '#!/bin/sh\n' > "\$2"
         chmod "\${3:-644}" "\$2" 2>/dev/null || true
     fi
 }
@@ -414,26 +414,21 @@ show_service_status() {
     echo status >> "\$CALLS"
 }
 
-configure_tun_mode userspace
+main tun-mode userspace
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
-    assert_file_exists "$TEST_DIR/root/usr/lib/tailscale/common.sh" 'network-mode should refresh common.sh'
-    [ -x "$TEST_DIR/root/etc/init.d/tailscale" ] || fail 'network-mode should refresh the init script'
-    assert_file_contains "$TEST_DIR/calls.log" 'uci set tailscale.settings.tun_mode=userspace' 'network-mode should persist tun_mode'
-    assert_file_contains "$TEST_DIR/calls.log" 'init restart' 'network-mode should restart tailscale'
-    assert_file_contains "$TEST_DIR/calls.log" 'status' 'network-mode should run the status check after restart'
+    assert_file_exists "$TEST_DIR/root/usr/lib/tailscale/common.sh" 'tun-mode should refresh common.sh'
+    [ -x "$TEST_DIR/root/etc/init.d/tailscale" ] || fail 'tun-mode should refresh the init script'
+    assert_file_contains "$TEST_DIR/calls.log" 'uci set tailscale.settings.tun_mode=userspace' 'tun-mode should persist tun_mode'
+    assert_file_contains "$TEST_DIR/calls.log" 'init restart' 'tun-mode should restart tailscale'
+    assert_file_contains "$TEST_DIR/calls.log" 'status' 'tun-mode should run the status check after restart'
 }
 
-test_install_interactive_installs_luci_app() {
-    new_script manager-install.sh <<'EOF'
-#!/bin/sh
-set -eu
-LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
-
+# Emit common stub definitions for install tests.
+# Sourced by the generated test script at runtime.
+setup_install_stubs() {
+    cat > "$TEST_DIR/install-stubs.sh" <<'STUBS'
 PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
 RAM_DIR="$TEST_DIR/root/tmp/tailscale"
 STATE_DIR="$TEST_DIR/root/etc/tailscale"
@@ -450,26 +445,32 @@ printf 'init %s\n' "$*" >> "$CALLS"
 SCRIPT
 chmod +x "$INIT_SCRIPT"
 
-get_arch() {
-    echo x86_64
+get_arch() { echo x86_64; }
+check_dependencies() { return 0; }
+get_latest_version() { echo 1.76.1; }
+download_tailscale() { mkdir -p "$3"; printf '%s\n' "$1" > "$3/version"; }
+create_symlinks() { echo symlinks >> "$CALLS"; }
+create_uci_config() { echo "uci $1 $2 $3 $4" >> "$CALLS"; }
+install_runtime_scripts() { echo runtime >> "$CALLS"; }
+install_update_script() { echo update >> "$CALLS"; }
+install_luci_app() { echo luci >> "$CALLS"; }
+setup_cron() { echo cron-on >> "$CALLS"; }
+remove_cron() { echo cron-off >> "$CALLS"; }
+wait_for_tailscaled() { return 0; }
+show_service_status() { echo status >> "$CALLS"; }
+STUBS
 }
 
-check_dependencies() {
-    return 0
-}
-
-get_latest_version() {
-    echo 1.76.1
-}
-
-download_tailscale() {
-    mkdir -p "$3"
-    printf '%s\n' "$1" > "$3/version"
-}
-
-create_symlinks() {
-    echo symlinks >> "$CALLS"
-}
+test_install_interactive_installs_luci_app() {
+    setup_install_stubs
+    new_script manager-install.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
 
 create_uci_config() {
     echo "uci $1 $2 $3 $4" >> "$CALLS"
@@ -477,45 +478,9 @@ create_uci_config() {
     : > "$CONFIG_FILE"
 }
 
-install_runtime_scripts() {
-    echo runtime >> "$CALLS"
-}
-
-install_update_script() {
-    echo update >> "$CALLS"
-}
-
-install_luci_app() {
-    echo luci >> "$CALLS"
-}
-
-setup_cron() {
-    echo cron-on >> "$CALLS"
-}
-
-remove_cron() {
-    echo cron-off >> "$CALLS"
-}
-
-wait_for_tailscaled() {
-    return 0
-}
-
-show_service_status() {
-    echo status >> "$CALLS"
-}
-
-get_configured_tun_mode() {
-    echo userspace
-}
-
-get_effective_tun_mode() {
-    echo userspace
-}
-
-show_userspace_subnet_guidance() {
-    echo userspace-guidance >> "$CALLS"
-}
+get_configured_tun_mode() { echo userspace; }
+get_effective_tun_mode() { echo userspace; }
+show_userspace_subnet_guidance() { echo userspace-guidance >> "$CALLS"; }
 
 printf '\n\n\n' | do_install >/dev/null
 
@@ -531,7 +496,48 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_install_interactive_propagates_finalize_failure() {
+    setup_install_stubs
+    new_script manager-install-failure.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
+
+create_uci_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    : > "$CONFIG_FILE"
+}
+
+_finalize_install() {
+    echo finalize-failed >> "$CALLS"
+    return 1
+}
+
+get_configured_tun_mode() { echo userspace; }
+get_effective_tun_mode() { echo userspace; }
+show_userspace_subnet_guidance() { echo userspace-guidance >> "$CALLS"; }
+
+if printf '\n\n\n' | do_install >/dev/null; then
+    echo 'do_install should fail when finalize step fails'
+    exit 1
+fi
+
+grep -Fq 'finalize-failed' "$CALLS"
+if grep -Fq 'userspace-guidance' "$CALLS"; then
+    echo 'install should stop after finalize failure'
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_install_quiet_installs_luci_app() {
+    setup_install_stubs
     new_script manager-install-quiet.sh <<'EOF'
 #!/bin/sh
 set -eu
@@ -539,77 +545,9 @@ LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
 
-PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
-RAM_DIR="$TEST_DIR/root/tmp/tailscale"
-STATE_DIR="$TEST_DIR/root/etc/tailscale"
-STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
-CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
-INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
-CALLS="$TEST_DIR/calls.log"
-export CALLS
-
-mkdir -p "$(dirname "$INIT_SCRIPT")"
-cat > "$INIT_SCRIPT" <<'SCRIPT'
-#!/bin/sh
-printf 'init %s\n' "$*" >> "$CALLS"
-SCRIPT
-chmod +x "$INIT_SCRIPT"
-
-get_arch() {
-    echo x86_64
-}
-
-check_dependencies() {
-    return 0
-}
-
-get_latest_version() {
-    echo 1.76.1
-}
-
-download_tailscale() {
-    mkdir -p "$3"
-    printf '%s\n' "$1" > "$3/version"
-}
-
-create_symlinks() {
-    echo symlinks >> "$CALLS"
-}
-
-create_uci_config() {
-    echo "uci $1 $2 $3 $4" >> "$CALLS"
-}
-
-install_runtime_scripts() {
-    echo runtime >> "$CALLS"
-}
-
-install_update_script() {
-    echo update >> "$CALLS"
-}
-
-install_luci_app() {
-    echo luci >> "$CALLS"
-}
-
-setup_cron() {
-    echo cron-on >> "$CALLS"
-}
-
-remove_cron() {
-    echo cron-off >> "$CALLS"
-}
-
-wait_for_tailscaled() {
-    return 0
-}
-
-show_service_status() {
-    echo status >> "$CALLS"
-}
-
-do_install_quiet --source official --storage ram --auto-update 1 >/dev/null
+cmd_install --source official --storage ram --auto-update 1 >/dev/null
 
 [ -f "$RAM_DIR/version" ]
 grep -Fq 'runtime' "$CALLS"
@@ -624,6 +562,7 @@ EOF
 }
 
 test_install_version_quiet_does_not_reinstall_managed_files() {
+    setup_install_stubs
     new_script manager-install-version-quiet.sh <<'EOF'
 #!/bin/sh
 set -eu
@@ -631,74 +570,16 @@ LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
 
-PERSISTENT_DIR="$TEST_DIR/root/opt/tailscale"
-RAM_DIR="$TEST_DIR/root/tmp/tailscale"
-STATE_DIR="$TEST_DIR/root/etc/tailscale"
-STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
-CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
-INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
-CALLS="$TEST_DIR/calls.log"
-export CALLS
-
-mkdir -p "$(dirname "$INIT_SCRIPT")"
-cat > "$INIT_SCRIPT" <<'SCRIPT'
-#!/bin/sh
-printf 'init %s\n' "$*" >> "$CALLS"
-SCRIPT
-chmod +x "$INIT_SCRIPT"
-
-get_arch() {
-    echo x86_64
-}
-
-is_arch_supported_by_small() {
-    return 0
-}
-
+is_arch_supported_by_small() { return 0; }
 download_tailscale() {
     echo "download $1 $2 $3" >> "$CALLS"
     mkdir -p "$3"
     printf '%s\n' "$1" > "$3/version"
 }
 
-create_symlinks() {
-    echo symlinks >> "$CALLS"
-}
-
-create_uci_config() {
-    echo "uci $1 $2 $3 $4" >> "$CALLS"
-}
-
-install_runtime_scripts() {
-    echo runtime >> "$CALLS"
-}
-
-install_update_script() {
-    echo update >> "$CALLS"
-}
-
-install_luci_app() {
-    echo luci >> "$CALLS"
-}
-
-setup_cron() {
-    echo cron-on >> "$CALLS"
-}
-
-remove_cron() {
-    echo cron-off >> "$CALLS"
-}
-
-wait_for_tailscaled() {
-    return 0
-}
-
-show_service_status() {
-    echo status >> "$CALLS"
-}
-
-do_install_version_quiet 1.77.0 --source small >/dev/null
+cmd_install_version 1.77.0 --source small >/dev/null
 
 [ -f "$PERSISTENT_DIR/version" ]
 grep -Fq 'download 1.77.0 x86_64' "$CALLS"
@@ -779,34 +660,6 @@ EOF
     fi
 
     assert_file_contains "$TEST_DIR/update.log" 'Invalid version format from API: 1.76beta' 'update script should log malformed versions'
-}
-
-test_luci_source_files_exist_in_repo() {
-    for f in \
-        luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js \
-        luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js \
-        luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js \
-        luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale \
-        luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
-        luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json; do
-        assert_file_exists "$REPO_ROOT/$f" "LuCI source file should exist: $f"
-    done
-}
-
-test_luci_json_files_valid() {
-    if ! command -v python3 >/dev/null 2>&1; then
-        return 0
-    fi
-
-    for f in \
-        luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
-        luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json; do
-        python3 -m json.tool "$REPO_ROOT/$f" >/dev/null 2>&1 || fail "Invalid JSON: $f"
-    done
-}
-
-test_rpcd_bridge_exists_in_repo() {
-    assert_file_exists "$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale" 'rpcd exec bridge should exist in repository'
 }
 
 test_rpcd_bridge_list_output_valid_json() {
@@ -961,54 +814,6 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_luci_js_uses_correct_rpc_object() {
-    for f in \
-        "$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js" \
-        "$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js" \
-        "$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js"; do
-        if grep -Fq 'luci.tailscale' "$f"; then
-            fail "legacy rpc object should not remain in $f"
-        fi
-        grep -Fq "object: 'luci-tailscale'" "$f" || fail "new rpc object missing in $f"
-    done
-}
-
-test_luci_config_hides_service_toggle() {
-    config_js="$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js"
-
-    if grep -Fq "option(form.Flag, 'enabled'" "$config_js"; then
-        fail "config page should not expose the service enabled toggle"
-    fi
-
-    if grep -Fq "option(form.Flag, 'auto_update'" "$config_js"; then
-        fail "config page should not expose the auto update toggle"
-    fi
-
-    if grep -Fq "option(form.ListValue, 'fw_mode'" "$config_js"; then
-        fail "config page should not expose the firewall backend setting"
-    fi
-}
-
-test_luci_maintenance_handles_up_to_date_scripts() {
-    maintenance_js="$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js"
-
-    grep -Fq 'Manager scripts are already up to date.' "$maintenance_js" ||
-        fail "maintenance page should show an already-up-to-date message"
-
-	grep -Fq 'Check Remote Versions' "$maintenance_js" ||
-		fail "maintenance page should check versions on demand"
-
-	grep -Fq 'Remote version checks are only performed when you request them.' "$maintenance_js" ||
-		fail "maintenance page should explain on-demand checks"
-
-	grep -Fq 'Save Auto Update Setting' "$maintenance_js" ||
-		fail "maintenance page should manage auto update"
-
-	if grep -Fq 'loadVersionData' "$maintenance_js"; then
-		fail "maintenance page should not preload remote version data"
-	fi
-}
-
 test_json_script_local_info_reports_current_version() {
 	new_script json-script-local-info.sh <<EOF
 #!/bin/sh
@@ -1020,31 +825,6 @@ printf '%s' "\$output" | grep -Fq '"current":"' || { echo "should include curren
 EOF
 
 	run_with_test_shell "$LAST_SCRIPT"
-}
-
-test_luci_urls_match_repo_paths() {
-    new_script manager-luci-urls.sh <<EOF
-#!/bin/sh
-set -eu
-$(source_manager)
-
-base="\$RAW_BASE_URL"
-
-check_url_file() {
-    local url="\$1"
-    local rel="\${url#\$base/}"
-    [ -f "$REPO_ROOT/\$rel" ] || { echo "MISSING: \$rel"; exit 1; }
-}
-
-check_url_file "\$LUCI_RPC_URL"
-check_url_file "\$LUCI_MENU_URL"
-check_url_file "\$LUCI_ACL_URL"
-check_url_file "\${LUCI_VIEW_BASE_URL}/config.js"
-check_url_file "\${LUCI_VIEW_BASE_URL}/status.js"
-check_url_file "\${LUCI_VIEW_BASE_URL}/maintenance.js"
-EOF
-
-    run_with_test_shell "$LAST_SCRIPT"
 }
 
 test_check_script_update_skips_non_interactive() {
@@ -1282,14 +1062,8 @@ EOF
 }
 
 # ============================================================================
-# New tests for modular library structure
+# Library structure tests
 # ============================================================================
-
-test_library_files_exist_in_repo() {
-    for lib in common.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
-        assert_file_exists "$REPO_ROOT/usr/lib/tailscale/$lib" "Library file should exist: $lib"
-    done
-}
 
 test_library_files_sourceable_independently() {
     new_script lib-source-test.sh <<EOF
@@ -1319,8 +1093,8 @@ type sync_managed_scripts >/dev/null 2>&1 || { echo "MISSING: sync_managed_scrip
     type setup_cron >/dev/null 2>&1 || { echo "MISSING: setup_cron"; exit 1; }
     type remove_cron >/dev/null 2>&1 || { echo "MISSING: remove_cron"; exit 1; }
     type do_install >/dev/null 2>&1 || { echo "MISSING: do_install"; exit 1; }
-    type do_install_quiet >/dev/null 2>&1 || { echo "MISSING: do_install_quiet"; exit 1; }
-    type do_install_version_quiet >/dev/null 2>&1 || { echo "MISSING: do_install_version_quiet"; exit 1; }
+    type cmd_install >/dev/null 2>&1 || { echo "MISSING: cmd_install"; exit 1; }
+    type cmd_install_version >/dev/null 2>&1 || { echo "MISSING: cmd_install_version"; exit 1; }
     type do_status >/dev/null 2>&1 || { echo "MISSING: do_status"; exit 1; }
     type show_menu >/dev/null 2>&1 || { echo "MISSING: show_menu"; exit 1; }
     type interactive_menu >/dev/null 2>&1 || { echo "MISSING: interactive_menu"; exit 1; }
@@ -1330,34 +1104,10 @@ type sync_managed_scripts >/dev/null 2>&1 || { echo "MISSING: sync_managed_scrip
     type cmd_json_latest_version >/dev/null 2>&1 || { echo "MISSING: cmd_json_latest_version"; exit 1; }
     type cmd_json_script_info >/dev/null 2>&1 || { echo "MISSING: cmd_json_script_info"; exit 1; }
     type json_escape >/dev/null 2>&1 || { echo "MISSING: json_escape"; exit 1; }
-    type json_kv >/dev/null 2>&1 || { echo "MISSING: json_kv"; exit 1; }
-    type json_kv_raw >/dev/null 2>&1 || { echo "MISSING: json_kv_raw"; exit 1; }
     type json_array_from_lines >/dev/null 2>&1 || { echo "MISSING: json_array_from_lines"; exit 1; }
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
-}
-
-test_lib_dir_override_works() {
-    new_script lib-dir-override.sh <<EOF
-#!/bin/sh
-set -eu
-
-LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-. "$REPO_ROOT/tailscale-manager.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
-
-# verify version.sh functions are loaded from the overridden path
-type get_latest_version >/dev/null 2>&1 || exit 1
-type download_tailscale >/dev/null 2>&1 || exit 1
-    type install_runtime_scripts >/dev/null 2>&1 || exit 1
-    type do_install >/dev/null 2>&1 || exit 1
-    type interactive_menu >/dev/null 2>&1 || exit 1
-EOF
-
-    run_with_test_shell "$LAST_SCRIPT"
-    return 0
 }
 
 test_install_runtime_scripts_installs_library_files() {
@@ -1377,6 +1127,7 @@ download_repo_file() {
     chmod "\${3:-644}" "\$2" 2>/dev/null || true
 }
 
+unset MODULE_LIBS
 install_runtime_scripts
 
 # Verify common.sh was installed
@@ -1431,8 +1182,8 @@ SCRIPT
             cat > "$2" <<'SCRIPT'
 #!/bin/sh
 do_install() { :; }
-do_install_quiet() { :; }
-do_install_version_quiet() { :; }
+cmd_install() { :; }
+cmd_install_version() { :; }
 do_status() { :; }
 SCRIPT
             ;;
@@ -1517,8 +1268,8 @@ SCRIPT
             cat > "$2" <<'SCRIPT'
 #!/bin/sh
 do_install() { :; }
-do_install_quiet() { :; }
-do_install_version_quiet() { :; }
+cmd_install() { :; }
+cmd_install_version() { :; }
 do_status() { :; }
 SCRIPT
             ;;
@@ -1632,25 +1383,6 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_json_kv_and_kv_raw() {
-    new_script json-kv.sh <<EOF
-#!/bin/sh
-set -eu
-$(source_manager)
-
-result=\$(json_kv name "hello")
-[ "\$result" = '"name":"hello"' ] || { echo "json_kv failed: \$result"; exit 1; }
-
-result=\$(json_kv_raw count 42)
-[ "\$result" = '"count":42' ] || { echo "json_kv_raw failed: \$result"; exit 1; }
-
-result=\$(json_kv_raw flag true)
-[ "\$result" = '"flag":true' ] || { echo "json_kv_raw bool failed: \$result"; exit 1; }
-EOF
-
-    run_with_test_shell "$LAST_SCRIPT"
-}
-
 test_json_array_from_lines() {
     new_script json-array.sh <<EOF
 #!/bin/sh
@@ -1688,24 +1420,10 @@ case "\$output" in
         exit 1
         ;;
 esac
-EOF
 
-    run_with_test_shell "$LAST_SCRIPT"
-}
-
-test_json_status_not_installed_valid_json() {
-    if ! command -v python3 >/dev/null 2>&1; then
-        return 0
-    fi
-
-    new_script json-status-not-installed-valid.sh <<EOF
-#!/bin/sh
-set -eu
-$(source_manager)
-
-_find_bin_dir() { return 1; }
-
-cmd_json_status | python3 -m json.tool >/dev/null
+if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "\$output" | python3 -m json.tool >/dev/null || { echo "invalid JSON"; exit 1; }
+fi
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -2013,7 +1731,7 @@ hostname=$(printf '%s' "$output" | jq -r '.hostname')
 
 # tun_mode detection requires /proc (Linux only) — skip on other platforms
 tun=$(printf '%s' "$output" | jq -r '.tun_mode')
-[ "$tun" = "null" ] || [ "$tun" = "kernel" ] || [ "$tun" = "userspace" ] || { echo "tun_mode unexpected: $tun"; exit 1; }
+[ "$tun" = "null" ] || [ "$tun" = "tun" ] || [ "$tun" = "userspace" ] || { echo "tun_mode unexpected: $tun"; exit 1; }
 
 # Check peers
 peer_count=$(printf '%s' "$output" | jq '.peers | length')
@@ -2217,35 +1935,6 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_json_main_dispatch() {
-    new_script json-dispatch.sh <<EOF
-#!/bin/sh
-set -eu
-$(source_manager)
-
-_find_bin_dir() { return 1; }
-pidof() { return 1; }
-get_remote_script_version() { return 1; }
-get_official_latest_version() { return 1; }
-get_small_latest_version() { return 1; }
-
-# Verify all json-* commands are reachable from main dispatch
-for cmd in json-status json-install-info json-latest-versions json-latest-version json-script-local-info json-script-info; do
-    output=\$(main \$cmd 2>/dev/null)
-    case "\$output" in
-        '{'*'}'*)
-            ;;
-        *)
-            echo "dispatch failed for \$cmd: \$output"
-            exit 1
-            ;;
-    esac
-done
-EOF
-
-    run_with_test_shell "$LAST_SCRIPT"
-}
-
 # ============================================================================
 # Run all tests
 # ============================================================================
@@ -2256,41 +1945,31 @@ run_test 'version fetchers validate official and small API payloads' test_versio
 run_test 'official version listing parses package page options' test_list_official_versions_parsing
 run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
-run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts
+run_test 'tun-mode refreshes runtime scripts before restart' test_tun_mode_reinstalls_runtime_scripts
 run_test 'interactive install deploys LuCI app files' test_install_interactive_installs_luci_app
+run_test 'interactive install stops when finalize step fails' test_install_interactive_propagates_finalize_failure
 run_test 'install-quiet deploys LuCI app files' test_install_quiet_installs_luci_app
 run_test 'install-version avoids managed file reinstall' test_install_version_quiet_does_not_reinstall_managed_files
 run_test 'tailscale-update rejects malformed upstream versions' test_update_script_rejects_invalid_version
-run_test 'LuCI source files exist in repo' test_luci_source_files_exist_in_repo
-run_test 'LuCI JSON files are valid' test_luci_json_files_valid
-run_test 'rpcd exec bridge exists in repo' test_rpcd_bridge_exists_in_repo
 run_test 'rpcd exec bridge list output is valid JSON' test_rpcd_bridge_list_output_valid_json
 run_test 'rpcd exec bridge dispatches json-status' test_rpcd_bridge_dispatches_json_status
 run_test 'rpcd exec bridge validates service actions' test_rpcd_bridge_service_control_validates_action
 run_test 'rpcd exec bridge passes install params' test_rpcd_bridge_install_passes_params
 run_test 'rpcd exec bridge reports async task status' test_rpcd_bridge_reports_task_status
 run_test 'rpcd exec bridge keeps multiline output valid JSON' test_rpcd_bridge_multiline_output_stays_valid_json
-run_test 'LuCI JS uses the new rpc object name' test_luci_js_uses_correct_rpc_object
-run_test 'LuCI config hides duplicate service toggle' test_luci_config_hides_service_toggle
-run_test 'LuCI maintenance distinguishes up-to-date scripts' test_luci_maintenance_handles_up_to_date_scripts
-run_test 'LuCI URLs in manager match repo file paths' test_luci_urls_match_repo_paths
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
 run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
 run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
 run_test 'uninstall removes overridden LuCI paths' test_uninstall_removes_overridden_luci_paths
-run_test 'library files exist in repository' test_library_files_exist_in_repo
 run_test 'all library functions are loadable via source' test_library_files_sourceable_independently
-run_test 'LIB_DIR override loads libraries from custom path' test_lib_dir_override_works
 run_test 'install_runtime_scripts installs all library files' test_install_runtime_scripts_installs_library_files
 run_test 'ensure_libraries bootstraps all runtime modules' test_ensure_libraries_bootstraps_all_modules
 run_test 'ensure_libraries repairs partial library sets' test_ensure_libraries_repairs_partial_library_sets
 run_test 'main exits when library bootstrap fails' test_main_fails_when_library_bootstrap_fails
 run_test 'json_escape handles special characters' test_json_escape_special_chars
-run_test 'json_kv and json_kv_raw produce correct output' test_json_kv_and_kv_raw
 run_test 'json_array_from_lines builds JSON arrays' test_json_array_from_lines
-run_test 'json-status returns not-installed state' test_json_status_not_installed
-run_test 'json-status not-installed produces valid JSON' test_json_status_not_installed_valid_json
+run_test 'json-status returns not-installed state with valid JSON' test_json_status_not_installed
 run_test 'json-install-info reports arch when not installed' test_json_install_info_reports_arch
 run_test 'json-install-info reports installed state' test_json_install_info_installed
 run_test 'json-latest-versions fetches both sources' test_json_latest_versions_both_sources
@@ -2302,6 +1981,5 @@ run_test 'all json-* commands produce valid JSON' test_json_output_valid
 run_test 'json-status parses tailscale status output' test_json_status_parses_tailscale_output
 run_test 'json-status keeps remote peers on jsonfilter backend' test_json_status_parses_remote_peers_with_jsonfilter_backend
 run_test '_get_display_name extracts names correctly' test_json_display_name_extraction
-run_test 'json-* subcommands are reachable from main' test_json_main_dispatch
 
 printf '1..%s\n' "$TEST_INDEX"

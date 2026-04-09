@@ -2,11 +2,11 @@ SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-upd
 SHELLCHECK_FLAGS := -s sh -e SC1091,SC3043
 TEST_SHELL ?= sh
 
-.PHONY: ci lint syntax check-sync shellcheck test
+.PHONY: ci lint syntax check-sync shellcheck check-static test
 
 ci: lint test
 
-lint: syntax check-sync shellcheck
+lint: syntax check-sync shellcheck check-static
 
 syntax:
 	@set -e; \
@@ -36,6 +36,33 @@ shellcheck:
 	else \
 		printf '%s\n' 'shellcheck not found, skipping. Install with: brew install shellcheck'; \
 	fi
+
+check-static:
+	@for f in luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js \
+	          luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js \
+	          luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js \
+	          luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale; do \
+		[ -f "$$f" ] || { printf 'MISSING: %s\n' "$$f"; exit 1; }; \
+	done
+	@if command -v python3 >/dev/null 2>&1; then \
+		for f in luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
+		         luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json; do \
+			python3 -m json.tool "$$f" >/dev/null || { printf 'INVALID JSON: %s\n' "$$f"; exit 1; }; \
+		done; \
+	fi
+	@for f in luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/*.js; do \
+		if grep -Fq 'luci.tailscale' "$$f"; then \
+			printf 'Legacy rpc object in %s\n' "$$f"; exit 1; \
+		fi; \
+	done
+	@for lib in common.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do \
+		[ -f "usr/lib/tailscale/$$lib" ] || { printf 'MISSING: usr/lib/tailscale/%s\n' "$$lib"; exit 1; }; \
+	done
+	@TAILSCALE_MANAGER_SOURCE_ONLY=1 sh -c '. ./tailscale-manager.sh; \
+		for f in "$$LUCI_RPC_URL" "$$LUCI_MENU_URL" "$$LUCI_ACL_URL"; do \
+			rel=$${f#$$RAW_BASE_URL/}; \
+			[ -f "$$rel" ] || { printf "URL mismatch: %%s\n" "$$rel"; exit 1; }; \
+		done' 2>/dev/null || true
 
 test:
 	@TEST_SHELL="$(TEST_SHELL)" sh tests/run.sh
