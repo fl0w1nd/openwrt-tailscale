@@ -6,15 +6,9 @@ on:
       - main
     paths:
       - '.github/workflows/pages.yml'
-      - 'site/**'
-      - 'scripts/build-pages.sh'
+      - 'docs/**'
+      - 'scripts/generate-changelog.sh'
       - 'tailscale-manager.sh'
-      - 'usr/**'
-      - 'etc/**'
-  release:
-    types:
-      - published
-      - edited
   workflow_dispatch:
 
 permissions:
@@ -36,18 +30,34 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate changelog
+        run: ./scripts/generate-changelog.sh
+
+      - name: Build VitePress site
+        working-directory: docs
+        run: pnpm build
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
-
-      - name: Build site
-        run: ./scripts/build-pages.sh
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .site
+          path: docs/.vitepress/dist
 
   deploy:
     needs: build
