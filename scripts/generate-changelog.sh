@@ -27,36 +27,44 @@ git -C "$REPO_ROOT" log --first-parent --format='%H' -- "$SCRIPT_FILE" | while r
     fi
 done | awk '!seen[$2]++' > "$TMP_VERSIONS"
 
-# Build changelog content
-line_count=0
-prev_hash=""
+# Build changelog content.
+# Each version section represents progress since the previous version bump.
+version_count=$(wc -l < "$TMP_VERSIONS" | tr -d ' ')
+line_index=1
 
-while IFS=' ' read -r hash version date; do
-    line_count=$((line_count + 1))
+while [ "$line_index" -le "$version_count" ]; do
+    current_line=$(sed -n "${line_index}p" "$TMP_VERSIONS")
+    IFS=' ' read -r hash version date <<EOF
+$current_line
+EOF
 
-    # Determine commit range
-    if [ "$line_count" -eq 1 ]; then
-        # Latest version: commits from this version bump to HEAD
-        range="${hash}..HEAD"
+    if [ "$line_index" -eq 1 ] && [ "$version_count" -gt 1 ]; then
+        older_line=$(sed -n '2p' "$TMP_VERSIONS")
+        IFS=' ' read -r older_hash _ _ <<EOF
+$older_line
+EOF
+        range="${older_hash}..HEAD"
+    elif [ "$line_index" -lt "$version_count" ]; then
+        next_line=$(sed -n "$((line_index + 1))p" "$TMP_VERSIONS")
+        IFS=' ' read -r older_hash _ _ <<EOF
+$next_line
+EOF
+        range="${older_hash}..${hash}"
     else
-        # Older version: commits from this hash to previous version hash
-        range="${hash}..${prev_hash}"
+        range="$hash"
     fi
 
     echo "## v${version} (${date})" >> "$TMP_CONTENT"
     echo "" >> "$TMP_CONTENT"
 
-    # Collect commits in the range, filter out version bump noise
-    commits=$(git -C "$REPO_ROOT" log --first-parent --format='- %s' "$range" -- \
+    commits=$(git -C "$REPO_ROOT" log --first-parent --format='%H %s' "$range" -- \
         "$SCRIPT_FILE" \
         usr/lib/tailscale/ \
         etc/init.d/ \
         usr/bin/ \
         luci-app-tailscale/ 2>/dev/null \
-        | grep -v '^- chore: bump script version' \
-        | grep -v '^- chore(tailscale-manager): update version' \
-        | grep -v '^- chore: update script version' \
-        | grep -v '^- chore(script): bump version' \
+        | grep -v "^${hash} " \
+        | sed 's/^[^ ]* /- /' \
         || true)
 
     if [ -n "$commits" ]; then
@@ -66,8 +74,8 @@ while IFS=' ' read -r hash version date; do
     fi
 
     echo "" >> "$TMP_CONTENT"
-    prev_hash="$hash"
-done < "$TMP_VERSIONS"
+    line_index=$((line_index + 1))
+done
 
 content=$(cat "$TMP_CONTENT")
 
