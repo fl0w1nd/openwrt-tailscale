@@ -1564,6 +1564,10 @@ result=\$(json_escape 'no special')
 
 result=\$(json_escape '')
 [ "\$result" = '' ] || { echo "empty string failed: \$result"; exit 1; }
+
+result=\$(json_escape 'line1
+line2')
+[ "\$result" = 'line1\nline2' ] || { echo "newline escape failed: \$result"; exit 1; }
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
