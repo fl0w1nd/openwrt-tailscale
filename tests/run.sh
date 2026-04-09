@@ -1763,7 +1763,20 @@ test_json_latest_version_uses_installed_source() {
 #!/bin/sh
 case "$*" in
     *api.github.com*)
-        printf '%s' '{"tag_name":"v1.80.0"}'
+        case "$*" in
+            *'/releases/latest'*)
+                printf '%s' '{"tag_name":"v1.80.0"}'
+                ;;
+            *'/releases?per_page=20'*)
+                printf '%s' '[{"tag_name":"v1.80.0"}]'
+                ;;
+            *)
+                exit 1
+                ;;
+        esac
+        ;;
+    *'v1.80.0/tailscale-small_1.80.0_mipsle.tgz'*)
+        exit 0
         ;;
     *)
         exit 1
@@ -1776,11 +1789,12 @@ EOF
 set -eu
 $(source_manager)
 
-# Not installed → defaults to small source
-_find_bin_dir() { return 1; }
-_get_installed_source() { return 1; }
+    # Not installed → defaults to small source
+    _find_bin_dir() { return 1; }
+    _get_installed_source() { return 1; }
+    get_arch() { echo mipsle; }
 
-output=\$(cmd_json_latest_version)
+    output=\$(cmd_json_latest_version)
 
 case "\$output" in
     *'"version":"1.80.0"'*'"source":"small"'*)
