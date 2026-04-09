@@ -148,7 +148,7 @@ return view.extend({
 
 		var container = E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, 'Tailscale'),
-			E('div', { 'class': 'cbi-map-descr' }, 'Tailscale VPN status and management.')
+			E('div', { 'class': 'cbi-map-descr' }, 'Tailscale status and device management.')
 		]);
 
 		if (!status.installed) {
@@ -236,7 +236,7 @@ return view.extend({
 
 	renderInstallWizard: function(installInfo) {
 		var sourceSelect = E('select', { 'class': 'cbi-input-select', 'id': 'ts-install-source' }, [
-			E('option', { 'value': 'small', 'selected': 'selected' }, 'Small (Compressed, ~10MB) - Recommended'),
+			E('option', { 'value': 'small', 'selected': 'selected' }, 'Small (Compressed, ~5MB) - Recommended'),
 			E('option', { 'value': 'official' }, 'Official (~50MB)')
 		]);
 
@@ -387,7 +387,7 @@ return view.extend({
 		this.updatePeerTableBody(tbody, status.peers || []);
 
 		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Connected Devices'),
+			E('h3', {}, 'Devices'),
 			E('table', { 'class': 'table', 'style': 'width:100%' }, [
 				E('thead', {}, [
 					E('tr', { 'class': 'tr table-titles' }, [
@@ -410,7 +410,7 @@ return view.extend({
 
 		if (!peers || peers.length === 0) {
 			tbody.appendChild(E('tr', { 'class': 'tr placeholder' }, [
-				E('td', { 'class': 'td', 'colspan': '7', 'style': 'text-align:center;color:#999' }, 'No peers connected')
+				E('td', { 'class': 'td', 'colspan': '7', 'style': 'text-align:center;color:#999' }, 'No devices found')
 			]));
 			return;
 		}

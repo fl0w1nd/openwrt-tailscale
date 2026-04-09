@@ -345,7 +345,7 @@ return view.extend({
 
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, 'Tailscale Maintenance'),
-			E('div', { 'class': 'cbi-map-descr' }, 'Version management, update policy, manager scripts, and uninstall actions.'),
+			E('div', { 'class': 'cbi-map-descr' }, 'Manage versions, updates, scripts, and uninstall.'),
 			this.renderVersionOverview(this.currentStatus),
 			this.renderAutoUpdateSettings(),
 			this.renderScriptMaintenance(this.currentScriptInfo),

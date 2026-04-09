@@ -152,7 +152,9 @@ list)
     "do_uninstall": {},
     "setup_firewall": {},
     "sync_scripts": {},
-    "upgrade_scripts": {}
+    "upgrade_scripts": {},
+    "get_logs": {},
+    "clear_log": { "log_type": "" }
 }
 EOF
     ;;
@@ -274,6 +276,23 @@ call)
                     echo "Already up to date"
                 fi
             ' sh "$MANAGER_BIN"
+            ;;
+        get_logs)
+            manager_log=""
+            tailscale_log=""
+            [ -f /var/log/tailscale-manager.log ] && manager_log=$(tail -n 500 /var/log/tailscale-manager.log 2>/dev/null)
+            [ -f /var/log/tailscale.log ] && tailscale_log=$(tail -n 500 /var/log/tailscale.log 2>/dev/null)
+            printf '{"manager":"%s","tailscale":"%s"}' "$(json_escape_inline "$manager_log")" "$(json_escape_inline "$tailscale_log")"
+            ;;
+        clear_log)
+            input=$(read_input)
+            log_type=$(json_get_param "$input" log_type)
+            case "$log_type" in
+                manager) : > /var/log/tailscale-manager.log 2>/dev/null ;;
+                tailscale) : > /var/log/tailscale.log 2>/dev/null ;;
+                *) printf '{"code":-1}' ; exit 0 ;;
+            esac
+            printf '{"code":0}'
             ;;
         *)
             printf '{"error":"Method not found"}'

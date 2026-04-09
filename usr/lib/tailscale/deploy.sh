@@ -95,6 +95,7 @@ install_luci_app() {
 ${LUCI_VIEW_BASE_URL}/config.js|${LUCI_VIEW_DIR}/config.js|644
 ${LUCI_VIEW_BASE_URL}/status.js|${LUCI_VIEW_DIR}/status.js|644
 ${LUCI_VIEW_BASE_URL}/maintenance.js|${LUCI_VIEW_DIR}/maintenance.js|644
+${LUCI_VIEW_BASE_URL}/log.js|${LUCI_VIEW_DIR}/log.js|644
 ${LUCI_RPC_URL}|${LUCI_RPC_DEST}|755
 ${LUCI_MENU_URL}|${LUCI_MENU_DEST}|644
 ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644

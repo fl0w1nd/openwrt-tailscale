@@ -47,5 +47,14 @@
 				"tailscale": true
 			}
 		}
+	},
+	"admin/services/tailscale/log": {
+		"title": "Logs",
+		"title-i18n": false,
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "tailscale/log"
+		}
 	}
 }

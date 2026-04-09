@@ -71,7 +71,7 @@ return view.extend({
 		var m, s, o;
 
 		m = new form.Map('tailscale', 'Tailscale Configuration',
-			'Tune the installed Tailscale service. Changes take effect after Save and Apply.');
+			'Configure the Tailscale service. Changes take effect after Save & Apply.');
 
 		s = m.section(form.NamedSection, 'settings', 'tailscale', 'General Settings');
 		s.anonymous = false;
@@ -95,11 +95,11 @@ return view.extend({
 		o.default = 'localhost';
 		o.depends('tun_mode', 'userspace');
 
-		o = s.option(form.Flag, 'log_stdout', 'Log stdout', 'Enable stdout logging for tailscaled.');
+		o = s.option(form.Flag, 'log_stdout', 'Log Standard Output', 'Enable standard output logging for tailscaled.');
 		o.default = '1';
 		o.rmempty = false;
 
-		o = s.option(form.Flag, 'log_stderr', 'Log stderr', 'Enable stderr logging for tailscaled.');
+		o = s.option(form.Flag, 'log_stderr', 'Log Standard Error', 'Enable standard error logging for tailscaled.');
 		o.default = '1';
 		o.rmempty = false;
 
