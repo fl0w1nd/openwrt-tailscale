@@ -62,7 +62,7 @@ check-static:
 		for f in "$$LUCI_RPC_URL" "$$LUCI_MENU_URL" "$$LUCI_ACL_URL"; do \
 			rel=$${f#$$RAW_BASE_URL/}; \
 			[ -f "$$rel" ] || { printf "URL mismatch: %%s\n" "$$rel"; exit 1; }; \
-		done' 2>/dev/null || true
+		done' 2>/dev/null
 
 test:
 	@TEST_SHELL="$(TEST_SHELL)" sh tests/run.sh

@@ -189,6 +189,7 @@ ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
     # Cleanup backups and staging leftovers
     for _d in $_dests; do rm -f "${_d}${bak}" "${_d}${stag}"; done
 
+    # Cleanup legacy ucode bridge on upgrade to exec-based rpcd bridge.
     rm -f /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
 
     if [ -x /etc/init.d/rpcd ]; then
