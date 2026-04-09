@@ -118,7 +118,7 @@ do_install() {
     echo ""
     echo "Fetching latest version..."
     local version
-    version=$(get_latest_version) || {
+    version=$(get_latest_version "$arch") || {
         log_error "Failed to get latest version"
         return 1
     }
@@ -252,8 +252,11 @@ do_update() {
         return 1
     fi
 
+    local arch
+    arch=$(get_arch) || return 1
+
     local latest_version
-    latest_version=$(get_latest_version) || return 1
+    latest_version=$(get_latest_version "$arch") || return 1
 
     echo "Current version: $current_version"
     echo "Latest version:  $latest_version"
@@ -271,9 +274,6 @@ do_update() {
             *) echo "Update cancelled."; return 0 ;;
         esac
     fi
-
-    local arch
-    arch=$(get_arch) || return 1
 
     log_info "Stopping Tailscale service..."
     "$INIT_SCRIPT" stop 2>/dev/null || true
@@ -632,7 +632,7 @@ do_download_only() {
     fi
 
     local version
-    version=$(get_latest_version) || return 1
+    version=$(get_latest_version "$arch") || return 1
 
     download_tailscale "$version" "$arch" "$bin_dir"
 }
@@ -686,7 +686,7 @@ cmd_install() {
     check_dependencies
 
     local version
-    version=$(get_latest_version) || {
+    version=$(get_latest_version "$arch") || {
         log_error "Failed to get latest version"
         return 1
     }

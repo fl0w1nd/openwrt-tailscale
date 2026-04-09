@@ -456,13 +456,15 @@ cmd_json_latest_version() {
     bin_dir=$(_find_bin_dir) || true
     local installed_source=""
     installed_source=$(_get_installed_source "$bin_dir") || true
+    local arch=""
+    arch=$(get_arch 2>/dev/null) || true
 
     local version="" source=""
     if [ "$installed_source" = "official" ]; then
-        version=$(get_official_latest_version 2>/dev/null) || true
+        version=$(get_official_latest_version "$arch" 2>/dev/null) || true
         [ -n "$version" ] && source="official"
     else
-        version=$(get_small_latest_version 2>/dev/null) || true
+        version=$(get_small_latest_version "$arch" 2>/dev/null) || true
         [ -n "$version" ] && source="small"
     fi
 

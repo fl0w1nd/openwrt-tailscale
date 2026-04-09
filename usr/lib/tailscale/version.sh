@@ -11,6 +11,7 @@
 
 # Get latest version from official Tailscale API
 get_official_latest_version() {
+    local arch="${1:-}"
     local json_data
     local version
 
@@ -31,11 +32,53 @@ get_official_latest_version() {
         return 1
     fi
 
+    if [ -n "$arch" ] && ! check_official_version_arch_exists "$version" "$arch"; then
+        version=$(get_latest_official_version_for_arch "$arch") || {
+            log_error "No official static package found for architecture '$arch'"
+            return 1
+        }
+    fi
+
     echo "$version"
+}
+
+get_official_arch_name() {
+    local arch="$1"
+
+    case "$arch" in
+        armv5|armv6) echo "arm" ;;
+        *) echo "$arch" ;;
+    esac
+}
+
+check_official_version_arch_exists() {
+    local version="$1"
+    local arch="$2"
+    local official_arch=""
+    local url=""
+
+    official_arch=$(get_official_arch_name "$arch")
+    url="${DOWNLOAD_BASE}/tailscale_${version}_${official_arch}.tgz"
+
+    wget -q -O /dev/null "$url" 2>/dev/null
+}
+
+get_latest_official_version_for_arch() {
+    local arch="$1"
+    local version=""
+
+    list_official_versions 20 | while IFS= read -r version; do
+        [ -n "$version" ] || continue
+        if check_official_version_arch_exists "$version" "$arch"; then
+            echo "$version"
+            return 0
+        fi
+    done
 }
 
 # Get latest version from GitHub releases (for small binaries)
 get_small_latest_version() {
+    local arch="${1:-}"
     local json_data
     local version
 
@@ -64,6 +107,13 @@ get_small_latest_version() {
         return 1
     fi
 
+    if [ -n "$arch" ] && ! check_small_version_arch_exists "$version" "$arch"; then
+        version=$(get_latest_small_version_for_arch "$arch") || {
+            log_error "No small binary found for architecture '$arch'"
+            return 1
+        }
+    fi
+
     echo "$version"
 }
 
@@ -80,12 +130,27 @@ check_small_version_arch_exists() {
     fi
 }
 
+get_latest_small_version_for_arch() {
+    local arch="$1"
+    local version=""
+
+    list_small_versions 20 | while IFS= read -r version; do
+        [ -n "$version" ] || continue
+        if check_small_version_arch_exists "$version" "$arch"; then
+            echo "$version"
+            return 0
+        fi
+    done
+}
+
 # Get latest version based on current DOWNLOAD_SOURCE
 get_latest_version() {
+    local arch="${1:-}"
+
     if [ "$DOWNLOAD_SOURCE" = "small" ]; then
-        get_small_latest_version
+        get_small_latest_version "$arch"
     else
-        get_official_latest_version
+        get_official_latest_version "$arch"
     fi
 }
 
