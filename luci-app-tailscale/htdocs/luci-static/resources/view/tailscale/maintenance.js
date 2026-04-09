@@ -6,56 +6,63 @@
 var _ = function(s) { return s; };
 
 var callGetStatus = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'get_status',
 	expect: { '': {} }
 });
 
 var callGetLatestVersions = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'get_latest_versions',
 	expect: { '': {} }
 });
 
 var callGetScriptUpdateInfo = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'get_script_update_info',
 	expect: { '': {} }
 });
 
 var callListVersions = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'list_versions',
 	params: ['limit'],
 	expect: { '': {} }
 });
 
 var callListOfficialVersions = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'list_official_releases',
 	params: ['limit'],
 	expect: { '': {} }
 });
 
 var callDoUpdate = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'do_update'
 });
 
 var callDoInstallVersion = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'do_install_version',
 	params: ['version', 'source']
 });
 
 var callUpgradeScripts = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'upgrade_scripts'
 });
 
 var callDoUninstall = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'do_uninstall'
+});
+
+var callGetTaskStatus = rpc.declare({
+	object: 'luci-tailscale',
+	method: 'get_task_status',
+	params: ['task'],
+	expect: { '': {} }
 });
 
 function makeInfoRow(label, value) {
@@ -63,6 +70,58 @@ function makeInfoRow(label, value) {
 		E('span', { 'style': 'min-width:180px;font-weight:bold;color:#666' }, label),
 		E('span', {}, value || '-')
 	]);
+}
+
+function pollTaskStatus(task) {
+	return callGetTaskStatus(task).then(function(result) {
+		if (result && result.done)
+			return result;
+
+		return new Promise(function(resolve) {
+			window.setTimeout(resolve, 2000);
+		}).then(function() {
+			return pollTaskStatus(task);
+		});
+	});
+}
+
+function handleAsyncTask(title, message, request, successMessage, errorPrefix, reloadAfterSuccess) {
+	ui.showModal(title, [
+		E('p', { 'class': 'spinning' }, message)
+	]);
+
+	return request.then(function(result) {
+		if (result && result.started && result.task) {
+			return pollTaskStatus(result.task).then(function(status) {
+				ui.hideModal();
+				if (status && status.code === 0) {
+					ui.addNotification(null, E('p', {}, successMessage), 'info');
+					if (reloadAfterSuccess)
+						window.setTimeout(function() { window.location.reload(); }, 2000);
+				}
+				else {
+					ui.addNotification(null,
+						E('p', {}, errorPrefix + ((status && status.stdout) || 'Unknown error')),
+						'danger');
+				}
+			});
+		}
+
+		ui.hideModal();
+		if (result && result.code === 0) {
+			ui.addNotification(null, E('p', {}, successMessage), 'info');
+			if (reloadAfterSuccess)
+				window.setTimeout(function() { window.location.reload(); }, 2000);
+		}
+		else {
+			ui.addNotification(null,
+				E('p', {}, errorPrefix + ((result && result.stdout) || 'Unknown error')),
+				'danger');
+		}
+	}).catch(function(err) {
+		ui.hideModal();
+		ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
+	});
 }
 
 return view.extend({
@@ -208,22 +267,14 @@ return view.extend({
 	},
 
 	handleUpdate: function() {
-		ui.showModal('Updating Tailscale', [
-			E('p', { 'class': 'spinning' }, 'Downloading and installing the latest version...')
-		]);
-
-		return callDoUpdate().then(function(result) {
-			ui.hideModal();
-			if (result && result.code === 0)
-				ui.addNotification(null, E('p', {}, 'Update successful.'), 'info');
-			else
-				ui.addNotification(null,
-					E('p', {}, 'Update failed: ' + ((result && result.stdout) || 'Unknown error')),
-					'danger');
-		}).catch(function(err) {
-			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
-		});
+		return handleAsyncTask(
+			'Updating Tailscale',
+			'Downloading and installing the latest version...',
+			callDoUpdate(),
+			'Update successful. Reloading page...',
+			'Update failed: ',
+			true
+		);
 	},
 
 	handleInstallOfficialVersion: function() {
@@ -242,46 +293,25 @@ return view.extend({
 			return;
 		}
 
-		ui.showModal('Installing Tailscale v' + version, [
-			E('p', { 'class': 'spinning' }, 'Downloading and installing version ' + version + ' (' + source + ')...')
-		]);
-
-		return callDoInstallVersion(version, source).then(function(result) {
-			ui.hideModal();
-			if (result && result.code === 0)
-				ui.addNotification(null, E('p', {}, 'Successfully installed version ' + version + '.'), 'info');
-			else
-				ui.addNotification(null,
-					E('p', {}, 'Installation failed: ' + ((result && result.stdout) || 'Unknown error')),
-					'danger');
-		}).catch(function(err) {
-			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
-		});
+		return handleAsyncTask(
+			'Installing Tailscale v' + version,
+			'Downloading and installing version ' + version + ' (' + source + ')...',
+			callDoInstallVersion(version, source),
+			'Successfully installed version ' + version + '. Reloading page...',
+			'Installation failed: ',
+			true
+		);
 	},
 
 	handleUpgradeScripts: function() {
-		ui.showModal('Upgrading Scripts', [
-			E('p', { 'class': 'spinning' }, 'Checking for manager updates and upgrading managed files...')
-		]);
-
-		return callUpgradeScripts().then(function(result) {
-			ui.hideModal();
-			if (result && result.code === 0) {
-				ui.addNotification(null,
-					E('p', {}, (result.stdout && result.stdout.trim()) || 'Scripts upgraded successfully. Reloading page...'),
-					'info');
-				window.setTimeout(function() { window.location.reload(); }, 2000);
-			}
-			else {
-				ui.addNotification(null,
-					E('p', {}, 'Script upgrade failed: ' + ((result && result.stdout) || 'Unknown error')),
-					'danger');
-			}
-		}).catch(function(err) {
-			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
-		});
+		return handleAsyncTask(
+			'Upgrading Scripts',
+			'Checking for manager updates and upgrading managed files...',
+			callUpgradeScripts(),
+			'Scripts upgraded successfully. Reloading page...',
+			'Script upgrade failed: ',
+			true
+		);
 	},
 
 	handleUninstall: function() {

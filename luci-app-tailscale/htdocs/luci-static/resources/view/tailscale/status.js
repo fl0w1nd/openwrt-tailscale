@@ -8,27 +8,34 @@
 var _ = function(s) { return s; };
 
 var callGetStatus = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'get_status',
 	expect: { '': {} }
 });
 
 var callGetInstallInfo = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'get_install_info',
 	expect: { '': {} }
 });
 
 var callServiceControl = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'service_control',
 	params: ['action']
 });
 
 var callDoInstall = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'do_install',
 	params: ['source', 'storage', 'auto_update']
+});
+
+var callGetTaskStatus = rpc.declare({
+	object: 'luci-tailscale',
+	method: 'get_task_status',
+	params: ['task'],
+	expect: { '': {} }
 });
 
 function formatBytes(bytes) {
@@ -68,6 +75,19 @@ function makeInfoRow(label, value) {
 		E('span', { 'style': 'min-width:160px;font-weight:bold;color:#666' }, label),
 		E('span', {}, value || '-')
 	]);
+}
+
+function pollTaskStatus(task) {
+	return callGetTaskStatus(task).then(function(result) {
+		if (result && result.done)
+			return result;
+
+		return new Promise(function(resolve) {
+			window.setTimeout(resolve, 2000);
+		}).then(function() {
+			return pollTaskStatus(task);
+		});
+	});
 }
 
 return view.extend({
@@ -212,6 +232,21 @@ return view.extend({
 		]);
 
 		return callDoInstall(source, storage, autoUpdate).then(function(result) {
+			if (result && result.started && result.task) {
+				return pollTaskStatus(result.task).then(function(status) {
+					ui.hideModal();
+					if (status && status.code === 0) {
+						ui.addNotification(null, E('p', {}, 'Tailscale installed successfully. Reloading page...'), 'info');
+						window.setTimeout(function() { window.location.reload(); }, 2000);
+					}
+					else {
+						ui.addNotification(null,
+							E('p', {}, 'Installation failed: ' + ((status && status.stdout) || 'Unknown error')),
+							'danger');
+					}
+				});
+			}
+
 			ui.hideModal();
 			if (result && result.code === 0) {
 				ui.addNotification(null, E('p', {}, 'Tailscale installed successfully. Reloading page...'), 'info');

@@ -8,13 +8,13 @@
 var _ = function(s) { return s; };
 
 var callGetInstallInfo = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'get_install_info',
 	expect: { '': {} }
 });
 
 var callSetupFirewall = rpc.declare({
-	object: 'luci.tailscale',
+	object: 'luci-tailscale',
 	method: 'setup_firewall'
 });
 

@@ -6,7 +6,7 @@
 #   COMMON_LIB_URL, COMMON_LIB_PATH, INIT_SCRIPT_URL, INIT_SCRIPT,
 #   UPDATE_SCRIPT_URL, CRON_SCRIPT,
 #   LUCI_VIEW_BASE_URL, LUCI_VIEW_DIR,
-#   LUCI_UCODE_URL, LUCI_UCODE_DEST,
+#   LUCI_RPC_URL, LUCI_RPC_DEST,
 #   LUCI_MENU_URL, LUCI_MENU_DEST,
 #   LUCI_ACL_URL, LUCI_ACL_DEST,
 #   CONFIG_TEMPLATE_URL, CONFIG_FILE,
@@ -86,7 +86,7 @@ install_runtime_scripts() {
 
     local lib_base_url="${LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
     local lib
-    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
         download_repo_file "${lib_base_url}/${lib}" "${LIB_DIR}/${lib}" 644 || return 1
     done
 
@@ -98,7 +98,7 @@ install_luci_app() {
     local f1="${LUCI_VIEW_DIR}/config.js"
     local f2="${LUCI_VIEW_DIR}/status.js"
     local f3="${LUCI_VIEW_DIR}/maintenance.js"
-    local f4="$LUCI_UCODE_DEST"
+    local f4="$LUCI_RPC_DEST"
     local f5="$LUCI_MENU_DEST"
     local f6="$LUCI_ACL_DEST"
     local stag=".staging.$$"
@@ -116,7 +116,7 @@ install_luci_app() {
     local failed=0
     download_repo_file "${LUCI_VIEW_BASE_URL}/status.js" "${f2}${stag}" 644 || failed=1
     download_repo_file "${LUCI_VIEW_BASE_URL}/maintenance.js" "${f3}${stag}" 644 || failed=1
-    download_repo_file "$LUCI_UCODE_URL" "${f4}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_RPC_URL" "${f4}${stag}" 755 || failed=1
     download_repo_file "$LUCI_MENU_URL"  "${f5}${stag}" 644 || failed=1
     download_repo_file "$LUCI_ACL_URL"   "${f6}${stag}" 644 || failed=1
 
@@ -180,6 +180,9 @@ install_luci_app() {
     fi
 
     rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}"
+
+    # Cleanup legacy ucode bridge on upgrade to exec-based rpcd bridge.
+    rm -f /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
 
     if [ -x /etc/init.d/rpcd ]; then
         /etc/init.d/rpcd reload 2>/dev/null || true
