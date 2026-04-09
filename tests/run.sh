@@ -938,7 +938,7 @@ check_script_update || rc=\$?
 [ "\$rc" -eq 10 ]
 EOF
 
-    run_with_test_shell "$LAST_SCRIPT"
+    run_with_test_shell "$LAST_SCRIPT" < /dev/null
 }
 
 test_do_self_update_uses_explicit_script_path_when_sourced() {

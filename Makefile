@@ -1,4 +1,4 @@
-SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-update usr/lib/tailscale/common.sh tests/run.sh scripts/build-pages.sh
+SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-update usr/lib/tailscale/common.sh tests/run.sh
 SHELLCHECK_FLAGS := -s sh -e SC1091,SC3043
 TEST_SHELL ?= sh
 
