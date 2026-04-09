@@ -1112,7 +1112,7 @@ EOF
 # ============================================================================
 
 test_library_files_exist_in_repo() {
-    for lib in common.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
+    for lib in common.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
         assert_file_exists "$REPO_ROOT/usr/lib/tailscale/$lib" "Library file should exist: $lib"
     done
 }
@@ -1139,11 +1139,17 @@ type remove_subnet_routing_config >/dev/null 2>&1 || { echo "MISSING: remove_sub
 type install_runtime_scripts >/dev/null 2>&1 || { echo "MISSING: install_runtime_scripts"; exit 1; }
 type install_luci_app >/dev/null 2>&1 || { echo "MISSING: install_luci_app"; exit 1; }
 type sync_managed_scripts >/dev/null 2>&1 || { echo "MISSING: sync_managed_scripts"; exit 1; }
-type check_script_update >/dev/null 2>&1 || { echo "MISSING: check_script_update"; exit 1; }
-type do_self_update >/dev/null 2>&1 || { echo "MISSING: do_self_update"; exit 1; }
-type create_uci_config >/dev/null 2>&1 || { echo "MISSING: create_uci_config"; exit 1; }
-type setup_cron >/dev/null 2>&1 || { echo "MISSING: setup_cron"; exit 1; }
-type remove_cron >/dev/null 2>&1 || { echo "MISSING: remove_cron"; exit 1; }
+    type check_script_update >/dev/null 2>&1 || { echo "MISSING: check_script_update"; exit 1; }
+    type do_self_update >/dev/null 2>&1 || { echo "MISSING: do_self_update"; exit 1; }
+    type create_uci_config >/dev/null 2>&1 || { echo "MISSING: create_uci_config"; exit 1; }
+    type setup_cron >/dev/null 2>&1 || { echo "MISSING: setup_cron"; exit 1; }
+    type remove_cron >/dev/null 2>&1 || { echo "MISSING: remove_cron"; exit 1; }
+    type do_install >/dev/null 2>&1 || { echo "MISSING: do_install"; exit 1; }
+    type do_install_quiet >/dev/null 2>&1 || { echo "MISSING: do_install_quiet"; exit 1; }
+    type do_install_version_quiet >/dev/null 2>&1 || { echo "MISSING: do_install_version_quiet"; exit 1; }
+    type do_status >/dev/null 2>&1 || { echo "MISSING: do_status"; exit 1; }
+    type show_menu >/dev/null 2>&1 || { echo "MISSING: show_menu"; exit 1; }
+    type interactive_menu >/dev/null 2>&1 || { echo "MISSING: interactive_menu"; exit 1; }
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -1162,10 +1168,13 @@ LOG_FILE="$TEST_DIR/tailscale-manager.log"
 # verify version.sh functions are loaded from the overridden path
 type get_latest_version >/dev/null 2>&1 || exit 1
 type download_tailscale >/dev/null 2>&1 || exit 1
-type install_runtime_scripts >/dev/null 2>&1 || exit 1
+    type install_runtime_scripts >/dev/null 2>&1 || exit 1
+    type do_install >/dev/null 2>&1 || exit 1
+    type interactive_menu >/dev/null 2>&1 || exit 1
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
+    return 0
 }
 
 test_install_runtime_scripts_installs_library_files() {
@@ -1194,16 +1203,16 @@ install_runtime_scripts
 [ -f "\$INIT_SCRIPT" ] || { echo "MISSING: init script"; exit 1; }
 
 # Verify all module libraries were installed
-for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
-    [ -f "\$LIB_DIR/\$lib" ] || { echo "MISSING: \$lib"; exit 1; }
-done
+    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+        [ -f "\$LIB_DIR/\$lib" ] || { echo "MISSING: \$lib"; exit 1; }
+    done
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
 }
 
 test_ensure_libraries_bootstraps_all_modules() {
-    new_script manager-bootstrap-libs.sh <<EOF
+    new_script manager-bootstrap-libs.sh <<'EOF'
 #!/bin/sh
 set -eu
 
@@ -1214,45 +1223,61 @@ TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
 download_repo_file() {
-    printf '%s\n' "\$1" >> "$TEST_DIR/downloads.log"
-    mkdir -p "\$(dirname "\$2")"
-    case "\${2##*/}" in
+    printf '%s\n' "$1" >> "$TEST_DIR/downloads.log"
+    mkdir -p "$(dirname "$2")"
+    case "${2##*/}" in
         version.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 get_latest_version() { :; }
 SCRIPT
             ;;
         download.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 download_tailscale() { :; }
 SCRIPT
             ;;
         deploy.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 sync_managed_scripts() { :; }
 SCRIPT
             ;;
+        commands.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+do_install() { :; }
+do_install_quiet() { :; }
+do_install_version_quiet() { :; }
+do_status() { :; }
+SCRIPT
+            ;;
+        menu.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+show_menu() { :; }
+interactive_menu() { :; }
+SCRIPT
+            ;;
         selfupdate.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 check_script_update() { :; }
 SCRIPT
             ;;
         *)
-            printf '#!/bin/sh\n' > "\$2"
+            printf '#!/bin/sh\n' > "$2"
             ;;
     esac
 }
 
 _ensure_libraries
 
-for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
-    [ -f "\$LIB_DIR/\$lib" ] || { echo "missing \$lib"; exit 1; }
-    grep -Fq "https://example.test/runtime-libs/\$lib" "$TEST_DIR/downloads.log" || {
-        echo "unexpected download path for \$lib"
+for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    [ -f "$LIB_DIR/$lib" ] || { echo "missing $lib"; exit 1; }
+    grep -Fq "https://example.test/runtime-libs/$lib" "$TEST_DIR/downloads.log" || {
+        echo "unexpected download path for $lib"
         exit 1
     }
 done
@@ -1261,13 +1286,16 @@ type get_latest_version >/dev/null 2>&1 || exit 1
 type download_tailscale >/dev/null 2>&1 || exit 1
 type sync_managed_scripts >/dev/null 2>&1 || exit 1
 type check_script_update >/dev/null 2>&1 || exit 1
+type do_install >/dev/null 2>&1 || exit 1
+    type interactive_menu >/dev/null 2>&1 || exit 1
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
+    return 0
 }
 
 test_ensure_libraries_repairs_partial_library_sets() {
-    new_script manager-bootstrap-partial-libs.sh <<EOF
+    new_script manager-bootstrap-partial-libs.sh <<'EOF'
 #!/bin/sh
 set -eu
 
@@ -1277,56 +1305,73 @@ TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
-mkdir -p "\$LIB_DIR"
-printf '#!/bin/sh\n' > "\$LIB_DIR/version.sh"
+mkdir -p "$LIB_DIR"
+printf '#!/bin/sh\n' > "$LIB_DIR/version.sh"
 
 download_repo_file() {
-    printf '%s\n' "\$1" >> "$TEST_DIR/downloads.log"
-    mkdir -p "\$(dirname "\$2")"
-    case "\${2##*/}" in
+    printf '%s\n' "$1" >> "$TEST_DIR/downloads.log"
+    mkdir -p "$(dirname "$2")"
+    case "${2##*/}" in
         version.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 get_latest_version() { :; }
 SCRIPT
             ;;
         download.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 download_tailscale() { :; }
 SCRIPT
             ;;
         deploy.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 sync_managed_scripts() { :; }
 SCRIPT
             ;;
+        commands.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+do_install() { :; }
+do_install_quiet() { :; }
+do_install_version_quiet() { :; }
+do_status() { :; }
+SCRIPT
+            ;;
+        menu.sh)
+            cat > "$2" <<'SCRIPT'
+#!/bin/sh
+show_menu() { :; }
+interactive_menu() { :; }
+SCRIPT
+            ;;
         selfupdate.sh)
-            cat > "\$2" <<'SCRIPT'
+            cat > "$2" <<'SCRIPT'
 #!/bin/sh
 check_script_update() { :; }
 SCRIPT
             ;;
         *)
-            printf '#!/bin/sh\n' > "\$2"
+            printf '#!/bin/sh\n' > "$2"
             ;;
     esac
 }
 
 _ensure_libraries
 
-for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
-    [ -f "\$LIB_DIR/\$lib" ] || { echo "missing \$lib"; exit 1; }
+for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
+    [ -f "$LIB_DIR/$lib" ] || { echo "missing $lib"; exit 1; }
 done
 
-[ "\$(wc -l < "$TEST_DIR/downloads.log")" -eq 5 ] || {
+[ "$(wc -l < "$TEST_DIR/downloads.log")" -eq 7 ] || {
     echo "expected full library refresh"
     exit 1
 }
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
+    return 0
 }
 
 test_main_fails_when_library_bootstrap_fails() {

@@ -86,7 +86,7 @@ install_runtime_scripts() {
 
     local lib_base_url="${LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
     local lib
-    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
+    for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
         download_repo_file "${lib_base_url}/${lib}" "${LIB_DIR}/${lib}" 644 || return 1
     done
 
