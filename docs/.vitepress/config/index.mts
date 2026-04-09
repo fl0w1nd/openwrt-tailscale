@@ -3,6 +3,7 @@ import { en } from './en.mts'
 import { zh } from './zh.mts'
 
 export default defineConfig({
+  base: '/openwrt-tailscale/',
   title: 'OpenWrt Tailscale',
   description: 'Auto-updating Tailscale installation manager for OpenWrt routers',
 
@@ -10,7 +11,7 @@ export default defineConfig({
   cleanUrls: true,
 
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: './logo.svg' }],
   ],
 
   locales: {

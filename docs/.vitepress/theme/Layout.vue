@@ -10,8 +10,9 @@ const { localeIndex } = useData()
 onMounted(() => {
   // Redirect root path based on browser language
   if (router.route.path === '/' || router.route.path === '') {
+    const base = import.meta.env.BASE_URL || '/'
     const lang = navigator.language || ''
-    const target = lang.startsWith('zh') ? '/zh/' : '/en/'
+    const target = `${base}${lang.startsWith('zh') ? 'zh/' : 'en/'}`
     router.go(target)
   }
 })
