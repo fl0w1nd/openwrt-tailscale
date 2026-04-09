@@ -28,8 +28,8 @@ function read_first_line(path) {
 
 function find_bin_dir() {
 	for (let d in BIN_DIRS) {
-		if (stat(BIN_DIRS[d] + '/version'))
-			return BIN_DIRS[d];
+		if (stat(d + '/version'))
+			return d;
 	}
 	return null;
 }
@@ -55,6 +55,74 @@ function get_installed_source(bin_dir) {
 		return 'small';
 
 	return get_configured_source();
+}
+
+function get_display_name(dns_name, hostname) {
+	if (type(dns_name) == 'string' && length(dns_name)) {
+		let name = trim(dns_name);
+		if (length(name) > 0 && substr(name, length(name) - 1, 1) == '.')
+			name = substr(name, 0, length(name) - 1);
+
+		let labels = split(name, '.');
+		if (length(labels) > 0 && length(labels[0]) > 0)
+			return labels[0];
+	}
+
+	if (type(hostname) == 'string' && length(hostname))
+		return hostname;
+
+	return null;
+}
+
+function get_latest_official_version() {
+	let r = shell("wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/?mode=json' 2>/dev/null");
+	if (r.code != 0 || !r.stdout)
+		return null;
+
+	let data = json(r.stdout);
+	return (data && data.TarballsVersion) ? data.TarballsVersion : null;
+}
+
+function get_latest_small_version() {
+	let r = shell("wget -T 5 -qO- 'https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest' 2>/dev/null");
+	if (r.code != 0 || !r.stdout)
+		return null;
+
+	let data = json(r.stdout);
+	if (!data || !data.tag_name)
+		return null;
+
+	let v = data.tag_name;
+	if (substr(v, 0, 1) == 'v')
+		v = substr(v, 1);
+
+	return v;
+}
+
+function get_script_current_version() {
+	let r = shell("sed -n 's/^VERSION=\"\\([^\"]*\\)\"/\\1/p' /usr/bin/tailscale-manager | head -1");
+	if (r.code != 0 || !r.stdout)
+		return null;
+
+	let v = trim(r.stdout);
+	return length(v) ? v : null;
+}
+
+function get_script_remote_version() {
+	let r = shell('TAILSCALE_MANAGER_SOURCE_ONLY=1 . /usr/bin/tailscale-manager; get_remote_script_version');
+	if (r.code != 0 || !r.stdout)
+		return null;
+
+	let v = trim(r.stdout);
+	return length(v) ? v : null;
+}
+
+function is_script_update_available(current, latest) {
+	if (!current || !latest)
+		return false;
+
+	let r = shell('TAILSCALE_MANAGER_SOURCE_ONLY=1 . /usr/bin/tailscale-manager; version_lt ' + current + ' ' + latest);
+	return (r.code == 0);
 }
 
 function is_valid_version(v) {
@@ -110,6 +178,7 @@ const methods = {
 				source_type: null,
 				tun_mode: null,
 				backend_state: null,
+				device_name: null,
 				tailscale_ips: [],
 				hostname: null,
 				peers: []
@@ -146,14 +215,29 @@ const methods = {
 			result.backend_state = ts.BackendState;
 
 			if (ts.Self) {
+				result.device_name = get_display_name(ts.Self.DNSName, ts.Self.HostName);
 				result.tailscale_ips = ts.Self.TailscaleIPs || [];
 				result.hostname = ts.Self.HostName;
+				push(result.peers, {
+					name: result.device_name,
+					hostname: ts.Self.HostName,
+					dns_name: ts.Self.DNSName,
+					ip: (ts.Self.TailscaleIPs && length(ts.Self.TailscaleIPs)) ? ts.Self.TailscaleIPs[0] : null,
+					os: ts.Self.OS,
+					online: ts.Self.Online,
+					exit_node: ts.Self.ExitNode || false,
+					rx_bytes: ts.Self.RxBytes,
+					tx_bytes: ts.Self.TxBytes,
+					last_seen: ts.Self.LastSeen,
+					self: true
+				});
 			}
 
 			if (ts.Peer) {
 				for (let key in ts.Peer) {
 					let p = ts.Peer[key];
 					push(result.peers, {
+						name: get_display_name(p.DNSName, p.HostName),
 						hostname: p.HostName,
 						dns_name: p.DNSName,
 						ip: (p.TailscaleIPs && length(p.TailscaleIPs)) ? p.TailscaleIPs[0] : null,
@@ -162,7 +246,8 @@ const methods = {
 						exit_node: p.ExitNode || false,
 						rx_bytes: p.RxBytes,
 						tx_bytes: p.TxBytes,
-						last_seen: p.LastSeen
+						last_seen: p.LastSeen,
+						self: false
 					});
 				}
 			}
@@ -244,30 +329,24 @@ const methods = {
 			let installed_source = get_installed_source(bin_dir);
 
 			if (installed_source == 'official') {
-				let r = shell("wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/?mode=json' 2>/dev/null");
-				if (r.code == 0 && r.stdout) {
-					let data = json(r.stdout);
-					if (data && data.TarballsVersion)
-						return { version: data.TarballsVersion, source: 'official' };
-				}
-				return { version: null, source: null };
+				let version = get_latest_official_version();
+				return { version: version, source: version ? 'official' : null };
 			}
 
 			// small source or not yet installed — query GitHub only,
 			// matching tailscale-manager get_small_latest_version() which
 			// never falls back to official.
-			let r = shell("wget -T 5 -qO- 'https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest' 2>/dev/null");
-			if (r.code == 0 && r.stdout) {
-				let data = json(r.stdout);
-				if (data && data.tag_name) {
-					let v = data.tag_name;
-					if (substr(v, 0, 1) == 'v')
-						v = substr(v, 1);
-					return { version: v, source: 'small' };
-				}
-			}
+			let version = get_latest_small_version();
+			return { version: version, source: version ? 'small' : null };
+		}
+	},
 
-			return { version: null, source: null };
+	get_latest_versions: {
+		call: function() {
+			return {
+				official: get_latest_official_version(),
+				small: get_latest_small_version()
+			};
 		}
 	},
 
@@ -283,11 +362,45 @@ const methods = {
 			let lines = split(trim(r.stdout), '\n');
 			let versions = [];
 			for (let l in lines) {
-				let v = trim(lines[l]);
+				let v = trim(l);
 				if (length(v) > 0)
 					push(versions, v);
 			}
 			return { versions: versions };
+		}
+	},
+
+	list_official_releases: {
+		args: { limit: 0 },
+		call: function(req) {
+			let args = (req && req.args) ? req.args : {};
+			let limit = clamp_int(args.limit, 1, 100);
+			let r = shell('tailscale-manager list-official-versions ' + limit);
+			if (r.code != 0)
+				return { versions: [] };
+
+			let lines = split(trim(r.stdout), '\n');
+			let versions = [];
+			for (let l in lines) {
+				let v = trim(l);
+				if (length(v) > 0)
+					push(versions, v);
+			}
+
+			return { versions: versions };
+		}
+	},
+
+	get_script_update_info: {
+		call: function() {
+			let current = get_script_current_version();
+			let latest = get_script_remote_version();
+
+			return {
+				current: current,
+				latest: latest,
+				update_available: is_script_update_available(current, latest)
+			};
 		}
 	},
 
@@ -312,6 +425,12 @@ const methods = {
 	sync_scripts: {
 		call: function() {
 			return shell('tailscale-manager sync-scripts');
+		}
+	},
+
+	upgrade_scripts: {
+		call: function() {
+			return shell("TAILSCALE_MANAGER_SOURCE_ONLY=1 . /usr/bin/tailscale-manager; remote=$(get_remote_script_version) || exit 1; if version_lt $VERSION $remote; then do_self_update sync-scripts; else echo 'Already up to date'; fi");
 		}
 	}
 };

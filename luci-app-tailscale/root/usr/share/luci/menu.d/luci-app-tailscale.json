@@ -13,6 +13,7 @@
 	},
 	"admin/services/tailscale/status": {
 		"title": "Status",
+		"title-i18n": false,
 		"order": 10,
 		"action": {
 			"type": "view",
@@ -21,10 +22,25 @@
 	},
 	"admin/services/tailscale/config": {
 		"title": "Configuration",
+		"title-i18n": false,
 		"order": 20,
 		"action": {
 			"type": "view",
 			"path": "tailscale/config"
+		},
+		"depends": {
+			"uci": {
+				"tailscale": true
+			}
+		}
+	},
+	"admin/services/tailscale/maintenance": {
+		"title": "Maintenance",
+		"title-i18n": false,
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "tailscale/maintenance"
 		},
 		"depends": {
 			"uci": {

@@ -189,7 +189,6 @@ EOF
 #!/bin/sh
 set -eu
 TAILSCALE_MANAGER_SOURCE_ONLY=1
-export PATH="$STUB_BIN:$ORIGINAL_PATH"
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -214,6 +213,39 @@ export WGET_SCENARIO
 if get_small_latest_version >/dev/null 2>&1; then
     exit 1
 fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_list_official_versions_parsing() {
+    write_stub wget <<'EOF'
+#!/bin/sh
+cat <<'HTML'
+<html>
+<body>
+<select>
+<option value="1.82.0">1.82.0</option>
+<option value="1.81.3">1.81.3</option>
+<option value="stable">stable</option>
+<option value="1.81.3">1.81.3</option>
+<option value="1.80">1.80</option>
+</select>
+</body>
+</html>
+HTML
+EOF
+
+    new_script manager-official-versions.sh <<'EOF'
+#!/bin/sh
+set -eu
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+output=$(list_official_versions 2)
+expected=$(printf '1.82.0\n1.81.3\n')
+[ "$output" = "$expected" ]
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -282,7 +314,7 @@ LUCI_ACL_DEST="$TEST_DIR/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
 
 install_luci_app() {
     local installed_any=0
-    for view_file in config.js status.js; do
+    for view_file in config.js status.js maintenance.js; do
         if download_repo_file "\${LUCI_VIEW_BASE_URL}/\${view_file}" "\${LUCI_VIEW_DIR}/\${view_file}" 644; then
             installed_any=1
         else
@@ -322,6 +354,7 @@ sync_managed_scripts
 [ -f "\$INIT_SCRIPT" ]
 [ -f "\$CRON_SCRIPT" ]
 [ -f "\$LUCI_VIEW_DIR/config.js" ]
+[ -f "\$LUCI_VIEW_DIR/maintenance.js" ]
 [ -f "\$LUCI_UCODE_DEST" ]
 grep -Fq 'remove' "\$CALLS"
 grep -Fq 'luci_installed' "\$CALLS"
@@ -734,6 +767,7 @@ test_luci_source_files_exist_in_repo() {
     for f in \
         luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js \
         luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js \
+        luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js \
         luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc \
         luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
         luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json; do
@@ -757,12 +791,14 @@ test_luci_ucode_source_detection_fallbacks() {
     ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
 
     assert_file_contains "$ucode_file" "function get_installed_source(bin_dir)" 'LuCI ucode should define installed source helper'
-    assert_file_contains "$ucode_file" "stat(BIN_DIRS[d] + '/version')" 'LuCI ucode should check version files using BIN_DIRS values'
-    assert_file_contains "$ucode_file" "return BIN_DIRS[d];" 'LuCI ucode should return the matched BIN_DIRS path'
+    assert_file_contains "$ucode_file" "stat(d + '/version')" 'LuCI ucode should check version files using array values directly'
+    assert_file_contains "$ucode_file" "return d;" 'LuCI ucode should return the matched BIN_DIRS entry directly'
     assert_file_contains "$ucode_file" "stat(bin_dir + '/tailscale.combined')" 'LuCI ucode should detect small installs from combined binary'
     assert_file_contains "$ucode_file" "uci -q get tailscale.settings.download_source" 'LuCI ucode should fall back to configured download source'
     assert_file_contains "$ucode_file" "result.source_type = get_installed_source(bin_dir);" 'LuCI status should use installed source helper'
     assert_file_contains "$ucode_file" "let installed_source = get_installed_source(bin_dir);" 'LuCI latest-version lookup should use installed source helper'
+    assert_file_contains "$ucode_file" "function get_display_name(dns_name, hostname)" 'LuCI ucode should derive display names from DNS names'
+    assert_file_contains "$ucode_file" "result.device_name = get_display_name(ts.Self.DNSName, ts.Self.HostName);" 'LuCI status should expose the device alias'
 }
 
 test_luci_ucode_version_checks_use_timeouts() {
@@ -787,6 +823,22 @@ test_luci_ucode_setup_firewall_propagates_failures() {
     assert_file_contains "$ucode_file" "/etc/init.d/firewall reload >/dev/null 2>&1 || { echo \"Failed to reload firewall\"; exit 1; };" 'LuCI setup_firewall RPC should fail when firewall reload fails'
 }
 
+test_luci_ucode_list_versions_trims_array_values() {
+    ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+
+    assert_file_contains "$ucode_file" "for (let l in lines) {" 'LuCI list_versions should iterate over split output'
+    assert_file_contains "$ucode_file" "let v = trim(l);" 'LuCI list_versions should trim array values directly'
+}
+
+test_luci_ucode_exposes_update_methods() {
+    ucode_file="$REPO_ROOT/luci-app-tailscale/root/usr/share/rpcd/ucode/luci-tailscale.uc"
+
+    assert_file_contains "$ucode_file" "get_latest_versions:" 'LuCI ucode should expose both latest-version sources'
+    assert_file_contains "$ucode_file" "get_script_update_info:" 'LuCI ucode should expose manager script update info'
+    assert_file_contains "$ucode_file" "upgrade_scripts:" 'LuCI ucode should expose script upgrade action'
+    assert_file_contains "$ucode_file" "tailscale-manager list-official-versions" 'LuCI official release listing should delegate to tailscale-manager'
+}
+
 test_luci_urls_match_repo_paths() {
     new_script manager-luci-urls.sh <<EOF
 #!/bin/sh
@@ -808,6 +860,7 @@ check_url_file "\$LUCI_MENU_URL"
 check_url_file "\$LUCI_ACL_URL"
 check_url_file "\${LUCI_VIEW_BASE_URL}/config.js"
 check_url_file "\${LUCI_VIEW_BASE_URL}/status.js"
+check_url_file "\${LUCI_VIEW_BASE_URL}/maintenance.js"
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -849,7 +902,7 @@ LOG_FILE="$TEST_DIR/tailscale-manager.log"
 download_call=0
 download_repo_file() {
     download_call=\$((download_call + 1))
-    # Succeed for first two files (config.js probe + status.js), fail on third (ucode)
+    # Succeed for first two files (config.js probe + status.js), fail on third (maintenance.js)
     [ "\$download_call" -le 2 ]
 }
 
@@ -885,7 +938,7 @@ download_repo_file() {
 }
 
 # Wrap mv so the 3rd deploy-phase rename fails (simulates I/O error).
-# Deploy calls mv -f five times; rollback also calls mv -f but must succeed.
+# Deploy calls mv -f six times; rollback also calls mv -f but must succeed.
 _real_mv=\$(command -v mv)
 _mv_count=0
 _mv_fail_at=3
@@ -907,13 +960,14 @@ install_luci_app || rc=\$?
 # since no prior version existed).
 [ ! -e "\$LUCI_VIEW_DIR/config.js" ] || { echo "config.js should not exist after rollback"; exit 1; }
 [ ! -e "\$LUCI_VIEW_DIR/status.js" ] || { echo "status.js should not exist after rollback"; exit 1; }
+[ ! -e "\$LUCI_VIEW_DIR/maintenance.js" ] || { echo "maintenance.js should not exist after rollback"; exit 1; }
 
-# File 3 (ucode) failed to deploy, should not exist
+# File 4 (ucode) was never deployed, should not exist
 [ ! -e "\$LUCI_UCODE_DEST" ] || { echo "ucode dest should not exist"; exit 1; }
 
 # Staging and backup artifacts should be cleaned up
 for suf in ".staging.\$\$" ".bak.\$\$"; do
-    for f in "\$LUCI_VIEW_DIR/config.js" "\$LUCI_VIEW_DIR/status.js" \
+    for f in "\$LUCI_VIEW_DIR/config.js" "\$LUCI_VIEW_DIR/status.js" "\$LUCI_VIEW_DIR/maintenance.js" \
              "\$LUCI_UCODE_DEST" "\$LUCI_MENU_DEST" "\$LUCI_ACL_DEST"; do
         [ ! -e "\${f}\${suf}" ] || { echo "leftover artifact: \${f}\${suf}"; exit 1; }
     done
@@ -949,6 +1003,7 @@ mkdir -p "\$LUCI_VIEW_DIR" "\$(dirname "\$LUCI_UCODE_DEST")" \
          "\$(dirname "\$LUCI_MENU_DEST")" "\$(dirname "\$LUCI_ACL_DEST")"
 printf 'old-config\n' > "\$LUCI_VIEW_DIR/config.js"
 printf 'old-status\n' > "\$LUCI_VIEW_DIR/status.js"
+printf 'old-maintenance\n' > "\$LUCI_VIEW_DIR/maintenance.js"
 printf 'old-ucode\n'  > "\$LUCI_UCODE_DEST"
 printf 'old-menu\n'   > "\$LUCI_MENU_DEST"
 printf 'old-acl\n'    > "\$LUCI_ACL_DEST"
@@ -973,7 +1028,8 @@ install_luci_app || rc=\$?
 grep -Fq 'old-config' "\$LUCI_VIEW_DIR/config.js" || { echo "config.js not restored"; exit 1; }
 grep -Fq 'old-status' "\$LUCI_VIEW_DIR/status.js" || { echo "status.js not restored"; exit 1; }
 
-# Files 3-5 were never replaced — should still be old
+# Files 3-6 were never replaced — should still be old
+grep -Fq 'old-maintenance' "\$LUCI_VIEW_DIR/maintenance.js" || { echo "maintenance.js not preserved"; exit 1; }
 grep -Fq 'old-ucode' "\$LUCI_UCODE_DEST" || { echo "ucode not preserved"; exit 1; }
 grep -Fq 'old-menu'  "\$LUCI_MENU_DEST"  || { echo "menu not preserved"; exit 1; }
 grep -Fq 'old-acl'   "\$LUCI_ACL_DEST"   || { echo "acl not preserved"; exit 1; }
@@ -1047,6 +1103,7 @@ EOF
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
 run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
 run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
+run_test 'official version listing parses package page options' test_list_official_versions_parsing
 run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
 run_test 'network-mode refreshes runtime scripts before restart' test_network_mode_reinstalls_runtime_scripts
@@ -1060,6 +1117,8 @@ run_test 'LuCI ucode detects source type fallbacks' test_luci_ucode_source_detec
 run_test 'LuCI ucode version checks use network timeouts' test_luci_ucode_version_checks_use_timeouts
 run_test 'LuCI install info reports architecture before install' test_luci_ucode_reports_arch_when_not_installed
 run_test 'LuCI setup_firewall propagates command failures' test_luci_ucode_setup_firewall_propagates_failures
+run_test 'LuCI list_versions handles ucode array iteration correctly' test_luci_ucode_list_versions_trims_array_values
+run_test 'LuCI ucode exposes update management methods' test_luci_ucode_exposes_update_methods
 run_test 'LuCI URLs in manager match repo file paths' test_luci_urls_match_repo_paths
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure

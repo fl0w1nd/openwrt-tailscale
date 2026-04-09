@@ -1165,14 +1165,15 @@ install_runtime_scripts() {
 install_luci_app() {
     local f1="${LUCI_VIEW_DIR}/config.js"
     local f2="${LUCI_VIEW_DIR}/status.js"
-    local f3="$LUCI_UCODE_DEST"
-    local f4="$LUCI_MENU_DEST"
-    local f5="$LUCI_ACL_DEST"
+    local f3="${LUCI_VIEW_DIR}/maintenance.js"
+    local f4="$LUCI_UCODE_DEST"
+    local f5="$LUCI_MENU_DEST"
+    local f6="$LUCI_ACL_DEST"
     local stag=".staging.$$"
     local bak=".bak.$$"
     local f
 
-    mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$f3")" "$(dirname "$f4")" "$(dirname "$f5")"
+    mkdir -p "$LUCI_VIEW_DIR" "$(dirname "$f4")" "$(dirname "$f5")" "$(dirname "$f6")"
 
     # --- Download: all files go to same-dir staging --------------------
     if ! download_repo_file "${LUCI_VIEW_BASE_URL}/config.js" "${f1}${stag}" 644; then
@@ -1183,30 +1184,31 @@ install_luci_app() {
 
     local failed=0
     download_repo_file "${LUCI_VIEW_BASE_URL}/status.js" "${f2}${stag}" 644 || failed=1
-    download_repo_file "$LUCI_UCODE_URL" "${f3}${stag}" 644 || failed=1
-    download_repo_file "$LUCI_MENU_URL"  "${f4}${stag}" 644 || failed=1
-    download_repo_file "$LUCI_ACL_URL"   "${f5}${stag}" 644 || failed=1
+    download_repo_file "${LUCI_VIEW_BASE_URL}/maintenance.js" "${f3}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_UCODE_URL" "${f4}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_MENU_URL"  "${f5}${stag}" 644 || failed=1
+    download_repo_file "$LUCI_ACL_URL"   "${f6}${stag}" 644 || failed=1
 
     if [ "$failed" = "1" ]; then
-        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+        rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" "${f6}${stag}"
         log_error "LuCI app download incomplete: some files failed to fetch"
         return 1
     fi
 
     # --- Pre-flight: verify targets are writable -----------------------
-    for f in "$f1" "$f2" "$f3" "$f4" "$f5"; do
+    for f in "$f1" "$f2" "$f3" "$f4" "$f5" "$f6"; do
         if [ -e "$f" ] && [ ! -w "$f" ]; then
-            rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+            rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" "${f6}${stag}"
             log_error "LuCI pre-flight failed: ${f} is not writable"
             return 1
         fi
     done
 
     # --- Backup existing live files (abort if cp fails) ----------------
-    for f in "$f1" "$f2" "$f3" "$f4" "$f5"; do
+    for f in "$f1" "$f2" "$f3" "$f4" "$f5" "$f6"; do
         if [ -f "$f" ] && ! cp -f "$f" "${f}${bak}" 2>/dev/null; then
-            rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" \
-                  "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}"
+            rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}" \
+                  "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" "${f6}${stag}"
             log_error "LuCI backup failed for ${f}, aborting deploy"
             return 1
         fi
@@ -1221,10 +1223,11 @@ install_luci_app() {
         mv -f "${f3}${stag}" "$f3" || break; deployed=3
         mv -f "${f4}${stag}" "$f4" || break; deployed=4
         mv -f "${f5}${stag}" "$f5" || break; deployed=5
+        mv -f "${f6}${stag}" "$f6" || break; deployed=6
         break
     done
 
-    if [ "$deployed" -lt 5 ]; then
+    if [ "$deployed" -lt 6 ]; then
         log_error "LuCI deploy failed at step $((deployed + 1)), rolling back"
         # Restore from backup if it exists; otherwise remove the new file
         # (first-install case where no prior version existed).
@@ -1240,13 +1243,19 @@ install_luci_app() {
         if [ "$deployed" -ge 4 ]; then
             if [ -f "${f4}${bak}" ]; then mv -f "${f4}${bak}" "$f4" 2>/dev/null; else rm -f "$f4" 2>/dev/null; fi || true
         fi
+        if [ "$deployed" -ge 5 ]; then
+            if [ -f "${f5}${bak}" ]; then mv -f "${f5}${bak}" "$f5" 2>/dev/null; else rm -f "$f5" 2>/dev/null; fi || true
+        fi
+        if [ "$deployed" -ge 6 ]; then
+            if [ -f "${f6}${bak}" ]; then mv -f "${f6}${bak}" "$f6" 2>/dev/null; else rm -f "$f6" 2>/dev/null; fi || true
+        fi
         rm -f "${f1}${stag}" "${f2}${stag}" "${f3}${stag}" "${f4}${stag}" "${f5}${stag}" \
-              "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
+              "${f6}${stag}" "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}"
         return 1
     fi
 
     # --- Success: clean backups, reload --------------------------------
-    rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}"
+    rm -f "${f1}${bak}" "${f2}${bak}" "${f3}${bak}" "${f4}${bak}" "${f5}${bak}" "${f6}${bak}"
 
     if [ -x /etc/init.d/rpcd ]; then
         /etc/init.d/rpcd reload 2>/dev/null || true
@@ -1855,6 +1864,27 @@ list_small_versions() {
     
     # Extract tag_names using sed (compatible with busybox)
     echo "$json_data" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | sed 's/^v//'
+}
+
+# List available versions from the official static packages page.
+list_official_versions() {
+    local limit="${1:-20}"
+    local html_data
+
+    html_data=$(wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/#static' 2>/dev/null) || {
+        log_error "Failed to fetch versions from Tailscale packages page"
+        return 1
+    }
+
+    echo "$html_data" \
+        | sed -n 's/.*option value="\([0-9.][0-9.]*\)".*/\1/p' \
+        | while IFS= read -r version; do
+            if validate_version_format "$version"; then
+                echo "$version"
+            fi
+        done \
+        | awk '!seen[$0]++' \
+        | sed -n "1,${limit}p"
 }
 
 # Install a specific version
@@ -2666,7 +2696,7 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")"
 
     case "${1:-}" in
-        self-update|sync-scripts|install-quiet|install-version|list-versions) ;;
+        self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions) ;;
         *) check_script_update "$@" || true ;;
     esac
     
@@ -2696,6 +2726,9 @@ main() {
             ;;
         list-versions)
             list_small_versions "${2:-10}"
+            ;;
+        list-official-versions)
+            list_official_versions "${2:-20}"
             ;;
         setup-firewall)
             do_setup_subnet_routing
@@ -2782,6 +2815,7 @@ main() {
             echo "  uninstall        Remove Tailscale (use --yes to skip confirmation)"
             echo "  status           Show current status"
             echo "  list-versions    List available small binary versions"
+            echo "  list-official-versions List available official package versions"
             echo "  setup-firewall   Configure network/firewall for subnet routing"
             echo "  download-only    Download binaries only (for RAM mode)"
             echo "  self-update      Update this script to latest version"
