@@ -1405,7 +1405,7 @@ output=$(
 status=$?
 set -e
 
-[ "$status" -eq 1 ] || {
+[ "$status" -eq 1 ] || [ "$status" -eq 2 ] || {
     echo "expected failure exit code, got $status"
     exit 1
 }

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Interactive script for installing, updating, and managing Tailscale on OpenWRT
 # https://github.com/fl0w1nd/openwrt-tailscale
+# shellcheck disable=SC2034
 
 set -e
 
@@ -302,7 +303,10 @@ fi
 # exist yet — the _ensure_libraries() function handles downloading them.
 
 for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
-    [ -f "$LIB_DIR/$_lib" ] && . "$LIB_DIR/$_lib"
+    if [ -f "$LIB_DIR/$_lib" ]; then
+        # shellcheck source=/dev/null
+        . "$LIB_DIR/$_lib"
+    fi
 done
 unset _lib
 
@@ -330,6 +334,7 @@ _ensure_libraries() {
             log_error "Missing module library after bootstrap: ${LIB_DIR}/${_lib}"
             return 1
         }
+        # shellcheck source=/dev/null
         . "$LIB_DIR/$_lib"
     done
 }
