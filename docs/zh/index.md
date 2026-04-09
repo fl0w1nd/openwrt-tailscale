@@ -18,7 +18,7 @@ features:
     title: 一键安装
     details: 一条 wget 命令启动交互式安装器，自动检测并安装依赖、下载二进制、配置服务。
   - icon: 📦
-    title: 5 MB 压缩二进制
+    title: 8-10 MB 压缩二进制
     details: UPX 压缩后的 Tailscale 二进制，比官方包小 80%。最低仅需 8 MB 可用存储，也支持纯 RAM 运行模式。
   - icon: 🔄
     title: 自动更新

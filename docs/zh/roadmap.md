@@ -5,7 +5,7 @@ OpenWrt Tailscale Manager 的开发计划概览。
 ## ✅ 已完成
 
 - 一键安装交互式菜单
-- Small 小体积二进制（UPX 压缩，约 5 MB）
+- Small 小体积二进制（UPX 压缩，约 8-10 MB）
 - 双下载源（官方 / Small）
 - Tailscale 二进制和管理脚本自动更新
 - 持久化和 RAM 两种存储模式

@@ -13,7 +13,7 @@ VERSION="4.0.6"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
-# - small: Compressed binaries from GitHub releases (~5MB)
+# - small: Compressed binaries from GitHub releases (~8-10 MB)
 DOWNLOAD_SOURCE="${TAILSCALE_SOURCE:-official}"
 
 # Official Tailscale download
@@ -851,7 +851,7 @@ main() {
             echo "Environment variables:"
             echo "  TAILSCALE_SOURCE=official|small"
             echo "    - official: Full binaries from pkgs.tailscale.com (~30-35MB)"
-            echo "    - small: Compressed binaries from GitHub releases (~5MB)"
+            echo "    - small: Compressed binaries from GitHub releases (~8-10 MB)"
             echo ""
             echo "Run without arguments for interactive menu."
             ;;

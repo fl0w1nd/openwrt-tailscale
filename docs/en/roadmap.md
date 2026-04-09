@@ -5,7 +5,7 @@ A high-level overview of what's planned for OpenWrt Tailscale Manager.
 ## ✅ Completed
 
 - One-command install with interactive menu
-- Small binary support (UPX compressed, ~5 MB)
+- Small binary support (UPX compressed, ~8-10 MB)
 - Dual download source (official / small)
 - Auto-update for both Tailscale binary and management scripts
 - Persistent and RAM storage modes

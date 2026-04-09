@@ -4,7 +4,7 @@
 
 - OpenWrt router with internet access
 - SSH access to your router
-- At least **5 MB** free space (Small mode) or **30-35 MB** (Official mode)
+- At least **8-10 MB** free space (Small mode) or **30-35 MB** (Official mode)
 
 ## Quick Install
 
@@ -24,7 +24,7 @@ This single command will:
 
 The interactive installer will guide you through:
 
-1. **Download source** — Choose Official (~30-35 MB) or Small (~5 MB)
+1. **Download source** — Choose Official (~30-35 MB) or Small (~8-10 MB)
 2. **Storage mode** — Persistent (`/opt/tailscale`) or RAM (`/tmp/tailscale`)
 3. **Download & install** — Automatically fetches the correct binary for your architecture
 4. **Start service** — Starts Tailscale via the procd init system

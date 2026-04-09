@@ -5,7 +5,6 @@ All notable changes to the tailscale-manager script are documented here. Version
 ## v4.0.4 (2026-04-10)
 
 - fix: correct official binary size references
-- fix: correct small binary size from ~10MB to ~5MB
 - fix(version): select latest downloads by architecture
 - fix(update): only mark managed sync after success
 - fix(luci): preserve script path during self-update

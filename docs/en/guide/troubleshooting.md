@@ -52,7 +52,7 @@ modprobe tun
 
 **Symptom**: Installation fails with disk space errors.
 
-**Solution**: Use Small binary source (~5 MB) or RAM storage mode:
+**Solution**: Use Small binary source (~8-10 MB) or RAM storage mode:
 
 ```sh
 tailscale-manager install

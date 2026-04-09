@@ -307,19 +307,17 @@ jobs:
           body: |
             ## Tailscale Small ${{ needs.check-version.outputs.version }}
             
-            Compressed Tailscale binaries for OpenWrt routers (~10MB).
+            UPX-compressed Tailscale binaries for OpenWrt routers (~8-10 MB per architecture, 80% smaller than official packages).
             
             ### Quick Install
             
             SSH into your OpenWrt router and run:
             
-            ```bash
-            wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh
-            chmod +x /usr/bin/tailscale-manager
-            tailscale-manager
+            ```sh
+            wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/main/tailscale-manager.sh && chmod +x /usr/bin/tailscale-manager && tailscale-manager
             ```
             
-            Then select **Small (compressed)** option to install.
+            The interactive menu will guide you through source selection, storage mode, and installation.
             
             ### Supported Architectures
             
@@ -333,9 +331,11 @@ jobs:
             | mipsle | MediaTek/Ralink routers |
             | mips | Atheros/QCA routers |
             
+            📖 **Documentation**: [fl0w1nd.github.io/openwrt-tailscale](https://fl0w1nd.github.io/openwrt-tailscale/)
+            
             ---
             
-            Built from [Tailscale](https://github.com/tailscale/tailscale) ${{ needs.check-version.outputs.version }}
+            Built from [tailscale/tailscale](https://github.com/tailscale/tailscale) ${{ needs.check-version.outputs.version }}
           files: "artifacts/*.tgz"
           draft: false
           prerelease: false

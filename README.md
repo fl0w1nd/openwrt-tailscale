@@ -9,7 +9,7 @@ The official `tailscale` opkg package and [luci-app-tailscale](https://github.co
 | | Official opkg | This project |
 |---|---|---|
 | OpenWrt version | ≥ 23.05 | ≥ 21.02 |
-| Binary size | ~30-35 MB | ~5 MB (UPX compressed) |
+| Binary size | ~30-35 MB | ~8-10 MB (UPX compressed) |
 | Install method | opkg feed + SDK | Single `wget` command |
 | Binary management | Manual opkg upgrade | Auto-update via cron |
 | Flash requirement | ~50 MB free | ~8 MB (or RAM-only mode) |
@@ -26,7 +26,7 @@ Then follow the interactive prompts.
 ## Features
 
 - **One-command install** — interactive menu handles dependency detection, download, and service setup
-- **Small binary** — UPX-compressed Tailscale (~5 MB), 80% smaller than official packages
+- **Small binary** — UPX-compressed Tailscale (~8-10 MB), 80% smaller than official packages
 - **Auto-updates** — daily cron for Tailscale binary and management script self-update
 - **Dual download source** — choose between official full binaries or compressed small binaries
 - **Subnet routing** — one-click network interface and firewall configuration

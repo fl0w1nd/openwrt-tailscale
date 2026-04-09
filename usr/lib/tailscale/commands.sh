@@ -76,7 +76,7 @@ do_install() {
     echo ""
     echo "  2) Small (compressed) - Recommended for embedded devices"
     echo "     - Compressed binaries from GitHub releases"
-    echo "     - Size: ~10MB (80% smaller)"
+    echo "     - Size: ~8-10 MB (80% smaller)"
     echo "     - Combined binary (tailscale + tailscaled)"
     echo "     - Supported architectures: $SMALL_SUPPORTED_ARCHS"
     echo ""
@@ -131,7 +131,7 @@ do_install() {
     echo "     - Binaries stored in /opt/tailscale"
     echo "     - Survives reboots, no re-download needed"
     if [ "$DOWNLOAD_SOURCE" = "small" ]; then
-        echo "     - Uses ~5MB disk space"
+        echo "     - Uses ~8-10 MB disk space"
     else
         echo "     - Uses ~30-35MB disk space"
     fi

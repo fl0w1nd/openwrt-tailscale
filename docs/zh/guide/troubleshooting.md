@@ -52,7 +52,7 @@ modprobe tun
 
 **现象**：安装失败，提示磁盘空间错误。
 
-**解决方案**：使用 Small 下载源（约 5 MB）或内存存储模式：
+**解决方案**：使用 Small 下载源（约 8-10 MB）或内存存储模式：
 
 ```sh
 tailscale-manager install

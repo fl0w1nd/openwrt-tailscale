@@ -5,7 +5,6 @@ tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailsc
 ## v4.0.4 (2026-04-10)
 
 - fix: correct official binary size references
-- fix: correct small binary size from ~10MB to ~5MB
 - fix(version): select latest downloads by architecture
 - fix(update): only mark managed sync after success
 - fix(luci): preserve script path during self-update

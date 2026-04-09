@@ -18,7 +18,7 @@ features:
     title: One-Command Install
     details: A single wget command bootstraps the interactive installer. Dependencies, download, and service setup are handled automatically.
   - icon: 📦
-    title: 5 MB Compressed Binary
+    title: 8-10 MB Compressed Binary
     details: UPX-compressed Tailscale binary — 80% smaller than official packages. Runs on devices with as little as 8 MB free storage, or entirely from RAM.
   - icon: 🔄
     title: Self-Updating

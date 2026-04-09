@@ -7,7 +7,7 @@ The manager supports two download sources for Tailscale binaries.
 | Source | Size | Description |
 |--------|------|-------------|
 | **Official** | ~30-35 MB | Full binaries from `pkgs.tailscale.com` |
-| **Small** | ~5 MB | UPX-compressed binaries from GitHub Releases |
+| **Small** | ~8-10 MB | UPX-compressed binaries from GitHub Releases |
 
 The **Small** binary combines `tailscale` + `tailscaled` into a single executable compressed with UPX. It is functionally identical to the official version but approximately **80% smaller**.
 
