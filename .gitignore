@@ -11,9 +11,13 @@ Thumbs.db
 /scripts/
 !scripts/
 scripts/*
-!scripts/build-pages.sh
-/.site/
+!scripts/build-small.sh
+!scripts/generate-changelog.sh
 
+# VitePress
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/node_modules/
 
 /.agents
 /.claude
