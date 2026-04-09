@@ -1,0 +1,55 @@
+#!/bin/sh
+# Management script & LuCI app auto-update
+# Called by cron
+
+LOG_TAG="${TAILSCALE_SCRIPT_UPDATE_LOG_TAG:-tailscale-script-update}"
+LOG_FILE="${TAILSCALE_SCRIPT_UPDATE_LOG_FILE:-/var/log/tailscale-manager.log}"
+FUNCTIONS_LIB_PATH="${TAILSCALE_FUNCTIONS_PATH:-/lib/functions.sh}"
+TAILSCALE_MANAGER_BIN="${TAILSCALE_MANAGER_BIN:-/usr/bin/tailscale-manager}"
+
+log_msg() {
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$ts] $1" >> "$LOG_FILE"
+    logger -t "$LOG_TAG" "$1"
+}
+
+# shellcheck source=/dev/null
+. "$FUNCTIONS_LIB_PATH"
+config_load tailscale
+config_get SCRIPT_AUTO_UPDATE settings script_auto_update "0"
+
+if [ "$SCRIPT_AUTO_UPDATE" = "0" ]; then
+    log_msg "Script auto-update disabled in config, skipping"
+    exit 0
+fi
+
+if [ ! -x "$TAILSCALE_MANAGER_BIN" ]; then
+    log_msg "tailscale-manager not found at $TAILSCALE_MANAGER_BIN"
+    exit 1
+fi
+
+log_msg "Checking for management script updates..."
+
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+export TAILSCALE_MANAGER_SOURCE_ONLY
+# shellcheck source=/dev/null
+. "$TAILSCALE_MANAGER_BIN"
+
+remote=$(get_remote_script_version 2>/dev/null) || {
+    log_msg "Failed to check remote script version"
+    exit 1
+}
+
+if [ -z "$remote" ]; then
+    log_msg "Failed to determine remote script version"
+    exit 1
+fi
+
+if version_lt "$VERSION" "$remote"; then
+    log_msg "Script update available: v${VERSION} -> v${remote}"
+    do_self_update sync-scripts
+    log_msg "Script update completed"
+else
+    log_msg "Management scripts already up to date (v${VERSION})"
+fi

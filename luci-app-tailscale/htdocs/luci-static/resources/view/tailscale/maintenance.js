@@ -1,5 +1,6 @@
 'use strict';
 'require view';
+'require form';
 'require rpc';
 'require ui';
 'require uci';
@@ -143,85 +144,51 @@ return view.extend({
 		]);
 	},
 
-	getAutoUpdateEnabled: function() {
-		return uci.get('tailscale', 'settings', 'auto_update') === '1';
-	},
-
-	renderVersionOverview: function(status) {
+	renderInstalledVersions: function(status, scriptInfo) {
 		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Tailscale Versions'),
+			E('h3', {}, _('Installed Versions')),
 			E('div', { 'class': 'cbi-section-descr' },
-				'Remote version checks are only performed when you request them.'),
+				_('Remote version checks are performed only when requested.')),
 			E('div', { 'style': 'padding:8px 16px' }, [
-				makeInfoRow('Installed', status.installed_version || '-'),
-				makeInfoRow('Current Source', status.source_type || '-'),
-				E('div', { 'style': 'margin-top:12px;display:flex;gap:8px;flex-wrap:wrap' }, [
+				makeInfoRow(_('Installed'), status.installed_version
+					? status.installed_version + (status.source_type ? ' (' + status.source_type + ')' : '')
+					: '-'),
+				makeInfoRow(_('Management Script'), scriptInfo.current || '-'),
+				E('div', { 'style': 'margin-top:12px' }, [
 					E('button', {
 						'class': 'cbi-button cbi-button-action',
 						'click': ui.createHandlerFn(this, 'handleCheckVersions')
-					}, 'Check Remote Versions')
+					}, _('Check Remote Versions'))
 				])
 			])
 		]);
 	},
 
-	renderAutoUpdateSettings: function() {
-		var checkbox = E('input', {
-			'type': 'checkbox',
-			'id': 'ts-maint-auto-update',
-			'checked': this.getAutoUpdateEnabled() ? 'checked' : null
-		});
-
+	renderScriptActions: function(scriptInfo) {
 		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Auto Update'),
-			E('div', { 'class': 'cbi-section-descr' },
-				'Configure whether Tailscale should automatically check for and install updates.'),
+			E('h3', {}, _('Management Script & LuCI Actions')),
 			E('div', { 'style': 'padding:8px 16px' }, [
-				E('label', { 'style': 'display:flex;align-items:center;gap:8px' }, [
-					checkbox,
-					E('span', {}, 'Check for updates daily at 3:30 AM')
-				]),
-				E('div', { 'style': 'margin-top:12px' }, [
-					E('button', {
-						'class': 'cbi-button cbi-button-apply',
-						'click': ui.createHandlerFn(this, 'handleSaveAutoUpdate')
-					}, 'Save Auto Update Setting')
-				])
-			])
-		]);
-	},
-
-	renderScriptMaintenance: function(scriptInfo) {
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, 'Manager Scripts'),
-			E('div', { 'class': 'cbi-section-descr' },
-				'Current script information is local. Remote update checks run only when requested.'),
-			E('div', { 'style': 'padding:8px 16px' }, [
-				makeInfoRow('Current Version', scriptInfo.current || '-'),
+				makeInfoRow(_('Current Version'), scriptInfo.current || '-'),
 				E('div', { 'style': 'margin-top:12px' }, [
 					E('button', {
 						'class': 'cbi-button cbi-button-action',
 						'click': ui.createHandlerFn(this, 'handleCheckScriptUpdates')
-					}, 'Check for Script Updates')
+					}, _('Check for Updates'))
 				])
 			])
 		]);
 	},
 
-	renderDangerZone: function() {
+	renderUninstall: function() {
 		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', { 'style': 'color:#d9534f' }, 'Danger Zone'),
-			E('div', { 'class': 'cbi-section-descr' },
-				'Remove Tailscale binaries, LuCI integration, and related managed files from this router.'),
-			E('div', {
-				'style': 'padding:12px 16px;border:1px solid #f1b0b7;background:#fff5f5;border-radius:4px'
-			}, [
+			E('h3', {}, _('Uninstall')),
+			E('div', { 'style': 'padding:12px 16px;border:1px solid #f1b0b7;background:#fff5f5;border-radius:4px' }, [
 				E('p', { 'style': 'margin:0 0 12px;color:#666' },
-					'This action is destructive. Your Tailscale state file will be preserved, but the installed program and management files will be removed.'),
+					_('Remove Tailscale binaries, management scripts, and LuCI app files. The Tailscale state file will be preserved.')),
 				E('button', {
 					'class': 'cbi-button cbi-button-remove',
 					'click': ui.createHandlerFn(this, 'handleUninstall')
-				}, 'Uninstall Tailscale')
+				}, _('Uninstall Tailscale'))
 			])
 		]);
 	},
@@ -252,12 +219,12 @@ return view.extend({
 			officialSelect.appendChild(E('option', { 'value': '' }, '(no official versions available)'));
 
 		return [
-			E('p', {}, 'Remote version check completed.'),
+			E('p', {}, _('Remote version check completed.')),
 			E('div', { 'style': 'padding:4px 0 12px' }, [
-				makeInfoRow('Installed', currentVer),
-				makeInfoRow('Current Source', sourceType),
-				makeInfoRow('Latest Official', latestOfficial || '(check failed)'),
-				makeInfoRow('Latest Small', latestSmall || '(check failed)')
+				makeInfoRow(_('Installed'), currentVer),
+				makeInfoRow(_('Current Source'), sourceType),
+				makeInfoRow(_('Latest Official'), latestOfficial || '(check failed)'),
+				makeInfoRow(_('Latest Small'), latestSmall || '(check failed)')
 			]),
 			updateAvailable
 				? E('div', { 'style': 'margin:0 0 16px' }, [
@@ -267,11 +234,11 @@ return view.extend({
 							ui.hideModal();
 							return self.handleUpdate();
 						}
-					}, 'Update Current Source to ' + currentLatest)
+					}, _('Update Current Source to ') + currentLatest)
 				])
-				: E('p', { 'style': 'color:#666' }, 'Current source is already up to date or could not be checked.'),
+				: E('p', { 'style': 'color:#666' }, _('Current source is up to date.')),
 			E('div', { 'style': 'margin:16px 0 0;padding-top:12px;border-top:1px solid #eee' }, [
-				E('strong', {}, 'Install a specific official version'),
+				E('strong', {}, _('Install specific official version')),
 				E('div', { 'style': 'display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap' }, [
 					officialSelect,
 					E('button', {
@@ -280,11 +247,11 @@ return view.extend({
 							ui.hideModal();
 							return self.handleInstallOfficialVersion();
 						}
-					}, 'Install Official')
+					}, _('Install Official'))
 				])
 			]),
 			E('div', { 'style': 'margin:16px 0 0;padding-top:12px;border-top:1px solid #eee' }, [
-				E('strong', {}, 'Install a specific small version'),
+				E('strong', {}, _('Install specific small version')),
 				E('div', { 'style': 'display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap' }, [
 					smallSelect,
 					E('button', {
@@ -293,14 +260,14 @@ return view.extend({
 							ui.hideModal();
 							return self.handleInstallSmallVersion();
 						}
-					}, 'Install Small')
+					}, _('Install Small'))
 				])
 			]),
 			E('div', { 'class': 'right', 'style': 'margin-top:16px' }, [
 				E('button', {
 					'class': 'cbi-button',
 					'click': ui.hideModal
-				}, 'Close')
+				}, _('Close'))
 			])
 		];
 	},
@@ -308,24 +275,24 @@ return view.extend({
 	renderScriptUpdateDialog: function(scriptInfo) {
 		var self = this;
 		var statusText = scriptInfo.latest
-			? (scriptInfo.update_available ? 'Update available' : 'Up to date')
+			? (scriptInfo.update_available ? _('Update available') : _('Up to Date'))
 			: '(check failed)';
 		var canUpgrade = !!(scriptInfo && scriptInfo.latest && scriptInfo.update_available);
 		var buttonLabel = !scriptInfo.latest
-			? 'Check Failed'
-			: (scriptInfo.update_available ? 'Upgrade Scripts' : 'Already Up to Date');
+			? _('Check Failed')
+			: (scriptInfo.update_available ? _('Update Scripts & LuCI') : _('Up to Date'));
 
 		return [
 			E('div', { 'style': 'padding:4px 0 12px' }, [
-				makeInfoRow('Current Version', scriptInfo.current || '-'),
-				makeInfoRow('Latest Version', scriptInfo.latest || '(check failed)'),
-				makeInfoRow('Status', statusText)
+				makeInfoRow(_('Current Version'), scriptInfo.current || '-'),
+				makeInfoRow(_('Latest Version'), scriptInfo.latest || '(check failed)'),
+				makeInfoRow(_('Status'), statusText)
 			]),
 			E('div', { 'class': 'right' }, [
 				E('button', {
 					'class': 'cbi-button',
 					'click': ui.hideModal
-				}, 'Close'),
+				}, _('Close')),
 				' ',
 				E('button', {
 					'class': 'cbi-button cbi-button-action',
@@ -342,20 +309,70 @@ return view.extend({
 	render: function(data) {
 		this.currentStatus = data[1] || {};
 		this.currentScriptInfo = data[2] || {};
+		var m, s, o;
 
-		return E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, 'Tailscale Maintenance'),
-			E('div', { 'class': 'cbi-map-descr' }, 'Manage versions, updates, scripts, and uninstall.'),
-			this.renderVersionOverview(this.currentStatus),
-			this.renderAutoUpdateSettings(),
-			this.renderScriptMaintenance(this.currentScriptInfo),
-			this.renderDangerZone()
-		]);
+		m = new form.Map('tailscale', _('Tailscale Maintenance'),
+			_('Manage update schedules, version control, and maintenance tasks.'));
+
+		s = m.section(form.NamedSection, 'settings', 'tailscale', _('Tailscale Binary Auto-Update'));
+		s.anonymous = false;
+		s.addremove = false;
+
+		o = s.option(form.Flag, 'auto_update', _('Enable'),
+			_('Automatically check for and install Tailscale binary updates on schedule.'));
+		o.default = '0';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'update_cron', _('Update Schedule'),
+			_('Cron expression for binary update checks. Format: minute hour day month weekday.'));
+		o.default = '30 3 * * *';
+		o.placeholder = '30 3 * * *';
+		o.depends('auto_update', '1');
+		o.rmempty = false;
+		o.validate = function(section_id, value) {
+			if (!/^\s*(\S+\s+){4}\S+\s*$/.test(value))
+				return _('Invalid cron expression. Expected 5 fields: minute hour day month weekday.');
+			return true;
+		};
+
+		s = m.section(form.NamedSection, 'settings', 'tailscale', _('Management Script & LuCI Auto-Update'));
+		s.anonymous = false;
+		s.addremove = false;
+		s.description = _('Updates the management script, helper libraries, and LuCI interface files. This does not update the Tailscale binary.');
+
+		o = s.option(form.Flag, 'script_auto_update', _('Enable'),
+			_('Automatically check for and install management script and LuCI app updates.'));
+		o.default = '0';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'script_update_cron', _('Update Schedule'),
+			_('Cron expression for script & LuCI update checks. Format: minute hour day month weekday.'));
+		o.default = '0 4 * * 0';
+		o.placeholder = '0 4 * * 0';
+		o.depends('script_auto_update', '1');
+		o.rmempty = false;
+		o.validate = function(section_id, value) {
+			if (!/^\s*(\S+\s+){4}\S+\s*$/.test(value))
+				return _('Invalid cron expression. Expected 5 fields: minute hour day month weekday.');
+			return true;
+		};
+
+		return m.render().then(L.bind(function(node) {
+			var firstSection = node.querySelector('.cbi-section');
+			if (firstSection)
+				node.insertBefore(this.renderInstalledVersions(this.currentStatus, this.currentScriptInfo), firstSection);
+			else
+				node.appendChild(this.renderInstalledVersions(this.currentStatus, this.currentScriptInfo));
+
+			node.appendChild(this.renderScriptActions(this.currentScriptInfo));
+			node.appendChild(this.renderUninstall());
+			return node;
+		}, this));
 	},
 
 	handleCheckVersions: function() {
-		ui.showModal('Checking Remote Versions', [
-			E('p', { 'class': 'spinning' }, 'Fetching remote version information...')
+		ui.showModal(_('Checking Remote Versions'), [
+			E('p', { 'class': 'spinning' }, _('Fetching remote version information...'))
 		]);
 
 		return Promise.all([
@@ -363,44 +380,21 @@ return view.extend({
 			L.resolveDefault(callListVersions(20), {}),
 			L.resolveDefault(callListOfficialVersions(20), {})
 		]).then(L.bind(function(data) {
-			ui.showModal('Tailscale Versions',
+			ui.showModal(_('Tailscale Versions'),
 				this.renderVersionDialog(this.currentStatus || {}, data[0] || {}, data[1] || {}, data[2] || {}));
 		}, this)).catch(function(err) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'Failed to load remote versions: ' + err.message), 'danger');
-		});
-	},
-
-	handleSaveAutoUpdate: function() {
-		var checkbox = document.getElementById('ts-maint-auto-update');
-		var enabled = checkbox && checkbox.checked ? '1' : '0';
-
-		uci.set('tailscale', 'settings', 'auto_update', enabled);
-
-		ui.showModal('Saving Auto Update Setting', [
-			E('p', { 'class': 'spinning' }, 'Saving update policy...')
-		]);
-
-		return uci.save().then(function() {
-			return uci.apply();
-		}).then(function() {
-			ui.hideModal();
-			ui.addNotification(null,
-				E('p', {}, enabled === '1' ? 'Auto Update enabled.' : 'Auto Update disabled.'),
-				'info');
-		}).catch(function(err) {
-			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'Failed to save Auto Update setting: ' + err.message), 'danger');
+			ui.addNotification(null, E('p', {}, _('Failed to load remote versions: ') + err.message), 'danger');
 		});
 	},
 
 	handleUpdate: function() {
 		return handleAsyncTask(
-			'Updating Tailscale',
-			'Downloading and installing the latest version...',
+			_('Updating Tailscale'),
+			_('Downloading and installing the latest Tailscale binary...'),
 			callDoUpdate(),
-			'Update successful. Reloading page...',
-			'Update failed: ',
+			_('Update successful. Reloading page...'),
+			_('Update failed: '),
 			true
 		);
 	},
@@ -417,47 +411,47 @@ return view.extend({
 
 	handleInstallVersion: function(version, source) {
 		if (!version) {
-			ui.addNotification(null, E('p', {}, 'Please provide a version.'), 'warning');
+			ui.addNotification(null, E('p', {}, _('Please provide a version.')), 'warning');
 			return;
 		}
 
 		return handleAsyncTask(
-			'Installing Tailscale v' + version,
-			'Downloading and installing version ' + version + ' (' + source + ')...',
+			_('Installing Tailscale v') + version,
+			_('Downloading and installing version ') + version + ' (' + source + ')...',
 			callDoInstallVersion(version, source),
-			'Successfully installed version ' + version + '. Reloading page...',
-			'Installation failed: ',
+			_('Successfully installed version ') + version + _('. Reloading page...'),
+			_('Installation failed: '),
 			true
 		);
 	},
 
 	handleCheckScriptUpdates: function() {
-		ui.showModal('Checking Script Updates', [
-			E('p', { 'class': 'spinning' }, 'Checking remote script version...')
+		ui.showModal(_('Checking Script & LuCI Updates'), [
+			E('p', { 'class': 'spinning' }, _('Checking remote script version...'))
 		]);
 
 		return callGetScriptUpdateInfo().then(L.bind(function(scriptInfo) {
 			this.currentScriptInfo = scriptInfo || this.currentScriptInfo || {};
-			ui.showModal('Manager Script Updates', this.renderScriptUpdateDialog(this.currentScriptInfo));
+			ui.showModal(_('Script & LuCI Updates'), this.renderScriptUpdateDialog(this.currentScriptInfo));
 		}, this)).catch(function(err) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'Failed to check script updates: ' + err.message), 'danger');
+			ui.addNotification(null, E('p', {}, _('Failed to check script updates: ') + err.message), 'danger');
 		});
 	},
 
 	handleUpgradeScripts: function(scriptInfo) {
 		if (!scriptInfo || !scriptInfo.latest) {
-			ui.addNotification(null, E('p', {}, 'Unable to determine the latest script version.'), 'warning');
+			ui.addNotification(null, E('p', {}, _('Unable to determine the latest script version.')), 'warning');
 			return Promise.resolve();
 		}
 
 		if (!scriptInfo.update_available) {
-			ui.addNotification(null, E('p', {}, 'Manager scripts are already up to date.'), 'info');
+			ui.addNotification(null, E('p', {}, _('Scripts and LuCI files are already up to date.')), 'info');
 			return Promise.resolve();
 		}
 
-		ui.showModal('Upgrading Scripts', [
-			E('p', { 'class': 'spinning' }, 'Checking for manager updates and upgrading managed files...')
+		ui.showModal(_('Updating Scripts & LuCI'), [
+			E('p', { 'class': 'spinning' }, _('Checking for updates and upgrading managed files...'))
 		]);
 
 		return callUpgradeScripts().then(L.bind(function(result) {
@@ -470,7 +464,7 @@ return view.extend({
 			return this.handleUpgradeScriptsResult(result);
 		}, this)).catch(function(err) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
+			ui.addNotification(null, E('p', {}, _('RPC error: ') + err.message), 'danger');
 		});
 	},
 
@@ -482,58 +476,54 @@ return view.extend({
 
 		if (result && result.code === 0) {
 			if (alreadyCurrent) {
-				ui.addNotification(null, E('p', {}, 'Manager scripts are already up to date.'), 'info');
+				ui.addNotification(null, E('p', {}, _('Scripts and LuCI files are already up to date.')), 'info');
 				return;
 			}
 
-			ui.addNotification(null, E('p', {}, 'Scripts upgraded successfully. Reloading page...'), 'info');
+			ui.addNotification(null, E('p', {}, _('Scripts and LuCI files updated. Reloading page...')), 'info');
 			window.setTimeout(function() { window.location.reload(); }, 2000);
 			return;
 		}
 
 		ui.addNotification(null,
-			E('p', {}, 'Script upgrade failed: ' + (stdout || 'Unknown error')),
+			E('p', {}, _('Script upgrade failed: ') + (stdout || 'Unknown error')),
 			'danger');
 	},
 
 	handleUninstall: function() {
-		ui.showModal('Confirm Uninstall', [
-			E('p', {}, 'This will remove Tailscale binaries, scripts, configuration, and LuCI app files. The state file will be preserved.'),
+		ui.showModal(_('Confirm Uninstall'), [
+			E('p', {}, _('This will remove Tailscale binaries, management scripts, and LuCI app files. The state file will be preserved.')),
 			E('div', { 'class': 'right' }, [
 				E('button', {
 					'class': 'cbi-button',
 					'click': ui.hideModal
-				}, 'Cancel'),
+				}, _('Cancel')),
 				' ',
 				E('button', {
 					'class': 'cbi-button cbi-button-remove',
 					'click': function() {
-						ui.showModal('Uninstalling Tailscale', [
-							E('p', { 'class': 'spinning' }, 'Removing Tailscale...')
+						ui.showModal(_('Uninstalling Tailscale'), [
+							E('p', { 'class': 'spinning' }, _('Removing Tailscale...'))
 						]);
 
 						callDoUninstall().then(function(result) {
 							ui.hideModal();
 							if (result && result.code === 0) {
-								ui.addNotification(null, E('p', {}, 'Tailscale uninstalled. Reloading page...'), 'info');
+								ui.addNotification(null, E('p', {}, _('Tailscale uninstalled. Reloading page...')), 'info');
 								window.setTimeout(function() { window.location.reload(); }, 2000);
 							}
 							else {
 								ui.addNotification(null,
-									E('p', {}, 'Uninstall failed: ' + ((result && result.stdout) || 'Unknown error')),
+									E('p', {}, _('Uninstall failed: ') + ((result && result.stdout) || 'Unknown error')),
 									'danger');
 							}
 						}).catch(function(err) {
 							ui.hideModal();
-							ui.addNotification(null, E('p', {}, 'RPC error: ' + err.message), 'danger');
+							ui.addNotification(null, E('p', {}, _('RPC error: ') + err.message), 'danger');
 						});
 					}
-				}, 'Uninstall')
+				}, _('Uninstall'))
 			])
 		]);
-	},
-
-	handleSaveApply: null,
-	handleSave: null,
-	handleReset: null
+	}
 });

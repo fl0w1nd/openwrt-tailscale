@@ -5,6 +5,7 @@
 # Required variables (set by entry script before sourcing):
 #   COMMON_LIB_URL, COMMON_LIB_PATH, INIT_SCRIPT_URL, INIT_SCRIPT,
 #   UPDATE_SCRIPT_URL, CRON_SCRIPT,
+#   SCRIPT_UPDATE_SCRIPT_URL, SCRIPT_UPDATE_CRON_SCRIPT,
 #   LUCI_VIEW_BASE_URL, LUCI_VIEW_DIR,
 #   LUCI_RPC_URL, LUCI_RPC_DEST,
 #   LUCI_MENU_URL, LUCI_MENU_DEST,
@@ -16,6 +17,11 @@
 # Required functions:
 #   log_info(), log_error(), log_warn(), download_repo_file()
 #   get_auto_update_config() (from entry script)
+
+# Cron tag comments for deterministic management
+CRON_TAG_BINARY="# openwrt-tailscale:binary-update"
+CRON_TAG_SCRIPT="# openwrt-tailscale:script-update"
+SCRIPT_UPDATE_CRON_SCRIPT="${SCRIPT_UPDATE_CRON_SCRIPT:-/usr/bin/tailscale-script-update}"
 
 # Create UCI tailscale configuration
 create_uci_config() {
@@ -40,6 +46,9 @@ set tailscale.settings.state_file='${STATE_FILE}'
 set tailscale.settings.statedir='${STATE_DIR}'
 set tailscale.settings.download_source='${download_source}'
 set tailscale.settings.auto_update='${auto_update}'
+set tailscale.settings.update_cron='30 3 * * *'
+set tailscale.settings.script_auto_update='0'
+set tailscale.settings.script_update_cron='0 4 * * 0'
 set tailscale.settings.tun_mode='auto'
 set tailscale.settings.log_stdout='1'
 set tailscale.settings.log_stderr='1'
@@ -71,6 +80,12 @@ install_update_script() {
     log_info "Installed update script at ${CRON_SCRIPT}"
 }
 
+# Install script auto-update cron script
+install_script_update_script() {
+    download_repo_file "$SCRIPT_UPDATE_SCRIPT_URL" "$SCRIPT_UPDATE_CRON_SCRIPT" 755 || return 1
+    log_info "Installed script update script at ${SCRIPT_UPDATE_CRON_SCRIPT}"
+}
+
 # Install all runtime scripts (common lib, module libs, init script)
 install_runtime_scripts() {
     install_common_lib || return 1
@@ -83,6 +98,7 @@ install_runtime_scripts() {
     done
 
     install_init_script || return 1
+    install_script_update_script || return 1
 }
 
 # Deploy LuCI app files with atomic staging and rollback
@@ -208,31 +224,53 @@ sync_managed_scripts() {
     install_update_script || return 1
     install_luci_app || luci_rc=1
 
-    if [ "$(get_auto_update_config)" = "1" ]; then
-        setup_cron
-    else
-        remove_cron
-    fi
+    setup_cron
 
     return "$luci_rc"
 }
 
-# Setup cron job for auto-updates
+# Reconcile cron jobs from UCI configuration
+# Removes all managed entries and re-adds only enabled ones
 setup_cron() {
-    local cron_entry="30 3 * * * ${CRON_SCRIPT}"
+    local auto_update="" update_cron=""
+    local script_auto_update="" script_update_cron=""
 
-    if ! crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
-        (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-        log_info "Added cron job for auto-updates (3:30 AM daily)"
-
-        [ -x /etc/init.d/cron ] && /etc/init.d/cron restart >/dev/null 2>&1
+    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
+        . /lib/functions.sh
+        config_load tailscale
+        config_get auto_update settings auto_update "0"
+        config_get update_cron settings update_cron "30 3 * * *"
+        config_get script_auto_update settings script_auto_update "0"
+        config_get script_update_cron settings script_update_cron "0 4 * * 0"
     fi
+
+    # Remove all managed entries first
+    local existing
+    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$SCRIPT_UPDATE_CRON_SCRIPT") || true
+
+    local new_cron="$existing"
+
+    if [ "$auto_update" = "1" ] && [ -n "$update_cron" ]; then
+        new_cron="${new_cron}
+${update_cron} ${CRON_SCRIPT} ${CRON_TAG_BINARY}"
+    fi
+
+    if [ "$script_auto_update" = "1" ] && [ -n "$script_update_cron" ]; then
+        new_cron="${new_cron}
+${script_update_cron} ${SCRIPT_UPDATE_CRON_SCRIPT} ${CRON_TAG_SCRIPT}"
+    fi
+
+    # Remove trailing/leading blank lines and apply
+    printf '%s\n' "$new_cron" | grep -v '^$' | crontab - 2>/dev/null || true
+
+    [ -x /etc/init.d/cron ] && /etc/init.d/cron restart >/dev/null 2>&1
+    log_info "Cron jobs reconciled from UCI configuration"
 }
 
-# Remove cron job
+# Remove all managed cron jobs
 remove_cron() {
-    if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
-        crontab -l 2>/dev/null | grep -v "$CRON_SCRIPT" | crontab -
-        log_info "Removed cron job"
-    fi
+    local existing
+    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$SCRIPT_UPDATE_CRON_SCRIPT") || true
+    printf '%s\n' "$existing" | grep -v '^$' | crontab - 2>/dev/null || true
+    log_info "Removed managed cron jobs"
 }

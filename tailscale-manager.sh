@@ -52,6 +52,8 @@ fi
 CONFIG_TEMPLATE_URL="${RAW_BASE_URL}/etc/config/tailscale"
 INIT_SCRIPT_URL="${RAW_BASE_URL}/etc/init.d/tailscale"
 UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-update"
+SCRIPT_UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-script-update"
+SCRIPT_UPDATE_CRON_SCRIPT="/usr/bin/tailscale-script-update"
 COMMON_LIB_URL="${RAW_BASE_URL}/usr/lib/tailscale/common.sh"
 COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
 LIB_BASE_URL="${TAILSCALE_LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
@@ -609,12 +611,11 @@ configure_auto_update() {
         log_info "Enabling auto-updates..."
         set_auto_update_config "1" || return 1
         install_update_script || return 1
-        setup_cron
     else
         log_info "Disabling auto-updates..."
         set_auto_update_config "0" || return 1
-        remove_cron
     fi
+    setup_cron
 }
 
 configure_tun_mode() {

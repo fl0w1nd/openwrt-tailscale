@@ -307,6 +307,7 @@ COMMON_LIB_PATH="$TEST_DIR/root/usr/lib/tailscale/common.sh"
 LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
+SCRIPT_UPDATE_CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-script-update"
 
 # Override LuCI paths so install_luci_app writes to test dir
 LUCI_VIEW_DIR="$TEST_DIR/root/www/luci-static/resources/view/tailscale"
@@ -355,10 +356,11 @@ sync_managed_scripts
 [ -f "\$COMMON_LIB_PATH" ]
 [ -f "\$INIT_SCRIPT" ]
 [ -f "\$CRON_SCRIPT" ]
+[ -f "\$SCRIPT_UPDATE_CRON_SCRIPT" ]
 [ -f "\$LUCI_VIEW_DIR/config.js" ]
 [ -f "\$LUCI_VIEW_DIR/maintenance.js" ]
 [ -f "\$LUCI_RPC_DEST" ]
-grep -Fq 'remove' "\$CALLS"
+grep -Fq 'setup' "\$CALLS"
 grep -Fq 'luci_installed' "\$CALLS"
 
 # Verify new library files were installed
