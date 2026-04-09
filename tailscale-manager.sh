@@ -329,7 +329,7 @@ _ensure_libraries() {
     for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
         download_repo_file "${LIB_BASE_URL}/${_lib}" "${LIB_DIR}/${_lib}" 644 || return 1
     done
-    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh; do
+    for _lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh; do
         [ -f "$LIB_DIR/$_lib" ] || {
             log_error "Missing module library after bootstrap: ${LIB_DIR}/${_lib}"
             return 1
