@@ -13,3 +13,8 @@ Thumbs.db
 scripts/*
 !scripts/build-pages.sh
 /.site/
+
+
+/.agents
+/.claude
+/local-docs
