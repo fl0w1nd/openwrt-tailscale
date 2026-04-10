@@ -8,6 +8,7 @@ export const en: LocaleSpecificConfig<DefaultTheme.Config> = {
     nav: [
       { text: 'Guide', link: '/en/guide/installation' },
       { text: 'Changelog', link: '/en/changelog' },
+      { text: 'Roadmap', link: '/en/roadmap' },
     ],
 
     sidebar: {
@@ -47,6 +48,9 @@ export const en: LocaleSpecificConfig<DefaultTheme.Config> = {
       ],
       '/en/changelog': [
         { text: 'Changelog', link: '/en/changelog' },
+      ],
+      '/en/roadmap': [
+        { text: 'Roadmap', link: '/en/roadmap' },
       ],
     },
 

@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: OpenWrt Tailscale
-  text: OpenWrt 的 Tailscale 管理器
-  tagline: 一条命令即可在 OpenWrt 路由器上安装、更新和管理 Tailscale。
+  text: 适用于任意 OpenWrt 路由器的 Tailscale
+  tagline: 一条命令即可部署 —— 即使设备太旧或存储太小，无法使用官方包。
   actions:
     - theme: brand
       text: 快速开始
@@ -16,20 +16,20 @@ hero:
 features:
   - icon: 🚀
     title: 一键安装
-    details: 单条命令完成下载、安装和启动交互菜单，自动处理依赖。
+    details: 一条 wget 命令启动交互式安装器，自动检测并安装依赖、下载二进制、配置服务。
   - icon: 📦
-    title: 小体积二进制
-    details: 通过 UPX 压缩至约 5 MB，比官方包体积缩小 80%，专为嵌入式设备优化。
+    title: 5 MB 压缩二进制
+    details: UPX 压缩后的 Tailscale 二进制，比官方包小 80%。最低仅需 8 MB 可用存储，也支持纯 RAM 运行模式。
   - icon: 🔄
     title: 自动更新
-    details: 每日定时任务自动保持 Tailscale 和管理脚本为最新版本。
+    details: 内置定时任务自动保持 Tailscale 二进制和管理脚本为最新版本。无需 opkg，无需手动操作。
   - icon: 🌐
     title: 子网路由
-    details: 自动配置网络接口和防火墙，从任何 Tailscale 设备访问本地局域网。
+    details: 一键配置网络接口和防火墙规则，从任何 Tailscale 设备访问路由器背后的局域网。
   - icon: ⚙️
     title: 深度集成 OpenWrt
-    details: UCI 配置、procd 服务管理，以及可选的 LuCI Web 管理界面。
+    details: UCI 配置、procd 服务管理，以及可选的 LuCI Web 管理界面，提供状态监控、服务控制和版本管理。
   - icon: 🛡️
-    title: 用户空间回退
-    details: 内核 TUN 模块不可用时自动切换到用户空间网络模式。
+    title: 广泛兼容
+    details: 支持 OpenWrt 21.02+、busybox ash，不依赖 ucode 或 rpcd-mod-ucode。内核 TUN 不可用时自动切换到用户空间网络模式。
 ---

@@ -8,6 +8,7 @@ export const zh: LocaleSpecificConfig<DefaultTheme.Config> = {
     nav: [
       { text: '指南', link: '/zh/guide/installation' },
       { text: '更新日志', link: '/zh/changelog' },
+      { text: '路线图', link: '/zh/roadmap' },
     ],
 
     sidebar: {
@@ -47,6 +48,9 @@ export const zh: LocaleSpecificConfig<DefaultTheme.Config> = {
       ],
       '/zh/changelog': [
         { text: '更新日志', link: '/zh/changelog' },
+      ],
+      '/zh/roadmap': [
+        { text: '路线图', link: '/zh/roadmap' },
       ],
     },
 

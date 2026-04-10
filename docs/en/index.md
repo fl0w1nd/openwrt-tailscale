@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: OpenWrt Tailscale
-  text: Tailscale Manager for OpenWrt
-  tagline: Install, update, and manage Tailscale on your OpenWrt router with a single script.
+  text: Tailscale for Any OpenWrt Router
+  tagline: One-command deployment — even on devices too old or too small for official packages.
   actions:
     - theme: brand
       text: Get Started
@@ -16,20 +16,20 @@ hero:
 features:
   - icon: 🚀
     title: One-Command Install
-    details: Download, install, and start the interactive menu with a single command. Handles dependencies automatically.
+    details: A single wget command bootstraps the interactive installer. Dependencies, download, and service setup are handled automatically.
   - icon: 📦
-    title: Small Binary Support
-    details: Compressed binaries (~5 MB) via UPX — 80% smaller than official packages, perfect for embedded devices.
+    title: 5 MB Compressed Binary
+    details: UPX-compressed Tailscale binary — 80% smaller than official packages. Runs on devices with as little as 8 MB free storage, or entirely from RAM.
   - icon: 🔄
-    title: Auto-Updates
-    details: Daily cron job keeps Tailscale and the manager script up to date automatically.
+    title: Self-Updating
+    details: Built-in cron jobs keep the Tailscale binary and management scripts up to date. No opkg, no manual intervention.
   - icon: 🌐
     title: Subnet Routing
-    details: Automatic network interface and firewall configuration for accessing your LAN from any Tailscale device.
+    details: One-click network interface and firewall configuration for accessing your LAN from any Tailscale device.
   - icon: ⚙️
     title: Full OpenWrt Integration
-    details: UCI configuration, procd service management, and optional LuCI web interface.
+    details: UCI configuration, procd service management, and an optional LuCI web interface for status, control, and maintenance.
   - icon: 🛡️
-    title: Userspace Fallback
-    details: Automatically falls back to userspace networking when kernel TUN is unavailable.
+    title: Broad Compatibility
+    details: Works on OpenWrt 21.02+, busybox ash, without ucode or rpcd-mod-ucode. Falls back to userspace networking when kernel TUN is unavailable.
 ---
