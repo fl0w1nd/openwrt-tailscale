@@ -5,7 +5,7 @@
 ## 启用用户空间模式
 
 ```sh
-uci set tailscale.settings.tun_mode='userspace'
+uci set tailscale.settings.net_mode='userspace'
 uci commit tailscale
 /etc/init.d/tailscale restart
 ```
@@ -13,7 +13,7 @@ uci commit tailscale
 或通过 CLI：
 
 ```sh
-tailscale-manager tun-mode userspace
+tailscale-manager net-mode userspace
 ```
 
 ## 代理监听

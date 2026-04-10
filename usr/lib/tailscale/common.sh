@@ -125,15 +125,32 @@ kernel_tun_available() {
 }
 
 # ============================================================================
-# TUN Mode Detection
+# Configuration Migration
 # ============================================================================
 
-# Determine effective TUN mode based on config and hardware
+# Migrate legacy UCI key tun_mode → net_mode (one-time, idempotent)
+migrate_config() {
+    command -v uci >/dev/null 2>&1 || return 0
+    local old_val
+    old_val="$(uci -q get tailscale.settings.tun_mode)" || return 0
+    # Only migrate if new key is absent
+    if ! uci -q get tailscale.settings.net_mode >/dev/null 2>&1; then
+        uci set tailscale.settings.net_mode="$old_val"
+    fi
+    uci delete tailscale.settings.tun_mode 2>/dev/null || true
+    uci commit tailscale 2>/dev/null || true
+}
+
+# ============================================================================
+# Networking Mode Detection
+# ============================================================================
+
+# Determine effective networking mode based on config and hardware
 # Args: $1 = requested mode (auto|tun|kernel|userspace)
 #        "kernel" is accepted for backward compatibility and treated as "tun".
 # Output: "tun" or "userspace"
-# Returns: 0 on success, 1 if TUN mode is required but unavailable
-get_effective_tun_mode() {
+# Returns: 0 on success, 1 if kernel TUN is required but unavailable
+get_effective_net_mode() {
     local requested_mode="${1:-auto}"
 
     case "$requested_mode" in

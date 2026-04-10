@@ -50,7 +50,7 @@ set tailscale.settings.auto_update='${auto_update}'
 set tailscale.settings.update_cron='30 3 * * *'
 set tailscale.settings.script_auto_update='0'
 set tailscale.settings.script_update_cron='0 4 * * 0'
-set tailscale.settings.tun_mode='auto'
+set tailscale.settings.net_mode='auto'
 set tailscale.settings.log_stdout='1'
 set tailscale.settings.log_stderr='1'
 EOF

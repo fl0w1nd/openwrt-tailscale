@@ -1,6 +1,6 @@
-# TUN Mode
+# Networking Mode
 
-The TUN mode determines how Tailscale creates its network interface.
+The networking mode determines how Tailscale creates its network interface.
 
 ## Modes
 
@@ -13,12 +13,12 @@ The TUN mode determines how Tailscale creates its network interface.
 ## Checking Current Mode
 
 ```sh
-tailscale-manager tun-mode status
+tailscale-manager net-mode status
 ```
 
 Output:
 ```
-TUN mode:
+Networking mode:
   Configured: auto
   Active: tun
 ```
@@ -28,15 +28,15 @@ TUN mode:
 ### Via CLI
 
 ```sh
-tailscale-manager tun-mode auto       # Auto-detect
-tailscale-manager tun-mode tun        # Force kernel TUN
-tailscale-manager tun-mode userspace  # Force userspace
+tailscale-manager net-mode auto       # Auto-detect
+tailscale-manager net-mode tun        # Force kernel TUN
+tailscale-manager net-mode userspace  # Force userspace
 ```
 
 ### Via UCI
 
 ```sh
-uci set tailscale.settings.tun_mode='userspace'
+uci set tailscale.settings.net_mode='userspace'
 uci commit tailscale
 /etc/init.d/tailscale restart
 ```

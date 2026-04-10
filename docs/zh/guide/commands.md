@@ -41,7 +41,7 @@ tailscale-manager [命令] [选项]
 | 命令 | 说明 |
 |------|------|
 | `setup-firewall` | 配置 tailscale0 接口和防火墙区域 |
-| `tun-mode [auto\|tun\|userspace\|status]` | 获取或设置 TUN 模式 |
+| `net-mode [auto\|tun\|userspace\|status]` | 获取或设置网络模式 |
 
 ### 脚本管理
 

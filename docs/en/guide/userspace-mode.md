@@ -5,7 +5,7 @@ When the kernel TUN module is unavailable, Tailscale runs in userspace networkin
 ## Enabling Userspace Mode
 
 ```sh
-uci set tailscale.settings.tun_mode='userspace'
+uci set tailscale.settings.net_mode='userspace'
 uci commit tailscale
 /etc/init.d/tailscale restart
 ```
@@ -13,7 +13,7 @@ uci commit tailscale
 Or via the CLI:
 
 ```sh
-tailscale-manager tun-mode userspace
+tailscale-manager net-mode userspace
 ```
 
 ## Proxy Listeners

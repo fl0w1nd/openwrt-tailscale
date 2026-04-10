@@ -35,6 +35,7 @@ log_msg() {
 # ============================================================================
 
 load_config() {
+    migrate_config
     config_load tailscale
     config_get ENABLED settings enabled 1
     config_get PORT settings port 41641
@@ -44,7 +45,7 @@ load_config() {
     config_get STATE_DIR settings statedir /etc/tailscale
     FW_MODE=$(detect_ts_firewall_mode)
     config_get DOWNLOAD_SOURCE settings download_source official
-    config_get TUN_MODE settings tun_mode auto
+    config_get NET_MODE settings net_mode auto
     config_get PROXY_LISTEN settings proxy_listen localhost
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
@@ -170,21 +171,21 @@ start_service() {
         log_msg "warn" "Network not available, but starting tailscaled anyway (it may retry internally)"
     fi
     
-    # Determine effective TUN mode
+    # Determine effective networking mode
     local use_userspace=0
-    local effective_tun_mode=""
+    local effective_net_mode=""
     local listen_addr="localhost"
-    effective_tun_mode="$(get_effective_tun_mode "$TUN_MODE")" || effective_tun_mode=""
+    effective_net_mode="$(get_effective_net_mode "$NET_MODE")" || effective_net_mode=""
 
-    if [ -z "$effective_tun_mode" ]; then
-        log_msg "error" "/dev/net/tun is not available and TUN mode is explicitly configured"
-        log_msg "info" "Set tun_mode to 'userspace' or 'auto' to allow fallback"
+    if [ -z "$effective_net_mode" ]; then
+        log_msg "error" "/dev/net/tun is not available and TUN is explicitly configured"
+        log_msg "info" "Set net_mode to 'userspace' or 'auto' to allow fallback"
         return 1
     fi
 
-    if [ "$effective_tun_mode" = "userspace" ]; then
+    if [ "$effective_net_mode" = "userspace" ]; then
         use_userspace=1
-        if [ "$TUN_MODE" = "userspace" ]; then
+        if [ "$NET_MODE" = "userspace" ]; then
             log_msg "info" "Using userspace networking mode (configured)"
         else
             log_msg "warn" "TUN not available, falling back to userspace networking"

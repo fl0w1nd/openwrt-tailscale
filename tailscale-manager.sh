@@ -255,7 +255,18 @@ else
         return 1
     }
 
-    get_effective_tun_mode() {
+    migrate_config() {
+        command -v uci >/dev/null 2>&1 || return 0
+        local old_val
+        old_val="$(uci -q get tailscale.settings.tun_mode)" || return 0
+        if ! uci -q get tailscale.settings.net_mode >/dev/null 2>&1; then
+            uci set tailscale.settings.net_mode="$old_val"
+        fi
+        uci delete tailscale.settings.tun_mode 2>/dev/null || true
+        uci commit tailscale 2>/dev/null || true
+    }
+
+    get_effective_net_mode() {
         local requested_mode="${1:-auto}"
 
         case "$requested_mode" in
@@ -556,20 +567,21 @@ show_service_status() {
 # Configuration Helpers
 # ============================================================================
 
-get_configured_tun_mode() {
-    local tun_mode="auto"
+get_configured_net_mode() {
+    local net_mode="auto"
 
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
         . /lib/functions.sh
+        migrate_config
         config_load tailscale 2>/dev/null || true
-        config_get tun_mode settings tun_mode auto
+        config_get net_mode settings net_mode auto
     fi
 
-    case "$tun_mode" in
-        kernel) tun_mode="tun" ;;
+    case "$net_mode" in
+        kernel) net_mode="tun" ;;
     esac
 
-    echo "${tun_mode:-auto}"
+    echo "${net_mode:-auto}"
 }
 
 get_auto_update_config() {
@@ -619,14 +631,14 @@ configure_auto_update() {
     setup_cron
 }
 
-configure_tun_mode() {
+configure_net_mode() {
     local mode="$1"
     local proxy_listen="${2:-}"
 
     case "$mode" in
         auto|tun|userspace) ;;
         *)
-            log_error "Invalid tun mode: $mode"
+            log_error "Invalid networking mode: $mode"
             return 1
             ;;
     esac
@@ -636,16 +648,16 @@ configure_tun_mode() {
         return 1
     fi
 
-    uci set tailscale.settings.tun_mode="$mode"
+    uci set tailscale.settings.net_mode="$mode"
     if [ -n "$proxy_listen" ]; then
         uci set tailscale.settings.proxy_listen="$proxy_listen"
     fi
     uci commit tailscale || {
-        log_error "Failed to save tun mode"
+        log_error "Failed to save networking mode"
         return 1
     }
 
-    log_info "TUN mode set to: $mode"
+    log_info "Networking mode set to: $mode"
     [ -n "$proxy_listen" ] && log_info "Proxy listen: $proxy_listen"
 
     install_runtime_scripts || return 1
@@ -772,15 +784,15 @@ main() {
                     ;;
             esac
             ;;
-        tun-mode)
+        net-mode)
             case "${2:-status}" in
                 auto|tun|userspace)
-                    configure_tun_mode "$2"
+                    configure_net_mode "$2"
                     ;;
                 status|"")
                     echo ""
-                    echo "TUN mode:"
-                    echo "  Configured: $(get_configured_tun_mode)"
+                    echo "Networking mode:"
+                    echo "  Configured: $(get_configured_net_mode)"
                     if pgrep -f "tailscaled.*userspace-networking" >/dev/null 2>&1; then
                         echo "  Active: userspace"
                     elif pgrep -f "tailscaled" >/dev/null 2>&1; then
@@ -791,7 +803,7 @@ main() {
                     echo ""
                     ;;
                 *)
-                    echo "Usage: $0 tun-mode [auto|tun|userspace|status]"
+                    echo "Usage: $0 net-mode [auto|tun|userspace|status]"
                     exit 1
                     ;;
             esac
@@ -833,7 +845,7 @@ main() {
             echo "  self-update      Update this script to latest version"
             echo "  sync-scripts     Download and install managed auxiliary files"
             echo "  auto-update      Configure auto-update (on/off/status)"
-            echo "  tun-mode         Configure TUN mode (auto/tun/userspace/status)"
+            echo "  net-mode         Configure networking mode (auto/tun/userspace/status)"
             echo "  help             Show this help"
             echo ""
             echo "Environment variables:"

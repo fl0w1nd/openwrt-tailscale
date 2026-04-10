@@ -18,7 +18,7 @@ show_menu() {
     echo "  7) Setup Subnet Routing"
     echo "  8) Install Specific Version (Downgrade)"
     echo "  9) Auto-Update Settings"
-    echo " 10) TUN Mode Settings"
+    echo " 10) Networking Mode Settings"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -93,16 +93,16 @@ do_auto_update_settings() {
     fi
 }
 
-do_tun_mode_settings() {
+do_net_mode_settings() {
     echo ""
     echo "============================================="
-    echo "  TUN Mode Settings"
+    echo "  Networking Mode Settings"
     echo "============================================="
     echo ""
-    echo "Current: $(get_configured_tun_mode)"
+    echo "Current: $(get_configured_net_mode)"
     echo ""
     echo "  1) Auto"
-    echo "     - Prefer TUN mode, fall back to userspace if unavailable"
+    echo "     - Prefer TUN, fall back to userspace if unavailable"
     echo "  2) TUN"
     echo "     - Require /dev/net/tun device"
     echo "  3) Userspace"
@@ -112,8 +112,8 @@ do_tun_mode_settings() {
     read -r answer
 
     case "$answer" in
-        1) configure_tun_mode "auto" ;;
-        2) configure_tun_mode "tun" ;;
+        1) configure_net_mode "auto" ;;
+        2) configure_net_mode "tun" ;;
         3)
             echo ""
             echo "  Proxy listen scope for userspace mode:"
@@ -123,8 +123,8 @@ do_tun_mode_settings() {
             printf "  Enter choice [a/b] (default: a): "
             read -r proxy_answer
             case "$proxy_answer" in
-                [Bb]) configure_tun_mode "userspace" "lan" ;;
-                *) configure_tun_mode "userspace" "localhost" ;;
+                [Bb]) configure_net_mode "userspace" "lan" ;;
+                *) configure_net_mode "userspace" "localhost" ;;
             esac
             ;;
         "") echo "No changes." ;;
@@ -147,7 +147,7 @@ interactive_menu() {
             7) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
             8) do_install_version; printf "Press Enter to continue..."; read -r _ ;;
             9) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
-            10) do_tun_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
+            10) do_net_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac

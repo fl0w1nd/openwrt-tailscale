@@ -14,7 +14,7 @@ config tailscale 'settings'
     option statedir '/etc/tailscale' # State directory
     option fw_mode 'nftables'       # Firewall mode: nftables | iptables
     option download_source 'small'  # Download source: official | small
-    option tun_mode 'auto'          # TUN mode: auto | tun | userspace
+    option net_mode 'auto'          # Networking mode: auto | tun | userspace
     option proxy_listen 'localhost' # Proxy listen: localhost | lan
     option auto_update '1'          # Auto-update: 0 | 1
 ```
@@ -45,6 +45,6 @@ If the [LuCI interface](/en/guide/luci) is installed, use **Services → Tailsca
 | `statedir` | path | `/etc/tailscale` | Tailscale state directory |
 | `fw_mode` | `nftables` / `iptables` | `nftables` | Firewall backend |
 | `download_source` | `official` / `small` | `small` | Binary download source |
-| `tun_mode` | `auto` / `tun` / `userspace` | `auto` | Network mode |
+| `net_mode` | `auto` / `tun` / `userspace` | `auto` | Network mode |
 | `proxy_listen` | `localhost` / `lan` | `localhost` | Proxy listen address (userspace only) |
 | `auto_update` | `0` / `1` | `1` | Enable daily auto-update cron job |

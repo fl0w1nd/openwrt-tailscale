@@ -82,7 +82,7 @@ return view.extend({
 		o.default = '41641';
 		o.rmempty = false;
 
-		o = s.option(form.ListValue, 'tun_mode', 'Networking Mode', 'Choose between TUN mode and userspace networking mode.');
+		o = s.option(form.ListValue, 'net_mode', 'Networking Mode', 'Choose between TUN mode and userspace networking mode.');
 		o.value('auto', 'Auto (prefer TUN mode, fallback to userspace networking mode)');
 		o.value('tun', 'TUN mode');
 		o.value('userspace', 'Userspace networking mode');
@@ -93,7 +93,7 @@ return view.extend({
 		o.value('localhost', 'Localhost only');
 		o.value('lan', 'LAN (0.0.0.0)');
 		o.default = 'localhost';
-		o.depends('tun_mode', 'userspace');
+		o.depends('net_mode', 'userspace');
 
 		o = s.option(form.Flag, 'log_stdout', 'Log Standard Output', 'Enable standard output logging for tailscaled.');
 		o.default = '1';

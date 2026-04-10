@@ -15,7 +15,7 @@ The LuCI app is organized into four tabs:
 ### Configuration
 
 - Toggle service enable/disable
-- Change TUN mode
+- Change networking mode
 - Configure proxy listen address
 - Modify download source
 

@@ -197,7 +197,7 @@ return view.extend({
 				? status.installed_version + (status.source_type ? ' (' + status.source_type + ')' : '')
 				: '-');
 		if (el.networkingMode)
-			dom.content(el.networkingMode, formatNetworkingMode(status.tun_mode));
+			dom.content(el.networkingMode, formatNetworkingMode(status.net_mode));
 		if (el.backendState)
 			dom.content(el.backendState, status.backend_state || '-');
 		if (el.firewallBackend)
@@ -341,7 +341,7 @@ return view.extend({
 		dom.content(el.version, status.installed_version
 			? status.installed_version + (status.source_type ? ' (' + status.source_type + ')' : '')
 			: '-');
-		dom.content(el.networkingMode, formatNetworkingMode(status.tun_mode));
+		dom.content(el.networkingMode, formatNetworkingMode(status.net_mode));
 		dom.content(el.backendState, status.backend_state || '-');
 		dom.content(el.firewallBackend, formatFirewallBackend(status.firewall_backend));
 		dom.content(el.ips, (status.tailscale_ips && status.tailscale_ips.length)

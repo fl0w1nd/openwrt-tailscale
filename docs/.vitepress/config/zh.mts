@@ -23,7 +23,7 @@ export const zh: LocaleSpecificConfig<DefaultTheme.Config> = {
         {
           text: '网络配置',
           items: [
-            { text: 'TUN 模式', link: '/zh/guide/tun-mode' },
+            { text: '网络模式', link: '/zh/guide/net-mode' },
             { text: '子网路由', link: '/zh/guide/subnet-routing' },
             { text: '用户空间模式', link: '/zh/guide/userspace-mode' },
           ],

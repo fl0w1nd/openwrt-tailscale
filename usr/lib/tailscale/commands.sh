@@ -185,13 +185,13 @@ do_install() {
     _finalize_install "$auto_update" || return 1
 
     echo ""
-    local configured_tun_mode
-    local effective_tun_mode=""
+    local configured_net_mode
+    local effective_net_mode=""
 
-    configured_tun_mode="$(get_configured_tun_mode)"
-    effective_tun_mode="$(get_effective_tun_mode "$configured_tun_mode")" || effective_tun_mode=""
+    configured_net_mode="$(get_configured_net_mode)"
+    effective_net_mode="$(get_effective_net_mode "$configured_net_mode")" || effective_net_mode=""
 
-    if [ "$effective_tun_mode" = "userspace" ]; then
+    if [ "$effective_net_mode" = "userspace" ]; then
         show_userspace_subnet_guidance
     else
         echo "============================================="
@@ -404,7 +404,7 @@ do_status() {
     fi
     echo "  Source: $source_type"
     if [ -f "$CONFIG_FILE" ]; then
-        echo "  TUN mode: $(get_configured_tun_mode)"
+        echo "  Networking mode: $(get_configured_net_mode)"
     fi
 
     echo ""

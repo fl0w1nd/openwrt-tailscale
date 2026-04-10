@@ -14,7 +14,7 @@ config tailscale 'settings'
     option statedir '/etc/tailscale' # 状态目录
     option fw_mode 'nftables'       # 防火墙模式：nftables | iptables
     option download_source 'small'  # 下载源：official | small
-    option tun_mode 'auto'          # TUN 模式：auto | tun | userspace
+    option net_mode 'auto'          # 网络模式：auto | tun | userspace
     option proxy_listen 'localhost' # 代理监听：localhost | lan
     option auto_update '1'          # 自动更新：0 | 1
 ```
@@ -45,6 +45,6 @@ uci commit tailscale
 | `statedir` | 路径 | `/etc/tailscale` | Tailscale 状态目录 |
 | `fw_mode` | `nftables` / `iptables` | `nftables` | 防火墙后端 |
 | `download_source` | `official` / `small` | `small` | 二进制下载源 |
-| `tun_mode` | `auto` / `tun` / `userspace` | `auto` | 网络模式 |
+| `net_mode` | `auto` / `tun` / `userspace` | `auto` | 网络模式 |
 | `proxy_listen` | `localhost` / `lan` | `localhost` | 代理监听地址（仅用户空间模式） |
 | `auto_update` | `0` / `1` | `1` | 启用每日自动更新定时任务 |

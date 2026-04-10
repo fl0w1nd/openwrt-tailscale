@@ -200,7 +200,7 @@ cmd_json_status() {
     fi
 
     if [ -z "$bin_dir" ]; then
-        printf '{"installed":false,"running":false,"pid":null,"installed_version":null,"source_type":null,"tun_mode":null,"backend_state":null,"device_name":null'
+        printf '{"installed":false,"running":false,"pid":null,"installed_version":null,"source_type":null,"net_mode":null,"backend_state":null,"device_name":null'
         printf ','; _jstr firewall_backend "$firewall_backend"
         printf ',"tailscale_ips":[],"hostname":null,"peers":[]}'
         return 0
@@ -217,16 +217,16 @@ cmd_json_status() {
         pid="${pid_str%% *}"
     fi
 
-    local tun_mode="" backend_state="" device_name="" hostname=""
+    local net_mode="" backend_state="" device_name="" hostname=""
     local self_ips_json="[]" peers_json="[]"
 
     if [ "$running" = "true" ]; then
-        tun_mode="tun"
+        net_mode="tun"
         local cmdline=""
         cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || cmdline=""
         case " $cmdline " in
             *" --tun=userspace-networking "*|*" --tun userspace-networking "*)
-                tun_mode="userspace" ;;
+                net_mode="userspace" ;;
         esac
 
         local ts_json=""
@@ -258,7 +258,7 @@ cmd_json_status() {
     fi
     printf ','; _jstr installed_version "$version"
     printf ','; _jstr source_type "$source_type"
-    printf ','; _jstr tun_mode "$tun_mode"
+    printf ','; _jstr net_mode "$net_mode"
     printf ','; _jstr backend_state "$backend_state"
     printf ','; _jstr device_name "$device_name"
     printf ','; _jstr firewall_backend "$firewall_backend"

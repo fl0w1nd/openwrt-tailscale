@@ -41,7 +41,7 @@ Running without arguments opens the interactive menu.
 | Command | Description |
 |---------|-------------|
 | `setup-firewall` | Configure tailscale0 interface and firewall zone |
-| `tun-mode [auto\|tun\|userspace\|status]` | Get or set TUN mode |
+| `net-mode [auto\|tun\|userspace\|status]` | Get or set networking mode |
 
 ### Script Management
 

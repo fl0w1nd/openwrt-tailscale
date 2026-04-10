@@ -4,7 +4,7 @@
 #
 # Required functions (from entry script):
 #   log_info(), log_error(), log_warn()
-#   get_configured_tun_mode(), get_effective_tun_mode()
+#   get_configured_net_mode(), get_effective_net_mode()
 #
 # No external variable dependencies — all functions are self-contained.
 
@@ -191,17 +191,17 @@ remove_subnet_routing_config() {
 
 # Interactive subnet routing setup
 do_setup_subnet_routing() {
-    local tun_mode
-    local effective_tun_mode=""
+    local net_mode
+    local effective_net_mode=""
 
-    tun_mode="$(get_configured_tun_mode)"
+    net_mode="$(get_configured_net_mode)"
 
-    effective_tun_mode="$(get_effective_tun_mode "$tun_mode")" || effective_tun_mode=""
+    effective_net_mode="$(get_effective_net_mode "$net_mode")" || effective_net_mode=""
 
-    if [ "$effective_tun_mode" = "userspace" ]; then
+    if [ "$effective_net_mode" = "userspace" ]; then
         show_userspace_subnet_guidance
         return 0
-    elif [ -z "$effective_tun_mode" ]; then
+    elif [ -z "$effective_net_mode" ]; then
         echo ""
         echo "============================================="
         echo "  Subnet Routing Configuration"
@@ -210,7 +210,7 @@ do_setup_subnet_routing() {
         echo "Kernel networking mode is configured, but TUN is not available."
         echo "Either fix kernel TUN support or switch to userspace mode:"
         echo ""
-        echo "  uci set tailscale.settings.tun_mode='userspace'"
+        echo "  uci set tailscale.settings.net_mode='userspace'"
         echo "  uci commit tailscale"
         echo "  /etc/init.d/tailscale restart"
         echo ""

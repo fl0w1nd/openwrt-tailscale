@@ -135,8 +135,8 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_effective_tun_mode() {
-    new_script manager-tun-mode.sh <<EOF
+test_effective_net_mode() {
+    new_script manager-net-mode.sh <<EOF
 #!/bin/sh
 set -eu
 $(source_manager)
@@ -145,13 +145,13 @@ kernel_tun_available() {
     return 1
 }
 
-mode=\$(get_effective_tun_mode auto)
+mode=\$(get_effective_net_mode auto)
 [ "\$mode" = "userspace" ]
 
-mode=\$(get_effective_tun_mode userspace)
+mode=\$(get_effective_net_mode userspace)
 [ "\$mode" = "userspace" ]
 
-if get_effective_tun_mode kernel >/dev/null 2>&1; then
+if get_effective_net_mode kernel >/dev/null 2>&1; then
     exit 1
 fi
 
@@ -159,10 +159,10 @@ kernel_tun_available() {
     return 0
 }
 
-mode=\$(get_effective_tun_mode auto)
+mode=\$(get_effective_net_mode auto)
 [ "\$mode" = "tun" ]
 
-mode=\$(get_effective_tun_mode tun)
+mode=\$(get_effective_net_mode tun)
 [ "\$mode" = "tun" ]
 EOF
 
@@ -461,14 +461,14 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_tun_mode_reinstalls_runtime_scripts() {
+test_net_mode_reinstalls_runtime_scripts() {
     write_stub uci <<'EOF'
 #!/bin/sh
 printf 'uci %s\n' "$*" >> "$TEST_DIR/calls.log"
 exit 0
 EOF
 
-    new_script manager-tun-mode.sh <<EOF
+    new_script manager-net-mode.sh <<EOF
 #!/bin/sh
 set -eu
 $(source_manager)
@@ -505,15 +505,15 @@ show_service_status() {
     echo status >> "\$CALLS"
 }
 
-main tun-mode userspace
+main net-mode userspace
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
-    assert_file_exists "$TEST_DIR/root/usr/lib/tailscale/common.sh" 'tun-mode should refresh common.sh'
-    [ -x "$TEST_DIR/root/etc/init.d/tailscale" ] || fail 'tun-mode should refresh the init script'
-    assert_file_contains "$TEST_DIR/calls.log" 'uci set tailscale.settings.tun_mode=userspace' 'tun-mode should persist tun_mode'
-    assert_file_contains "$TEST_DIR/calls.log" 'init restart' 'tun-mode should restart tailscale'
-    assert_file_contains "$TEST_DIR/calls.log" 'status' 'tun-mode should run the status check after restart'
+    assert_file_exists "$TEST_DIR/root/usr/lib/tailscale/common.sh" 'net-mode should refresh common.sh'
+    [ -x "$TEST_DIR/root/etc/init.d/tailscale" ] || fail 'net-mode should refresh the init script'
+    assert_file_contains "$TEST_DIR/calls.log" 'uci set tailscale.settings.net_mode=userspace' 'net-mode should persist net_mode'
+    assert_file_contains "$TEST_DIR/calls.log" 'init restart' 'net-mode should restart tailscale'
+    assert_file_contains "$TEST_DIR/calls.log" 'status' 'net-mode should run the status check after restart'
 }
 
 # Emit common stub definitions for install tests.
@@ -569,8 +569,8 @@ create_uci_config() {
     : > "$CONFIG_FILE"
 }
 
-get_configured_tun_mode() { echo userspace; }
-get_effective_tun_mode() { echo userspace; }
+get_configured_net_mode() { echo userspace; }
+get_effective_net_mode() { echo userspace; }
 show_userspace_subnet_guidance() { echo userspace-guidance >> "$CALLS"; }
 
 printf '\n\n\n' | do_install >/dev/null
@@ -608,8 +608,8 @@ _finalize_install() {
     return 1
 }
 
-get_configured_tun_mode() { echo userspace; }
-get_effective_tun_mode() { echo userspace; }
+get_configured_net_mode() { echo userspace; }
+get_effective_net_mode() { echo userspace; }
 show_userspace_subnet_guidance() { echo userspace-guidance >> "$CALLS"; }
 
 if printf '\n\n\n' | do_install >/dev/null; then
@@ -1977,9 +1977,9 @@ device=$(printf '%s' "$output" | jq -r '.device_name')
 hostname=$(printf '%s' "$output" | jq -r '.hostname')
 [ "$hostname" = "my-router" ] || { echo "hostname should be my-router: $hostname"; exit 1; }
 
-# tun_mode detection requires /proc (Linux only) — skip on other platforms
-tun=$(printf '%s' "$output" | jq -r '.tun_mode')
-[ "$tun" = "null" ] || [ "$tun" = "tun" ] || [ "$tun" = "userspace" ] || { echo "tun_mode unexpected: $tun"; exit 1; }
+# net_mode detection requires /proc (Linux only) — skip on other platforms
+tun=$(printf '%s' "$output" | jq -r '.net_mode')
+[ "$tun" = "null" ] || [ "$tun" = "tun" ] || [ "$tun" = "userspace" ] || { echo "net_mode unexpected: $tun"; exit 1; }
 
 # Check peers
 peer_count=$(printf '%s' "$output" | jq '.peers | length')
@@ -2188,14 +2188,14 @@ EOF
 # ============================================================================
 
 run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
-run_test 'get_effective_tun_mode falls back and fails correctly' test_effective_tun_mode
+run_test 'get_effective_net_mode falls back and fails correctly' test_effective_net_mode
 run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
 run_test 'official version listing parses package page options' test_list_official_versions_parsing
 run_test 'official latest version falls back to available arch build' test_official_latest_version_falls_back_to_available_arch_build
 run_test 'small latest version falls back to available arch build' test_small_latest_version_falls_back_to_available_arch_build
 run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
-run_test 'tun-mode refreshes runtime scripts before restart' test_tun_mode_reinstalls_runtime_scripts
+run_test 'net-mode refreshes runtime scripts before restart' test_net_mode_reinstalls_runtime_scripts
 run_test 'interactive install deploys LuCI app files' test_install_interactive_installs_luci_app
 run_test 'interactive install stops when finalize step fails' test_install_interactive_propagates_finalize_failure
 run_test 'install-quiet deploys LuCI app files' test_install_quiet_installs_luci_app

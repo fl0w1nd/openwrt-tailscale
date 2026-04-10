@@ -23,7 +23,7 @@ export const en: LocaleSpecificConfig<DefaultTheme.Config> = {
         {
           text: 'Networking',
           items: [
-            { text: 'TUN Mode', link: '/en/guide/tun-mode' },
+            { text: 'Networking Mode', link: '/en/guide/net-mode' },
             { text: 'Subnet Routing', link: '/en/guide/subnet-routing' },
             { text: 'Userspace Mode', link: '/en/guide/userspace-mode' },
           ],

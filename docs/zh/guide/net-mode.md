@@ -1,6 +1,6 @@
-# TUN 模式
+# 网络模式
 
-TUN 模式决定 Tailscale 如何创建网络接口。
+网络模式决定 Tailscale 如何创建网络接口。
 
 ## 模式说明
 
@@ -13,12 +13,12 @@ TUN 模式决定 Tailscale 如何创建网络接口。
 ## 查看当前模式
 
 ```sh
-tailscale-manager tun-mode status
+tailscale-manager net-mode status
 ```
 
 输出：
 ```
-TUN mode:
+Networking mode:
   Configured: auto
   Active: tun
 ```
@@ -28,15 +28,15 @@ TUN mode:
 ### 通过 CLI
 
 ```sh
-tailscale-manager tun-mode auto       # 自动检测
-tailscale-manager tun-mode tun        # 强制内核 TUN
-tailscale-manager tun-mode userspace  # 强制用户空间
+tailscale-manager net-mode auto       # 自动检测
+tailscale-manager net-mode tun        # 强制内核 TUN
+tailscale-manager net-mode userspace  # 强制用户空间
 ```
 
 ### 通过 UCI
 
 ```sh
-uci set tailscale.settings.tun_mode='userspace'
+uci set tailscale.settings.net_mode='userspace'
 uci commit tailscale
 /etc/init.d/tailscale restart
 ```
