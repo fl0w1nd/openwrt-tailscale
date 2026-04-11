@@ -2184,6 +2184,153 @@ EOF
 }
 
 # ============================================================================
+# Configuration Migration Tests
+# ============================================================================
+
+test_migrate_config_migrates_old_key() {
+    # Simulate uci with old tun_mode but no net_mode
+    write_stub uci <<'EOF'
+#!/bin/sh
+set -eu
+case "$*" in
+    "-q get tailscale.settings.tun_mode") echo "tun" ;;
+    "-q get tailscale.settings.net_mode") exit 1 ;;
+    "set tailscale.settings.net_mode=tun") exit 0 ;;
+    "delete tailscale.settings.tun_mode") exit 0 ;;
+    "commit tailscale") exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+
+    new_script migrate-basic.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+export PATH="$STUB_BIN:$PATH"
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+migrate_config
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_migrate_config_preserves_new_key() {
+    # Old tun_mode=tun exists, but net_mode=userspace already set - should NOT overwrite
+    write_stub uci <<'EOF'
+#!/bin/sh
+set -eu
+case "$*" in
+    "-q get tailscale.settings.tun_mode") echo "tun" ;;
+    "-q get tailscale.settings.net_mode") echo "userspace" ;;
+    "set tailscale.settings.net_mode="*) exit 99 ;; # Should not be called
+    "delete tailscale.settings.tun_mode") exit 0 ;;
+    "commit tailscale") exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+
+    new_script migrate-preserve.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+export PATH="$STUB_BIN:$PATH"
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+migrate_config
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_migrate_config_no_uci_graceful() {
+    # No uci command available - should succeed without error
+    new_script migrate-no-uci.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+# PATH does NOT include stub_bin, so uci won't be found
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+migrate_config
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_migrate_config_no_old_key() {
+    # No tun_mode exists - should succeed without modification
+    write_stub uci <<'EOF'
+#!/bin/sh
+set -eu
+case "$*" in
+    "-q get tailscale.settings.tun_mode") exit 1 ;;
+    "-q get tailscale.settings.net_mode") exit 1 ;;
+    "set tailscale.settings.net_mode="*) exit 99 ;; # Should not be called
+    "delete tailscale.settings.tun_mode") exit 0 ;;
+    "commit tailscale") exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+
+    new_script migrate-no-old.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+export PATH="$STUB_BIN:$PATH"
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+migrate_config
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_migrate_config_idempotent() {
+    # Call twice - both should succeed
+    write_stub uci <<'EOF'
+#!/bin/sh
+set -eu
+case "$*" in
+    "-q get tailscale.settings.tun_mode") echo "userspace" ;;
+    "-q get tailscale.settings.net_mode") exit 1 ;;
+    "set tailscale.settings.net_mode=userspace") exit 0 ;;
+    "delete tailscale.settings.tun_mode") exit 0 ;;
+    "commit tailscale") exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+
+    new_script migrate-idempotent.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+export PATH="$STUB_BIN:$PATH"
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+migrate_config
+migrate_config  # Second call should be safe
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+# ============================================================================
 # Run all tests
 # ============================================================================
 
@@ -2234,5 +2381,10 @@ run_test 'all json-* commands produce valid JSON' test_json_output_valid
 run_test 'json-status parses tailscale status output' test_json_status_parses_tailscale_output
 run_test 'json-status keeps remote peers on jsonfilter backend' test_json_status_parses_remote_peers_with_jsonfilter_backend
 run_test '_get_display_name extracts names correctly' test_json_display_name_extraction
+run_test 'migrate_config migrates old tun_mode to net_mode' test_migrate_config_migrates_old_key
+run_test 'migrate_config preserves existing net_mode value' test_migrate_config_preserves_new_key
+run_test 'migrate_config succeeds without uci command' test_migrate_config_no_uci_graceful
+run_test 'migrate_config succeeds without old tun_mode key' test_migrate_config_no_old_key
+run_test 'migrate_config is idempotent across multiple calls' test_migrate_config_idempotent
 
 printf '1..%s\n' "$TEST_INDEX"
