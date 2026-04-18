@@ -235,11 +235,11 @@ do_install() {
 }
 
 do_update() {
-    local auto_mode="$1"
+    local auto_mode="${1:-}"
 
     log_info "Checking for updates..."
 
-    . /lib/functions.sh
+    [ -r /lib/functions.sh ] && . /lib/functions.sh
     config_load tailscale
     config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
     config_get storage_mode settings storage_mode persistent
@@ -275,15 +275,39 @@ do_update() {
         esac
     fi
 
+    # Stage: download new version to a temp directory
+    local stage_dir="/tmp/tailscale_staged_$$"
+    log_info "Downloading v${latest_version} to staging area..."
+    stage_tailscale "$latest_version" "$arch" "$stage_dir" || {
+        log_error "Download failed"
+        rm -rf "$stage_dir"
+        return 1
+    }
+
+    # Verify: ensure the new binary can execute on this device
+    if ! verify_staged_binary "$stage_dir"; then
+        log_error "New binary is not runnable on this device, aborting update"
+        rm -rf "$stage_dir"
+        return 1
+    fi
+
+    # Record rollback info (skip for RAM mode — reboots re-download anyway)
+    if [ "$storage_mode" != "ram" ]; then
+        echo "$current_version $DOWNLOAD_SOURCE" > "${bin_dir}/.rollback_version"
+    fi
+
+    # Stop service and install staged files
     log_info "Stopping Tailscale service..."
     "$INIT_SCRIPT" stop 2>/dev/null || true
     sleep 2
 
-    download_tailscale "$latest_version" "$arch" "$bin_dir" || {
-        log_error "Update failed"
-        "$INIT_SCRIPT" start 2>/dev/null
+    if ! install_staged "$stage_dir" "$bin_dir"; then
+        log_error "Failed to install staged files"
+        rm -rf "$stage_dir"
+        [ -x "$INIT_SCRIPT" ] && "$INIT_SCRIPT" start 2>/dev/null || true
         return 1
-    }
+    fi
+    rm -rf "$stage_dir"
 
     log_info "Starting Tailscale service..."
     "$INIT_SCRIPT" start
@@ -292,7 +316,78 @@ do_update() {
         show_service_status
         log_info "Update complete: v${current_version} -> v${latest_version}"
     else
-        log_error "tailscaled failed to start after update. Check logs: cat /var/log/tailscale.log"
+        log_error "tailscaled failed to start after update"
+        # Auto-rollback: re-download the previous version via install-version
+        if [ "$storage_mode" != "ram" ] && [ -f "${bin_dir}/.rollback_version" ]; then
+            local rollback_ver rollback_source
+            rollback_ver=$(awk '{print $1}' "${bin_dir}/.rollback_version")
+            rollback_source=$(awk '{print $2}' "${bin_dir}/.rollback_version")
+            case "$rollback_source" in
+                official|small) ;;
+                *)
+                    log_error "Rollback metadata is invalid: unsupported source '${rollback_source}'"
+                    log_error "Check logs: cat /var/log/tailscale.log"
+                    return 1
+                    ;;
+            esac
+            log_info "Attempting automatic rollback to v${rollback_ver} (source: ${rollback_source})..."
+            if cmd_install_version "$rollback_ver" --source "$rollback_source"; then
+                log_info "Rollback to v${rollback_ver} successful"
+                rm -f "${bin_dir}/.rollback_version"
+                return 1
+            fi
+            log_error "Automatic rollback failed. Manual intervention required."
+        fi
+        log_error "Check logs: cat /var/log/tailscale.log"
+        return 1
+    fi
+}
+
+# Roll back to the previously recorded version.
+# Reads version and source from .rollback_version, then delegates to cmd_install_version.
+do_rollback() {
+    [ -r /lib/functions.sh ] && . /lib/functions.sh
+    config_load tailscale
+    config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
+
+    local rollback_file="${bin_dir}/.rollback_version"
+    if [ ! -f "$rollback_file" ]; then
+        log_error "No rollback version recorded. Nothing to roll back to."
+        return 1
+    fi
+
+    local rollback_ver rollback_source
+    rollback_ver=$(awk '{print $1}' "$rollback_file")
+    rollback_source=$(awk '{print $2}' "$rollback_file")
+
+    if [ -z "$rollback_ver" ]; then
+        log_error "Rollback version file is empty"
+        return 1
+    fi
+
+    case "$rollback_source" in
+        official|small) ;;
+        *)
+            log_error "Rollback version file contains unsupported source: ${rollback_source}"
+            return 1
+            ;;
+    esac
+
+    local current_version
+    current_version=$(get_installed_version "$bin_dir")
+
+    echo "Current version:  $current_version"
+    echo "Rollback to:      v${rollback_ver} (source: ${rollback_source})"
+    printf 'Proceed? [y/N]: '
+    read -r answer
+    case "$answer" in
+        [Yy]*) ;;
+        *) echo "Rollback cancelled."; return 0 ;;
+    esac
+
+    if cmd_install_version "$rollback_ver" --source "$rollback_source"; then
+        rm -f "$rollback_file"
+    else
         return 1
     fi
 }

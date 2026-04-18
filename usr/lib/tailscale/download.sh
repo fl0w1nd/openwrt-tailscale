@@ -125,6 +125,73 @@ download_tailscale() {
     fi
 }
 
+# Stage new version: download to a temporary directory without touching the live install.
+# Returns 0 on success, leaving staged files in $stage_dir for the caller to install.
+stage_tailscale() {
+    local version="$1"
+    local arch="$2"
+    local stage_dir="$3"
+
+    mkdir -p "$stage_dir"
+    download_tailscale "$version" "$arch" "$stage_dir"
+}
+
+# Verify a staged binary is runnable on the current device.
+# Executes tailscaled --version from the stage directory to catch architecture
+# mismatches, corrupted UPX compression, or missing dynamic libraries early,
+# before the live install is touched.
+verify_staged_binary() {
+    local stage_dir="$1"
+    local bin
+
+    if [ -f "${stage_dir}/tailscale.combined" ]; then
+        bin="${stage_dir}/tailscale.combined"
+    elif [ -f "${stage_dir}/tailscaled" ]; then
+        bin="${stage_dir}/tailscaled"
+    else
+        log_error "No binary found in staging directory"
+        return 1
+    fi
+
+    chmod +x "$bin"
+    if ! "$bin" --version >/dev/null 2>&1; then
+        log_error "Staged binary failed verification (--version check)"
+        return 1
+    fi
+
+    log_info "Staged binary verified successfully"
+    return 0
+}
+
+# Install staged files into the live binary directory.
+# Handles both official (separate tailscale + tailscaled) and small (combined) layouts.
+install_staged() {
+    local stage_dir="$1"
+    local target_dir="$2"
+
+    mkdir -p "$target_dir"
+
+    if [ -f "${stage_dir}/tailscale.combined" ]; then
+        rm -f "${target_dir}/tailscale" "${target_dir}/tailscaled" || return 1
+        mv "${stage_dir}/tailscale.combined" "${target_dir}/tailscale.combined" || return 1
+        chmod +x "${target_dir}/tailscale.combined" || return 1
+        (
+            cd "$target_dir" || exit 1
+            ln -sf "tailscale.combined" "tailscale" || exit 1
+            ln -sf "tailscale.combined" "tailscaled" || exit 1
+        ) || return 1
+    else
+        rm -f "${target_dir}/tailscale.combined" || return 1
+        mv "${stage_dir}/tailscaled" "${target_dir}/tailscaled" || return 1
+        mv "${stage_dir}/tailscale" "${target_dir}/tailscale" || return 1
+        chmod +x "${target_dir}/tailscaled" "${target_dir}/tailscale" || return 1
+    fi
+
+    # Carry over version and source metadata
+    [ ! -f "${stage_dir}/version" ] || mv "${stage_dir}/version" "${target_dir}/version" || return 1
+    [ ! -f "${stage_dir}/source" ] || mv "${stage_dir}/source" "${target_dir}/source" || return 1
+}
+
 # Download official Tailscale binaries from pkgs.tailscale.com
 download_tailscale_official() {
     local version="$1"

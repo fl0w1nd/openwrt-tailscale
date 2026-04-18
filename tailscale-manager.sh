@@ -713,6 +713,9 @@ main() {
         update)
             do_update "$2"
             ;;
+        rollback)
+            do_rollback
+            ;;
         uninstall)
             do_uninstall "$2"
             ;;
@@ -836,6 +839,7 @@ main() {
             echo "  install-quiet    Install Tailscale (non-interactive, for LuCI/automation)"
             echo "  install-version  Install specific version (non-interactive)"
             echo "  update           Update to latest version"
+            echo "  rollback         Roll back to previous version"
             echo "  uninstall        Remove Tailscale (use --yes to skip confirmation)"
             echo "  status           Show current status"
             echo "  list-versions    List available small binary versions"
