@@ -3,10 +3,96 @@
 # Sourced by tailscale-manager entry script.
 #
 # Required variables (set by entry script before sourcing):
-#   DOWNLOAD_BASE, SMALL_DOWNLOAD_BASE, SMALL_SUPPORTED_ARCHS
+#   DOWNLOAD_BASE, SMALL_DOWNLOAD_BASE, SMALL_SUPPORTED_ARCHS,
+#   SMALL_RELEASES_API
 #
 # Required functions (from entry script):
 #   log_info(), log_error(), log_warn(), download_repo_file()
+
+# Compute SHA-256 hash of a file
+# Uses sha256sum (coreutils/busybox) or openssl as fallback
+compute_sha256() {
+    local file="$1"
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 "$file" | awk '{print $NF}'
+    else
+        return 1
+    fi
+}
+
+# Verify file checksum against expected SHA-256 hash
+# Returns 0 on match, 1 on mismatch or missing tools
+verify_checksum() {
+    local file="$1"
+    local expected="$2"
+
+    local actual
+    actual=$(compute_sha256 "$file") || {
+        log_warn "sha256 verification skipped: no sha256sum or openssl available"
+        return 0
+    }
+
+    if [ "$actual" != "$expected" ]; then
+        log_error "Checksum mismatch!"
+        log_error "  Expected: $expected"
+        log_error "  Got:      $actual"
+        return 1
+    fi
+
+    log_info "Checksum verified: $expected"
+    return 0
+}
+
+# Fetch expected SHA-256 for official Tailscale tarball
+# pkgs.tailscale.com supports appending .sha256 to any download URL
+get_official_checksum() {
+    local url="$1"
+    local checksum
+
+    checksum=$(wget -qO- "${url}.sha256" 2>/dev/null) || return 1
+
+    # Validate format: must be exactly 64 hex characters
+    case "$checksum" in
+        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+            echo "$checksum"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Fetch expected SHA-256 for small binary from GitHub API release asset digest
+# GitHub API returns digest as "sha256:<hex>" in each asset object
+get_small_checksum() {
+    local version="$1"
+    local filename="$2"
+    local api_data
+    local digest
+    local filename_pattern
+
+    api_data=$(wget -qO- "${SMALL_RELEASES_API}/tags/v${version}" 2>/dev/null) || return 1
+
+    filename_pattern=$(printf '%s\n' "$filename" | sed 's/[][\\/.*^$]/\\&/g')
+
+    # Extract digest for the matching asset using the exact asset name line.
+    # In pretty-printed JSON, "name" and "digest" are on separate lines within the same asset object.
+    digest=$(printf '%s\n' "$api_data" | sed -n "/\"name\"[[:space:]]*:[[:space:]]*\"${filename_pattern}\"/,/\"digest\"/{
+        /\"digest\"[[:space:]]*:[[:space:]]*\"sha256:/{
+            s/.*\"sha256:\([0-9a-f]*\)\".*/\1/p
+            q
+        }
+    }")
+
+    if [ -z "$digest" ]; then
+        return 1
+    fi
+
+    echo "$digest"
+}
 
 # Check if architecture is supported by small binaries
 is_arch_supported_by_small() {
@@ -58,12 +144,24 @@ download_tailscale_official() {
     log_info "Downloading Tailscale v${version} for ${arch} (official)..."
     log_info "URL: $url"
 
+    local expected_checksum
+    expected_checksum=$(get_official_checksum "$url") || {
+        log_warn "Could not fetch checksum from ${url}.sha256"
+    }
+
     local wget_progress
     wget_progress=$(get_wget_progress_option)
     if ! wget "$wget_progress" -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
         rm -f "$tarball"
         return 1
+    fi
+
+    if [ -n "$expected_checksum" ]; then
+        if ! verify_checksum "$tarball" "$expected_checksum"; then
+            rm -f "$tarball"
+            return 1
+        fi
     fi
 
     log_info "Extracting..."
@@ -113,12 +211,24 @@ download_tailscale_small() {
     log_info "Downloading Tailscale v${version} for ${arch} (small/compressed)..."
     log_info "URL: $url"
 
+    local expected_checksum
+    expected_checksum=$(get_small_checksum "$version" "$filename") || {
+        log_warn "Could not fetch checksum from GitHub API"
+    }
+
     local wget_progress
     wget_progress=$(get_wget_progress_option)
     if ! wget "$wget_progress" -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
         rm -f "$tarball"
         return 1
+    fi
+
+    if [ -n "$expected_checksum" ]; then
+        if ! verify_checksum "$tarball" "$expected_checksum"; then
+            rm -f "$tarball"
+            return 1
+        fi
     fi
 
     log_info "Extracting..."

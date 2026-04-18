@@ -2385,6 +2385,161 @@ run_test 'migrate_config migrates old tun_mode to net_mode' test_migrate_config_
 run_test 'migrate_config preserves existing net_mode value' test_migrate_config_preserves_new_key
 run_test 'migrate_config succeeds without uci command' test_migrate_config_no_uci_graceful
 run_test 'migrate_config succeeds without old tun_mode key' test_migrate_config_no_old_key
+test_compute_sha256() {
+    new_script checksum-compute.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+echo "hello world" > "$TEST_DIR/testfile"
+expected=\$(sha256sum "$TEST_DIR/testfile" | awk '{print \$1}')
+actual=\$(compute_sha256 "$TEST_DIR/testfile")
+[ "\$expected" = "\$actual" ] || { echo "hash mismatch: expected=\$expected actual=\$actual"; exit 1; }
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_verify_checksum_match() {
+    new_script checksum-verify-ok.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+echo "test data" > "$TEST_DIR/testfile"
+hash=\$(compute_sha256 "$TEST_DIR/testfile")
+verify_checksum "$TEST_DIR/testfile" "\$hash"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_verify_checksum_mismatch() {
+    new_script checksum-verify-fail.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+echo "test data" > "$TEST_DIR/testfile"
+bad_hash="0000000000000000000000000000000000000000000000000000000000000000"
+if verify_checksum "$TEST_DIR/testfile" "\$bad_hash" 2>/dev/null; then
+    echo "should have failed"
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_verify_checksum_no_tools() {
+    new_script checksum-verify-skip.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+# Override compute_sha256 to simulate missing tools
+compute_sha256() { return 1; }
+
+echo "test data" > "$TEST_DIR/testfile"
+# Should return 0 (skip) when no tools available
+verify_checksum "$TEST_DIR/testfile" "anything" 2>/dev/null
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_get_official_checksum_format() {
+    new_script checksum-official-format.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+# Valid 64-char hex
+wget() { echo "a1cba18826b1f91cb25ef7f5b8259b5258339b42db7867af9269e21829ea78cc"; }
+result=\$(get_official_checksum "http://example.com/test.tgz")
+[ "\$result" = "a1cba18826b1f91cb25ef7f5b8259b5258339b42db7867af9269e21829ea78cc" ] || { echo "valid hash rejected"; exit 1; }
+
+# Invalid format (too short)
+wget() { echo "abc123"; }
+if get_official_checksum "http://example.com/test.tgz" 2>/dev/null; then
+    echo "invalid hash accepted"
+    exit 1
+fi
+
+# Invalid format (non-hex)
+wget() { echo "g1cba18826b1f91cb25ef7f5b8259b5258339b42db7867af9269e21829ea78cc"; }
+if get_official_checksum "http://example.com/test.tgz" 2>/dev/null; then
+    echo "non-hex hash accepted"
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_get_small_checksum_parse() {
+    new_script checksum-small-parse.sh <<'OUTER'
+#!/bin/sh
+set -eu
+OUTER
+
+    cat >> "$LAST_SCRIPT" <<EOF
+$(source_manager)
+SMALL_RELEASES_API="file://"
+EOF
+
+    cat >> "$LAST_SCRIPT" <<'OUTER'
+# Create fake GitHub API response (pretty-printed JSON)
+cat > "$TEST_DIR/github-api.json" <<'APIJSON'
+{
+  "tag_name": "v1.96.4",
+  "assets": [
+    {
+      "name": "tailscale-small_1x96x4_amd64xtgz",
+      "size": 10484696,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "name": "tailscale-small_1.96.4_amd64.tgz",
+      "size": 10484696,
+      "digest": "sha256:be3ee2b34c609b77e51c04cc1044054f7d7153749df0d25a24d4b54456623395"
+    },
+    {
+      "name": "tailscale-small_1.96.4_arm.tgz",
+      "size": 7500000,
+      "digest": "sha256:3b480915d85bc9990f97e3babecccbd45b09b32ab09577e4eca76ef435aae10e"
+    }
+  ]
+}
+APIJSON
+
+# Override wget to return our fake JSON
+wget() {
+    cat "$TEST_DIR/github-api.json"
+}
+
+result=$(get_small_checksum "1.96.4" "tailscale-small_1.96.4_amd64.tgz")
+[ "$result" = "be3ee2b34c609b77e51c04cc1044054f7d7153749df0d25a24d4b54456623395" ] || { echo "amd64 hash mismatch: $result"; exit 1; }
+
+result=$(get_small_checksum "1.96.4" "tailscale-small_1.96.4_arm.tgz")
+[ "$result" = "3b480915d85bc9990f97e3babecccbd45b09b32ab09577e4eca76ef435aae10e" ] || { echo "arm hash mismatch: $result"; exit 1; }
+
+# Non-existent file should fail
+if get_small_checksum "1.96.4" "tailscale-small_1.96.4_mips.tgz" 2>/dev/null; then
+    echo "non-existent file should fail"
+    exit 1
+fi
+OUTER
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 run_test 'migrate_config is idempotent across multiple calls' test_migrate_config_idempotent
+run_test 'compute_sha256 returns correct hash' test_compute_sha256
+run_test 'verify_checksum accepts matching hash' test_verify_checksum_match
+run_test 'verify_checksum rejects mismatched hash' test_verify_checksum_mismatch
+run_test 'verify_checksum skips when no tools available' test_verify_checksum_no_tools
+run_test 'get_official_checksum validates hex format' test_get_official_checksum_format
+run_test 'get_small_checksum parses GitHub API JSON' test_get_small_checksum_parse
 
 printf '1..%s\n' "$TEST_INDEX"
