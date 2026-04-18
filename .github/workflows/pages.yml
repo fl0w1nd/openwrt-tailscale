@@ -7,8 +7,6 @@ on:
     paths:
       - '.github/workflows/pages.yml'
       - 'docs/**'
-      - 'scripts/generate-changelog.sh'
-      - 'tailscale-manager.sh'
   workflow_dispatch:
 
 permissions:
@@ -27,8 +25,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -43,9 +39,6 @@ jobs:
       - name: Install dependencies
         working-directory: docs
         run: pnpm install --frozen-lockfile
-
-      - name: Generate changelog
-        run: ./scripts/generate-changelog.sh
 
       - name: Build VitePress site
         working-directory: docs
