@@ -4,84 +4,75 @@ All notable changes to the tailscale-manager script are documented here. Version
 
 ## v4.0.4 (2026-04-10)
 
-- fix: correct official binary size references
-- fix(version): select latest downloads by architecture
-- fix(update): only mark managed sync after success
-- fix(luci): preserve script path during self-update
+- Fix incorrect official binary size display
+- Fix latest version selection on multi-architecture setups
+- Fix script path lost after self-update
+- Managed file sync no longer marked as done when it actually failed
 
 ## v4.0.3 (2026-04-10)
 
-- feat(luci): redesign maintenance page with form.Map and separated update controls
-- feat(luci): add log viewer tab and fix UI copy text
-- feat: make dependency checks non-blocking with per-package install
+- Redesign LuCI maintenance page with separated update controls for clarity
+- Add log viewer tab in LuCI
+- Dependency checks are now non-blocking with per-package installation
 
 ## v4.0.2 (2026-04-10)
 
-- refactor: clean up runtime structure and unify TUN terminology (#12)
+- Clean up runtime directory structure and unify TUN-related terminology
 
 ## v4.0.1 (2026-04-09)
 
-- fix(luci): streamline management pages and preserve managed files (#11)
+- Streamline LuCI management pages and fix managed files being overwritten after operations
 
 ## v4.0.0 (2026-04-09)
 
-- refactor: migrate LuCI to rpcd exec bridge (#10)
-- refactor: modularize tailscale-manager runtime libraries (#9)
-- fix(luci): improve management pages and version handling (#8)
+- Migrate LuCI backend to rpcd exec bridge, removing direct controller calls
+- Modularize core script into separate runtime libraries
+- Fix various LuCI version display and management page issues
 
 ## v3.1.0 (2026-04-09)
 
-- feat: add LuCI management interface (#7)
-- test: add shell CI guardrails
-- fix: keep managed tailscale scripts in sync
+- Add LuCI web management interface for status viewing, start/stop control, install/uninstall, and more
+- Add shell CI checks
+- Fix managed script synchronization issues
 
 ## v3.0.2 (2026-03-11)
 
-- feat: add proxy listen scope prompt in network mode settings
-- feat: add configurable proxy listen scope for userspace mode
+- Allow configuring proxy listen scope (local only / all interfaces) in userspace networking mode
 
 ## v3.0.1 (2026-03-11)
 
-- feat: add SOCKS5 and HTTP proxy listeners for userspace networking mode
+- Add SOCKS5 and HTTP proxy listeners for userspace networking mode
 
 ## v3.0.0 (2026-03-11)
 
-- feat(tailscale-manager): improve service startup verification and status reporting
-- refactor: refactor managed script syncing
-- feat(tailscale-manager): add support for userspace networking mode
+- Add userspace networking mode for environments without kernel TUN support
+- Improve service startup detection and status reporting
+- Refactor managed script synchronization logic
 
 ## v2.3.2 (2026-03-11)
 
-- chore(script): delete version comment
-- feat: add self-update functionality to the script with optional force check
-
-## v2.3.1 (2026-03-08)
-
-- Version bump
+- Add script self-update functionality with manual check and force update options
 
 ## v2.3.0 (2026-03-08)
 
-- Version bump
+- Internal version adjustment, no user-facing changes
 
 ## v2.2.1 (2026-01-28)
 
-- feat: add tailscale auto-update configuration and management to the script
-- fix: use background process timeout for update check
-- fix: add timeout for update check to prevent script hanging
-- fix: Prevent script exit on failed update check in interactive menu by ignoring its return value.
+- Add Tailscale auto-update configuration management
+- Fix update checks potentially causing the script to hang
 
 ## v2.2.0 (2026-01-20)
 
-- feat(script): add restart option to tailscale-manager menu and handler
-- fix: dependency check for fresh install
-- feat: use softfloat for mips and add version downgrade option
-- fix: Improve MIPS endianness detection and enhance wget compatibility for BusyBox environments.
-- feat: Add subnet routing configuration and removal for OpenWrt, managing network interface and firewall rules.
+- Add subnet route configuration and removal with automatic network interface and firewall rule management
+- Add restart option to the menu
+- Default to softfloat on MIPS and add version downgrade support
+- Improve MIPS endianness detection and wget compatibility in BusyBox environments
 
 ## v2.1.0 (2025-12-31)
 
-- Version bump
+- Internal version adjustment, no user-facing changes
 
 ## v2.0.0 (2025-12-24)
 
-- first commit
+- Initial release

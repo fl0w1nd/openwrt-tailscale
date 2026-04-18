@@ -4,84 +4,75 @@ tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailsc
 
 ## v4.0.4 (2026-04-10)
 
-- fix: correct official binary size references
-- fix(version): select latest downloads by architecture
-- fix(update): only mark managed sync after success
-- fix(luci): preserve script path during self-update
+- 修复官方二进制体积显示不正确的问题
+- 修复多架构环境下未正确选择最新版本的问题
+- 修复脚本自更新后路径丢失的问题
+- 托管文件同步失败时不再错误地标记为已完成
 
 ## v4.0.3 (2026-04-10)
 
-- feat(luci): redesign maintenance page with form.Map and separated update controls
-- feat(luci): add log viewer tab and fix UI copy text
-- feat: make dependency checks non-blocking with per-package install
+- LuCI 维护页面全面重构，更新操作独立分区，操作更清晰
+- 新增日志查看标签页
+- 依赖检查改为非阻塞方式，逐包安装，避免整体卡住
 
 ## v4.0.2 (2026-04-10)
 
-- refactor: clean up runtime structure and unify TUN terminology (#12)
+- 整理运行时目录结构，统一 TUN 相关术语和路径
 
 ## v4.0.1 (2026-04-09)
 
-- fix(luci): streamline management pages and preserve managed files (#11)
+- 精简 LuCI 管理页面，修复托管文件在操作后被覆盖的问题
 
 ## v4.0.0 (2026-04-09)
 
-- refactor: migrate LuCI to rpcd exec bridge (#10)
-- refactor: modularize tailscale-manager runtime libraries (#9)
-- fix(luci): improve management pages and version handling (#8)
+- LuCI 后端迁移至 rpcd exec 桥接方式，不再依赖 controller 直接调用
+- 核心脚本模块化重构，运行时库拆分为独立文件
+- 修复 LuCI 版本显示和管理页面的多个问题
 
 ## v3.1.0 (2026-04-09)
 
-- feat: add LuCI management interface (#7)
-- test: add shell CI guardrails
-- fix: keep managed tailscale scripts in sync
+- 新增 LuCI 图形管理界面，支持状态查看、启停控制、安装卸载等操作
+- 新增 shell CI 检查
+- 修复托管脚本同步问题
 
 ## v3.0.2 (2026-03-11)
 
-- feat: add proxy listen scope prompt in network mode settings
-- feat: add configurable proxy listen scope for userspace mode
+- userspace 网络模式下支持配置代理监听范围（仅本地 / 全局）
 
 ## v3.0.1 (2026-03-11)
 
-- feat: add SOCKS5 and HTTP proxy listeners for userspace networking mode
+- 新增 SOCKS5 和 HTTP 代理监听，适用于 userspace 网络模式
 
 ## v3.0.0 (2026-03-11)
 
-- feat(tailscale-manager): improve service startup verification and status reporting
-- refactor: refactor managed script syncing
-- feat(tailscale-manager): add support for userspace networking mode
+- 新增 userspace 网络模式支持，适用于无内核 TUN 的环境
+- 改进服务启动检测和状态输出
+- 重构托管脚本同步逻辑
 
 ## v2.3.2 (2026-03-11)
 
-- chore(script): delete version comment
-- feat: add self-update functionality to the script with optional force check
-
-## v2.3.1 (2026-03-08)
-
-- Version bump
+- 新增脚本自更新功能，支持手动检查和强制更新
 
 ## v2.3.0 (2026-03-08)
 
-- Version bump
+- 内部版本调整，无面向用户的变更
 
 ## v2.2.1 (2026-01-28)
 
-- feat: add tailscale auto-update configuration and management to the script
-- fix: use background process timeout for update check
-- fix: add timeout for update check to prevent script hanging
-- fix: Prevent script exit on failed update check in interactive menu by ignoring its return value.
+- 新增 Tailscale 自动更新配置管理
+- 修复更新检查可能导致脚本挂起的问题
 
 ## v2.2.0 (2026-01-20)
 
-- feat(script): add restart option to tailscale-manager menu and handler
-- fix: dependency check for fresh install
-- feat: use softfloat for mips and add version downgrade option
-- fix: Improve MIPS endianness detection and enhance wget compatibility for BusyBox environments.
-- feat: Add subnet routing configuration and removal for OpenWrt, managing network interface and firewall rules.
+- 新增子网路由配置和移除功能，自动管理网络接口和防火墙规则
+- 新增菜单中的重启选项
+- MIPS 架构默认使用 softfloat，并支持版本降级
+- 改进 MIPS 字节序检测和 BusyBox 环境下的 wget 兼容性
 
 ## v2.1.0 (2025-12-31)
 
-- Version bump
+- 内部版本调整，无面向用户的变更
 
 ## v2.0.0 (2025-12-24)
 
-- first commit
+- 首次发布
