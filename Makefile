@@ -60,7 +60,7 @@ check-static:
 	done
 	@TAILSCALE_MANAGER_SOURCE_ONLY=1 sh -c '. ./tailscale-manager.sh; \
 		for f in "$$LUCI_RPC_URL" "$$LUCI_MENU_URL" "$$LUCI_ACL_URL"; do \
-			rel=$${f#$$RAW_BASE_URL/}; \
+			rel=$${f#$$REPO_BASE_URL/}; \
 			[ -f "$$rel" ] || { printf "URL mismatch: %%s\n" "$$rel"; exit 1; }; \
 		done' 2>/dev/null
 

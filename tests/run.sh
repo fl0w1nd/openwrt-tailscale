@@ -26,6 +26,7 @@ for module in $MODULES; do
         printf 'ERROR: module file not found: %s\n' "$module_file" >&2
         exit 1
     fi
+    # shellcheck source=/dev/null
     . "$module_file"
     runner="run_${module}_tests"
     if ! command -v "$runner" >/dev/null 2>&1; then
