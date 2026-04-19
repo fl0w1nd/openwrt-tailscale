@@ -289,35 +289,7 @@ call)
             print_code_stdout "$code" "$stdout"
             ;;
         upgrade_scripts)
-            # Extract the script version and repository base URL without
-            # sourcing the manager entry script.
-            _rpc_version=$(_read_manager_var VERSION)
-            _rpc_repo_base_url=$(_get_repo_base_url)
-            _rpc_script_url="${_rpc_repo_base_url}/tailscale-manager.sh"
-            start_background_task upgrade-scripts sh -c '
-                TAILSCALE_MANAGER_SCRIPT_PATH="$1"
-                VERSION="$2"
-                OPENWRT_TAILSCALE_REPO_BASE_URL="$3"
-                MANAGER_SCRIPT_URL="$4"
-                _lib_dir="$5"
-                export TAILSCALE_MANAGER_SCRIPT_PATH VERSION
-                export OPENWRT_TAILSCALE_REPO_BASE_URL MANAGER_SCRIPT_URL
-
-                log_info()  { echo "[INFO] $1"; }
-                log_error() { echo "[ERROR] $1" >&2; }
-                log_warn()  { echo "[WARN] $1"; }
-
-                . "$_lib_dir/common.sh" 2>/dev/null || true
-                . "$_lib_dir/version.sh" || exit 1
-                . "$_lib_dir/selfupdate.sh" || exit 1
-
-                remote=$(get_remote_script_version) || exit 1
-                if version_lt "$VERSION" "$remote"; then
-                    do_self_update sync-scripts
-                else
-                    echo "Already up to date"
-                fi
-            ' sh "$MANAGER_BIN" "$_rpc_version" "$_rpc_repo_base_url" "$_rpc_script_url" "$LIB_DIR"
+            start_background_task upgrade-scripts "$MANAGER_BIN" self-update --non-interactive
             ;;
         get_logs)
             manager_log=""

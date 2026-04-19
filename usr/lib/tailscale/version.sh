@@ -234,13 +234,13 @@ version_lt() {
     fi
 }
 
-# Get remote script version from the project repository
+# Get remote script version from the management bundle metadata
 get_remote_script_version() {
     local remote_version
     local tmp_file="/tmp/.script-version-check.$$"
     local timeout_secs=5
 
-    (wget -qO- "$MANAGER_SCRIPT_URL" 2>/dev/null | head -50 > "$tmp_file") &
+    (wget -qO- "$MGMT_VERSION_URL" 2>/dev/null | head -20 > "$tmp_file") &
     local pid=$!
 
     local count=0
@@ -257,7 +257,7 @@ get_remote_script_version() {
     wait "$pid" 2>/dev/null
 
     if [ -f "$tmp_file" ]; then
-        remote_version=$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' "$tmp_file" | head -1)
+        remote_version=$(sed -n '1p' "$tmp_file")
         rm -f "$tmp_file"
     fi
 

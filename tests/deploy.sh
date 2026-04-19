@@ -510,7 +510,7 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_script_auto_update_syncs_managed_files_when_version_matches() {
+test_script_auto_update_runs_manager_self_update() {
     new_script script-auto-update-sync.sh <<'EOF'
 #!/bin/sh
 set -eu
@@ -529,23 +529,7 @@ LIB
 
 cat > "$MANAGER_BIN" <<'MANAGER'
 #!/bin/sh
-VERSION="4.0.4"
-
-get_remote_script_version() {
-    echo "4.0.4"
-}
-
-version_lt() {
-    [ "$1" != "$2" ]
-}
-
-managed_sync_is_current() {
-    return 1
-}
-
-sync_managed_scripts() {
-    echo sync >> "$CALLS"
-}
+printf '%s\n' "$*" >> "$CALLS"
 MANAGER
 chmod +x "$MANAGER_BIN"
 
@@ -554,13 +538,13 @@ TAILSCALE_FUNCTIONS_PATH="$FUNCTIONS_LIB" \
 TAILSCALE_SCRIPT_UPDATE_LOG_FILE="$LOG_FILE" \
     CALLS="$CALLS" sh "$REPO_ROOT/usr/bin/tailscale-script-update"
 
-grep -Fq 'sync' "$CALLS" || {
-    echo "script auto-update should sync managed files when marker is stale"
+grep -Fq 'self-update --non-interactive' "$CALLS" || {
+    echo "script auto-update should call manager self-update"
     exit 1
 }
 
-grep -Fq 'Managed files synced for v4.0.4' "$LOG_FILE" || {
-    echo "missing managed file sync log entry"
+grep -Fq 'Script update completed' "$LOG_FILE" || {
+    echo "missing script update completion log entry"
     exit 1
 }
 EOF
@@ -865,7 +849,7 @@ run_deploy_tests() {
     run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
     run_test 'uninstall removes overridden LuCI paths' test_uninstall_removes_overridden_luci_paths
     run_test 'sync-scripts writes marker only after full success' test_sync_managed_scripts_marks_version_only_after_full_success
-    run_test 'script auto-update syncs managed files when version matches' test_script_auto_update_syncs_managed_files_when_version_matches
+    run_test 'script auto-update runs manager self-update command' test_script_auto_update_runs_manager_self_update
     run_test 'all library functions are loadable via source' test_library_files_sourceable_independently
     run_test 'install_runtime_scripts installs all library files' test_install_runtime_scripts_installs_library_files
     run_test 'ensure_libraries bootstraps all runtime modules' test_ensure_libraries_bootstraps_all_modules

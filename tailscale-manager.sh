@@ -71,11 +71,17 @@ CONFIG_FILE="/etc/config/tailscale"
 INIT_SCRIPT="/etc/init.d/tailscale"
 CRON_SCRIPT="/usr/bin/tailscale-update"
 LOG_FILE="/var/log/tailscale-manager.log"
+MANAGER_BIN_PATH="${TAILSCALE_MANAGER_BIN_PATH:-/usr/bin/tailscale-manager}"
 
 # Project repository raw base URL
 DEFAULT_REPO_BASE_URL="https://raw.githubusercontent.com/${SMALL_REPO}/main"
 REPO_BASE_URL="${OPENWRT_TAILSCALE_REPO_BASE_URL:-$DEFAULT_REPO_BASE_URL}"
+DEFAULT_MGMT_BASE_URL="https://raw.githubusercontent.com/${SMALL_REPO}/mgmt"
+MGMT_BASE_URL="${OPENWRT_TAILSCALE_MGMT_BASE_URL:-$DEFAULT_MGMT_BASE_URL}"
 MANAGER_SCRIPT_URL="${REPO_BASE_URL}/tailscale-manager.sh"
+MGMT_VERSION_URL="${MGMT_BASE_URL}/latest/VERSION"
+MGMT_BUNDLE_URL="${MGMT_BASE_URL}/latest/tailscale-mgmt.tar.gz"
+MGMT_BUNDLE_SHA256_URL="${MGMT_BASE_URL}/latest/tailscale-mgmt.tar.gz.sha256"
 CONFIG_TEMPLATE_URL="${REPO_BASE_URL}/etc/config/tailscale"
 INIT_SCRIPT_URL="${REPO_BASE_URL}/etc/init.d/tailscale"
 UPDATE_SCRIPT_URL="${REPO_BASE_URL}/usr/bin/tailscale-update"
@@ -770,6 +776,7 @@ main() {
             ;;
         self-update)
             local rc=0
+            shift
             check_script_update "$@" || rc=$?
             case "$rc" in
                 0) ;;

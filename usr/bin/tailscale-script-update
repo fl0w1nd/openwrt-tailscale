@@ -31,32 +31,9 @@ fi
 
 log_msg "Checking for management script updates..."
 
-TAILSCALE_MANAGER_SOURCE_ONLY=1
-export TAILSCALE_MANAGER_SOURCE_ONLY
-# shellcheck source=/dev/null
-. "$TAILSCALE_MANAGER_BIN"
-
-remote=$(get_remote_script_version 2>/dev/null) || {
-    log_msg "Failed to check remote script version"
-    exit 1
-}
-
-if [ -z "$remote" ]; then
-    log_msg "Failed to determine remote script version"
-    exit 1
-fi
-
-if version_lt "$VERSION" "$remote"; then
-    log_msg "Script update available: v${VERSION} -> v${remote}"
-    do_self_update sync-scripts
+if "$TAILSCALE_MANAGER_BIN" self-update --non-interactive >> "$LOG_FILE" 2>&1; then
     log_msg "Script update completed"
-elif ! managed_sync_is_current; then
-    log_msg "Managed files out of sync for v${VERSION}, syncing"
-    sync_managed_scripts || {
-        log_msg "Managed file sync failed"
-        exit 1
-    }
-    log_msg "Managed files synced for v${VERSION}"
 else
-    log_msg "Management scripts already up to date (v${VERSION})"
+    log_msg "Script update failed"
+    exit 1
 fi

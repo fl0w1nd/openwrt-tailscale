@@ -309,9 +309,37 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_script_version_metadata_parsing() {
+    write_stub wget <<'EOF'
+#!/bin/sh
+case "$*" in
+    *'/mgmt/latest/VERSION'*)
+        printf '4.0.8\n'
+        ;;
+    *)
+        exit 1
+        ;;
+esac
+EOF
+
+    new_script manager-script-version.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+[ "\$MGMT_VERSION_URL" = "https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/mgmt/latest/VERSION" ]
+
+version=\$(get_remote_script_version)
+[ "\$version" = "4.0.8" ]
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 run_version_tests() {
     run_test 'validate_version_format accepts only numeric dotted versions' test_validate_version_format
     run_test 'version fetchers validate official and small API payloads' test_version_api_parsing
+    run_test 'script version metadata parsing uses mgmt VERSION file' test_script_version_metadata_parsing
     run_test 'official version listing parses package page options' test_list_official_versions_parsing
     run_test 'official latest version falls back to available arch build' test_official_latest_version_falls_back_to_available_arch_build
     run_test 'small latest version falls back to available arch build' test_small_latest_version_falls_back_to_available_arch_build

@@ -6,6 +6,8 @@
 #   COMMON_LIB_URL, COMMON_LIB_PATH, INIT_SCRIPT_URL, INIT_SCRIPT,
 #   UPDATE_SCRIPT_URL, CRON_SCRIPT,
 #   SCRIPT_UPDATE_SCRIPT_URL, SCRIPT_UPDATE_CRON_SCRIPT,
+#   MGMT_BUNDLE_URL, MGMT_BUNDLE_SHA256_URL,
+#   MANAGER_BIN_PATH,
 #   LUCI_VIEW_BASE_URL, LUCI_VIEW_DIR,
 #   LUCI_RPC_URL, LUCI_RPC_DEST,
 #   LUCI_MENU_URL, LUCI_MENU_DEST,
@@ -85,6 +87,130 @@ install_update_script() {
 install_script_update_script() {
     download_repo_file "$SCRIPT_UPDATE_SCRIPT_URL" "$SCRIPT_UPDATE_CRON_SCRIPT" 755 || return 1
     log_info "Installed script update script at ${SCRIPT_UPDATE_CRON_SCRIPT}"
+}
+
+deploy_management_bundle() {
+    local staging_root="$1"
+    local bundle_version="$2"
+    local stag_suffix=".bundle.$$"
+    local bak_suffix=".bak.$$"
+    local deploy_failed=0
+    local deployed=""
+    local entry src rel dest mode
+
+    [ -n "$staging_root" ] || {
+        log_error "Bundle staging directory is required"
+        return 1
+    }
+
+    [ -d "$staging_root" ] || {
+        log_error "Bundle staging directory not found: ${staging_root}"
+        return 1
+    }
+
+    local files="
+tailscale-manager.sh|${MANAGER_BIN_PATH:-/usr/bin/tailscale-manager}|755
+usr/lib/tailscale/common.sh|${COMMON_LIB_PATH}|644
+usr/lib/tailscale/jsonutil.sh|${LIB_DIR}/jsonutil.sh|644
+usr/lib/tailscale/version.sh|${LIB_DIR}/version.sh|644
+usr/lib/tailscale/download.sh|${LIB_DIR}/download.sh|644
+usr/lib/tailscale/firewall.sh|${LIB_DIR}/firewall.sh|644
+usr/lib/tailscale/deploy.sh|${LIB_DIR}/deploy.sh|644
+usr/lib/tailscale/selfupdate.sh|${LIB_DIR}/selfupdate.sh|644
+usr/lib/tailscale/commands.sh|${LIB_DIR}/commands.sh|644
+usr/lib/tailscale/menu.sh|${LIB_DIR}/menu.sh|644
+usr/lib/tailscale/json.sh|${LIB_DIR}/json.sh|644
+usr/bin/tailscale-update|${CRON_SCRIPT}|755
+usr/bin/tailscale-script-update|${SCRIPT_UPDATE_CRON_SCRIPT}|755
+etc/init.d/tailscale|${INIT_SCRIPT}|755
+luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js|${LUCI_VIEW_DIR}/config.js|644
+luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js|${LUCI_VIEW_DIR}/status.js|644
+luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js|${LUCI_VIEW_DIR}/maintenance.js|644
+luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/log.js|${LUCI_VIEW_DIR}/log.js|644
+luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale|${LUCI_RPC_DEST}|755
+luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json|${LUCI_MENU_DEST}|644
+luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json|${LUCI_ACL_DEST}|644
+"
+
+    for entry in $files; do
+        src="${entry%%|*}"
+        rel="${entry#*|}"
+        dest="${rel%%|*}"
+        mode="${entry##*|}"
+
+        [ -f "${staging_root}/${src}" ] || {
+            log_error "Management bundle missing file: ${src}"
+            return 1
+        }
+
+        mkdir -p "$(dirname "$dest")" || return 1
+        cp "${staging_root}/${src}" "${dest}${stag_suffix}" || {
+            rm -f "${dest}${stag_suffix}"
+            log_error "Failed to stage ${dest}"
+            return 1
+        }
+        chmod "$mode" "${dest}${stag_suffix}" 2>/dev/null || true
+    done
+
+    for entry in $files; do
+        rel="${entry#*|}"
+        dest="${rel%%|*}"
+        if [ -f "$dest" ] && ! cp -f "$dest" "${dest}${bak_suffix}" 2>/dev/null; then
+            for entry in $files; do
+                rel="${entry#*|}"
+                dest="${rel%%|*}"
+                rm -f "${dest}${stag_suffix}" "${dest}${bak_suffix}"
+            done
+            log_error "Management bundle backup failed for ${dest}"
+            return 1
+        fi
+    done
+
+    for entry in $files; do
+        rel="${entry#*|}"
+        dest="${rel%%|*}"
+        if mv -f "${dest}${stag_suffix}" "$dest" 2>/dev/null; then
+            deployed="${deployed} ${dest}"
+        else
+            deploy_failed=1
+            break
+        fi
+    done
+
+    if [ "$deploy_failed" = "1" ]; then
+        log_error "Management bundle deploy failed, restoring previous files"
+        for dest in $deployed; do
+            if [ -f "${dest}${bak_suffix}" ]; then
+                mv -f "${dest}${bak_suffix}" "$dest" 2>/dev/null || true
+            else
+                rm -f "$dest" 2>/dev/null || true
+            fi
+        done
+        for entry in $files; do
+            rel="${entry#*|}"
+            dest="${rel%%|*}"
+            rm -f "${dest}${stag_suffix}" "${dest}${bak_suffix}"
+        done
+        return 1
+    fi
+
+    for entry in $files; do
+        rel="${entry#*|}"
+        dest="${rel%%|*}"
+        rm -f "${dest}${bak_suffix}" "${dest}${stag_suffix}"
+    done
+
+    rm -f /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
+    if [ -x /etc/init.d/rpcd ]; then
+        /etc/init.d/rpcd reload 2>/dev/null || true
+    fi
+    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+
+    setup_cron || return 1
+
+    VERSION="$bundle_version" mark_managed_sync_version || return 1
+    log_info "Installed management bundle for v${bundle_version}"
+    return 0
 }
 
 get_managed_sync_version() {

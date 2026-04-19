@@ -1,0 +1,106 @@
+name: Publish Management Bundle
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tailscale-manager.sh'
+      - 'etc/init.d/tailscale'
+      - 'usr/bin/tailscale-update'
+      - 'usr/bin/tailscale-script-update'
+      - 'usr/lib/tailscale/**'
+      - 'luci-app-tailscale/**'
+      - '.github/workflows/publish-management-bundle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  detect-version-change:
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.detect.outputs.should_publish }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect VERSION change
+        id: detect
+        run: |
+          VERSION=$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' tailscale-manager.sh | head -1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PREV_VERSION=$(git show HEAD^:tailscale-manager.sh 2>/dev/null | sed -n 's/^VERSION="\([^"]*\)"/\1/p' | head -1)
+
+          if [ "$VERSION" = "$PREV_VERSION" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: detect-version-change
+    if: needs.detect-version-change.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Package management bundle
+        run: |
+          VERSION="${{ needs.detect-version-change.outputs.version }}"
+          mkdir -p out/latest "out/v${VERSION}"
+          tar czf out/latest/tailscale-mgmt.tar.gz \
+            tailscale-manager.sh \
+            etc/init.d/tailscale \
+            usr/bin/tailscale-update \
+            usr/bin/tailscale-script-update \
+            usr/lib/tailscale \
+            luci-app-tailscale/htdocs/luci-static/resources/view/tailscale \
+            luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale \
+            luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json \
+            luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+          cp out/latest/tailscale-mgmt.tar.gz "out/v${VERSION}/tailscale-mgmt.tar.gz"
+          sha256sum out/latest/tailscale-mgmt.tar.gz > out/latest/tailscale-mgmt.tar.gz.sha256
+          cp out/latest/tailscale-mgmt.tar.gz.sha256 "out/v${VERSION}/tailscale-mgmt.tar.gz.sha256"
+          printf '%s\n' "$VERSION" > out/latest/VERSION
+          cp out/latest/VERSION "out/v${VERSION}/VERSION"
+
+      - name: Checkout mgmt branch
+        uses: actions/checkout@v4
+        with:
+          ref: mgmt
+          path: mgmt-branch
+
+      - name: Update mgmt branch contents
+        run: |
+          VERSION="${{ needs.detect-version-change.outputs.version }}"
+          rm -rf mgmt-branch/latest "mgmt-branch/v${VERSION}"
+          mkdir -p mgmt-branch/latest "mgmt-branch/v${VERSION}"
+          cp out/latest/* mgmt-branch/latest/
+          cp "out/v${VERSION}"/* "mgmt-branch/v${VERSION}/"
+
+      - name: Commit and push mgmt branch
+        run: |
+          VERSION="${{ needs.detect-version-change.outputs.version }}"
+          git -C mgmt-branch add latest "v${VERSION}"
+          if git -C mgmt-branch diff --cached --quiet; then
+            exit 0
+          fi
+          git -C mgmt-branch -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore(mgmt): publish v${VERSION} bundle"
+          git -C mgmt-branch push origin mgmt

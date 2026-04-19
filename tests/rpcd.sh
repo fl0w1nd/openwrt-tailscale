@@ -148,7 +148,7 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
-test_rpcd_bridge_upgrade_scripts_uses_repo_base_url() {
+test_rpcd_bridge_upgrade_scripts_runs_manager_binary() {
     new_script rpcd-bridge-upgrade-scripts.sh <<'EOF'
 #!/bin/sh
 set -eu
@@ -156,44 +156,19 @@ set -eu
 BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 MANAGER="$TEST_DIR/tailscale-manager"
 export MANAGER_BIN="$MANAGER"
-export LIB_DIR="$TEST_DIR/libs"
 export TASK_DIR="$TEST_DIR/tasks"
-REPO_BASE_URL="https://mirror.example.test/openwrt-tailscale"
-
+export LIB_DIR="$TEST_DIR/libs"
 mkdir -p "$LIB_DIR"
 cp "$REPO_ROOT/usr/lib/tailscale/jsonutil.sh" "$LIB_DIR/jsonutil.sh"
 
 cat > "$MANAGER" <<'SCRIPT'
 #!/bin/sh
-VERSION="1.0.0"
-DEFAULT_REPO_BASE_URL="https://default.example.test/openwrt-tailscale"
+printf '%s\n' "$*" > "$TEST_DIR/manager-call"
+printf 'updated\n'
 SCRIPT
 chmod +x "$MANAGER"
 
-cat > "$LIB_DIR/common.sh" <<'SCRIPT'
-#!/bin/sh
-SCRIPT
-
-cat > "$LIB_DIR/version.sh" <<'SCRIPT'
-#!/bin/sh
-get_remote_script_version() {
-    printf '1.0.1\n'
-}
-version_lt() {
-    [ "$1" = "1.0.0" ] && [ "$2" = "1.0.1" ]
-}
-SCRIPT
-
-cat > "$LIB_DIR/selfupdate.sh" <<'SCRIPT'
-#!/bin/sh
-do_self_update() {
-    printf '%s\n' "$OPENWRT_TAILSCALE_REPO_BASE_URL" > "$TEST_DIR/repo-base-url"
-    printf '%s\n' "$MANAGER_SCRIPT_URL" > "$TEST_DIR/manager-script-url"
-    echo "updated"
-}
-SCRIPT
-
-start=$(OPENWRT_TAILSCALE_REPO_BASE_URL="$REPO_BASE_URL" sh "$BRIDGE" call upgrade_scripts)
+start=$(sh "$BRIDGE" call upgrade_scripts)
 printf '%s' "$start" | grep -Fq '"started":true'
 task=$(printf '%s' "$start" | sed -n 's/.*"task":"\([^"]*\)".*/\1/p')
 [ -n "$task" ]
@@ -203,8 +178,7 @@ status=$(printf '{"task":"%s"}' "$task" | sh "$BRIDGE" call get_task_status)
 printf '%s' "$status" | grep -Fq '"done":true'
 printf '%s' "$status" | grep -Fq '"code":0'
 printf '%s' "$status" | grep -Fq 'updated'
-[ "$(cat "$TEST_DIR/repo-base-url")" = "$REPO_BASE_URL" ]
-[ "$(cat "$TEST_DIR/manager-script-url")" = "${REPO_BASE_URL}/tailscale-manager.sh" ]
+grep -Fq 'self-update --non-interactive' "$TEST_DIR/manager-call"
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
@@ -217,5 +191,5 @@ run_rpcd_tests() {
     run_test 'rpcd exec bridge passes install params' test_rpcd_bridge_install_passes_params
     run_test 'rpcd exec bridge reports async task status' test_rpcd_bridge_reports_task_status
     run_test 'rpcd exec bridge keeps multiline output valid JSON' test_rpcd_bridge_multiline_output_stays_valid_json
-    run_test 'rpcd exec bridge upgrade_scripts uses repo base url' test_rpcd_bridge_upgrade_scripts_uses_repo_base_url
+    run_test 'rpcd exec bridge runs manager self-update command' test_rpcd_bridge_upgrade_scripts_runs_manager_binary
 }

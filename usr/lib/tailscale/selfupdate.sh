@@ -3,13 +3,100 @@
 # Sourced by tailscale-manager entry script.
 #
 # Required variables (set by entry script before sourcing):
-#   VERSION, MANAGER_SCRIPT_URL
+#   VERSION, MGMT_BUNDLE_URL, MGMT_BUNDLE_SHA256_URL
 #
 # Required functions:
 #   log_info(), log_error(), log_warn()
 #   version_lt() (from version.sh)
-#   download_repo_file() (from entry script)
-#   sync_managed_scripts(), managed_sync_is_current() (from deploy.sh)
+#   deploy_management_bundle(), managed_sync_is_current() (from deploy.sh)
+
+download_management_bundle_file() {
+    local url="$1"
+    local dest="$2"
+
+    if ! wget -qO "$dest" "$url" 2>/dev/null; then
+        rm -f "$dest"
+        log_error "Failed to download ${url}"
+        return 1
+    fi
+
+    [ -s "$dest" ] || {
+        rm -f "$dest"
+        log_error "Downloaded bundle file is empty: ${url}"
+        return 1
+    }
+
+    return 0
+}
+
+verify_management_bundle_checksum() {
+    local bundle_path="$1"
+    local checksum_path="$2"
+    local expected=""
+    local actual=""
+
+    expected=$(sed -n 's/^\([0-9a-fA-F][0-9a-fA-F]*\).*/\1/p' "$checksum_path" | head -1)
+    [ -n "$expected" ] || {
+        log_error "Failed to parse bundle checksum"
+        return 1
+    }
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$bundle_path" 2>/dev/null | sed -n 's/^\([0-9a-fA-F][0-9a-fA-F]*\).*/\1/p')
+    elif command -v openssl >/dev/null 2>&1; then
+        actual=$(openssl dgst -sha256 "$bundle_path" 2>/dev/null | sed -n 's/^.*= //p')
+    else
+        log_error "Neither sha256sum nor openssl is available"
+        return 1
+    fi
+
+    [ -n "$actual" ] || {
+        log_error "Failed to calculate bundle checksum"
+        return 1
+    }
+
+    if [ "$expected" != "$actual" ]; then
+        log_error "Management bundle checksum mismatch"
+        return 1
+    fi
+
+    return 0
+}
+
+validate_management_bundle() {
+    local staging_dir="$1"
+    local bundle_version=""
+    local required_files="
+tailscale-manager.sh
+usr/lib/tailscale/common.sh
+usr/lib/tailscale/version.sh
+usr/lib/tailscale/deploy.sh
+usr/lib/tailscale/selfupdate.sh
+usr/lib/tailscale/jsonutil.sh
+usr/bin/tailscale-update
+usr/bin/tailscale-script-update
+etc/init.d/tailscale
+luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale
+luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js
+"
+    local file
+
+    for file in $required_files; do
+        [ -f "${staging_dir}/${file}" ] || {
+            log_error "Management bundle missing required file: ${file}"
+            return 1
+        }
+    done
+
+    bundle_version=$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' "${staging_dir}/tailscale-manager.sh" | head -1)
+    [ -n "$bundle_version" ] || {
+        log_error "Management bundle is missing a valid VERSION"
+        return 1
+    }
+
+    printf '%s\n' "$bundle_version"
+    return 0
+}
 
 sync_current_managed_files() {
     if managed_sync_is_current; then
@@ -29,7 +116,14 @@ sync_current_managed_files() {
 #   20 update check failed
 #   30 update available but skipped by user
 check_script_update() {
-    [ -t 0 ] || return 10
+    local non_interactive=0
+    case " ${*:-} " in
+        *" --non-interactive "*) non_interactive=1 ;;
+    esac
+
+    if [ "$non_interactive" -ne 1 ]; then
+        [ -t 0 ] || return 10
+    fi
 
     echo "[INFO] Checking for script updates..."
 
@@ -40,6 +134,11 @@ check_script_update() {
     }
 
     if version_lt "$VERSION" "$remote_version"; then
+        if [ "$non_interactive" -eq 1 ]; then
+            do_self_update "$@"
+            return $?
+        fi
+
         echo ""
         echo "============================================="
         echo "  New script version available!"
@@ -77,55 +176,59 @@ check_script_update() {
     esac
 }
 
-# Perform script self-update: download, replace, re-exec
+# Perform script self-update via management bundle deploy
 do_self_update() {
-    local script_path
-    local tmp_script="/tmp/tailscale-manager.sh.new"
-
-    script_path="${TAILSCALE_MANAGER_SCRIPT_PATH:-}"
-    if [ -z "$script_path" ]; then
-        script_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
-    fi
+    local tmp_bundle="/tmp/tailscale-mgmt.tar.gz.$$"
+    local tmp_checksum="/tmp/tailscale-mgmt.tar.gz.sha256.$$"
+    local staging_dir="/tmp/tailscale-mgmt-staging.$$"
+    local bundle_version=""
 
     echo ""
-    log_info "Downloading latest script..."
+    log_info "Downloading management bundle..."
 
-    if ! wget -qO "$tmp_script" "$MANAGER_SCRIPT_URL" 2>&1; then
-        log_error "Failed to download script update"
-        rm -f "$tmp_script"
+    download_management_bundle_file "$MGMT_BUNDLE_URL" "$tmp_bundle" || return 1
+    download_management_bundle_file "$MGMT_BUNDLE_SHA256_URL" "$tmp_checksum" || {
+        rm -f "$tmp_bundle"
+        return 1
+    }
+
+    verify_management_bundle_checksum "$tmp_bundle" "$tmp_checksum" || {
+        rm -f "$tmp_bundle" "$tmp_checksum"
+        return 1
+    }
+
+    mkdir -p "$staging_dir" || {
+        rm -f "$tmp_bundle" "$tmp_checksum"
+        log_error "Failed to create management bundle staging directory"
+        return 1
+    }
+
+    if ! tar xzf "$tmp_bundle" -C "$staging_dir" 2>/dev/null; then
+        rm -rf "$staging_dir"
+        rm -f "$tmp_bundle" "$tmp_checksum"
+        log_error "Failed to unpack management bundle"
         return 1
     fi
 
-    if ! grep -q '^VERSION=' "$tmp_script"; then
-        log_error "Downloaded script appears invalid"
-        rm -f "$tmp_script"
+    bundle_version=$(validate_management_bundle "$staging_dir") || {
+        rm -rf "$staging_dir"
+        rm -f "$tmp_bundle" "$tmp_checksum"
         return 1
-    fi
+    }
 
-    cp "$script_path" "${script_path}.bak" 2>/dev/null || true
-
-    if ! mv "$tmp_script" "$script_path"; then
-        log_error "Failed to install script update"
-        rm -f "$tmp_script"
+    deploy_management_bundle "$staging_dir" "$bundle_version" || {
+        rm -rf "$staging_dir"
+        rm -f "$tmp_bundle" "$tmp_checksum"
         return 1
-    fi
+    }
 
-    chmod +x "$script_path"
+    rm -rf "$staging_dir"
+    rm -f "$tmp_bundle" "$tmp_checksum"
 
-    local new_version
-    new_version=$(grep '^VERSION=' "$script_path" | sed 's/VERSION="\([^"]*\)"/\1/')
-    if ! "$script_path" sync-scripts; then
-        log_warn "Script updated, but failed to sync managed files"
-    fi
-    log_info "Script updated to v${new_version}"
+    log_info "Script updated to v${bundle_version}"
     echo ""
     echo "============================================="
     echo "  Update complete!"
     echo "============================================="
     echo ""
-    echo "  The script will now restart..."
-    echo ""
-    sleep 2
-
-    exec "$script_path" "$@"
 }
