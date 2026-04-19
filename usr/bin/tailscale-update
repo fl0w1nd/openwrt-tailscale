@@ -15,8 +15,40 @@ log_msg() {
     logger -t "$LOG_TAG" "$1"
 }
 
-OFFICIAL_API_URL="https://pkgs.tailscale.com/stable/?mode=json"
-SMALL_API_URL="https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest"
+normalize_base_url() {
+    printf '%s' "${1%/}"
+}
+
+derive_small_api_base_url() {
+    local base_url="$1"
+    local scheme host path
+
+    scheme=$(printf '%s' "$base_url" | sed -n 's#^\([A-Za-z][A-Za-z0-9+.-]*\)://.*#\1#p')
+    host=$(printf '%s' "$base_url" | sed -n 's#^[A-Za-z][A-Za-z0-9+.-]*://\([^/]*\)/.*#\1#p')
+    path=$(printf '%s' "$base_url" | sed -n 's#^[A-Za-z][A-Za-z0-9+.-]*://[^/]*/\(.*\)$#\1#p')
+
+    [ -n "$scheme" ] || return 1
+    [ -n "$host" ] || return 1
+    [ -n "$path" ] || return 1
+
+    case "$host" in
+        github.com)
+            printf '%s://api.github.com/repos/%s' "$scheme" "$path"
+            ;;
+        *)
+            printf '%s://%s/api/v3/repos/%s' "$scheme" "$host" "$path"
+            ;;
+    esac
+}
+
+DEFAULT_TAILSCALE_OFFICIAL_BASE_URL="https://pkgs.tailscale.com/stable"
+TAILSCALE_OFFICIAL_BASE_URL=$(normalize_base_url "${TAILSCALE_OFFICIAL_BASE_URL:-$DEFAULT_TAILSCALE_OFFICIAL_BASE_URL}")
+OFFICIAL_API_URL="${TAILSCALE_OFFICIAL_BASE_URL}/?mode=json"
+
+DEFAULT_TAILSCALE_SMALL_BASE_URL="https://github.com/fl0w1nd/openwrt-tailscale"
+TAILSCALE_SMALL_BASE_URL=$(normalize_base_url "${TAILSCALE_SMALL_BASE_URL:-$DEFAULT_TAILSCALE_SMALL_BASE_URL}")
+SMALL_API_BASE_URL=$(derive_small_api_base_url "$TAILSCALE_SMALL_BASE_URL")
+SMALL_API_URL="${SMALL_API_BASE_URL}/releases/latest"
 
 # Source shared library for validate_version_format
 # shellcheck source=/dev/null

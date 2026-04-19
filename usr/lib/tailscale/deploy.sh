@@ -11,7 +11,7 @@
 #   LUCI_MENU_URL, LUCI_MENU_DEST,
 #   LUCI_ACL_URL, LUCI_ACL_DEST,
 #   CONFIG_TEMPLATE_URL, CONFIG_FILE,
-#   RAW_BASE_URL, LIB_DIR
+#   REPO_BASE_URL, LIB_DIR
 #   VERSION, MANAGED_SYNC_VERSION_FILE
 #   MODULE_LIBS (optional; defaults to the standard module set)
 #
@@ -118,11 +118,10 @@ mark_managed_sync_version() {
 install_runtime_scripts() {
     install_common_lib || return 1
 
-    local lib_base_url="${LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
     local module_libs="${MODULE_LIBS:-version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh}"
     local lib
     for lib in $module_libs; do
-        download_repo_file "${lib_base_url}/${lib}" "${LIB_DIR}/${lib}" 644 || return 1
+        download_repo_file "${REPO_BASE_URL}/usr/lib/tailscale/${lib}" "${LIB_DIR}/${lib}" 644 || return 1
     done
 
     install_init_script || return 1

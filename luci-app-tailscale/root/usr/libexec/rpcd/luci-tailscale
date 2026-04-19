@@ -4,6 +4,7 @@
 
 MANAGER_BIN="/usr/bin/tailscale-manager"
 TASK_DIR="/tmp/tailscale-rpc-tasks"
+LIB_DIR="/usr/lib/tailscale"
 
 json_escape_inline() {
     printf '%s' "$1" | awk 'BEGIN { ORS="" } {
@@ -27,6 +28,53 @@ json_array_from_lines_inline() {
         first=0
     done
     printf ']'
+}
+
+# Lightweight logging for sourced library modules.
+# Libraries call log_info/log_error/log_warn; provide minimal implementations
+# that write to a dedicated log file without pulling in the full entry script.
+_RPC_LOG_FILE="/var/log/tailscale-manager.log"
+
+log_info() {
+    echo "[INFO] $1"
+    logger -t "tailscale-manager" -p daemon.info "$1" 2>/dev/null || true
+    printf '[%s] [INFO] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$_RPC_LOG_FILE" 2>/dev/null || true
+}
+
+log_error() {
+    echo "[ERROR] $1" >&2
+    logger -t "tailscale-manager" -p daemon.error "$1" 2>/dev/null || true
+    printf '[%s] [ERROR] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$_RPC_LOG_FILE" 2>/dev/null || true
+}
+
+log_warn() {
+    echo "[WARN] $1"
+    logger -t "tailscale-manager" -p daemon.warn "$1" 2>/dev/null || true
+    printf '[%s] [WARN] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$_RPC_LOG_FILE" 2>/dev/null || true
+}
+
+# Source a library module from $LIB_DIR if it exists.
+_source_lib() {
+    local lib="$1"
+    if [ -f "$LIB_DIR/$lib" ]; then
+        # shellcheck source=/dev/null
+        . "$LIB_DIR/$lib"
+        return 0
+    fi
+    return 1
+}
+
+# Extract a variable value from the manager entry script (without sourcing it).
+# Usage: _read_manager_var VERSION
+_read_manager_var() {
+    local varname="$1"
+    sed -n "s/^${varname}=\"\\([^\"]*\\)\"/\\1/p" "$MANAGER_BIN" | head -1
+}
+
+_get_repo_base_url() {
+    local repo_base_url="${OPENWRT_TAILSCALE_REPO_BASE_URL:-}"
+    [ -n "$repo_base_url" ] || repo_base_url=$(_read_manager_var DEFAULT_REPO_BASE_URL)
+    printf '%s' "$repo_base_url"
 }
 
 read_input() {
@@ -246,10 +294,7 @@ call)
         setup_firewall)
             stdout=$(
                 set -e
-                TAILSCALE_MANAGER_SOURCE_ONLY=1
-                LOG_FILE=/tmp/tailscale-fw-setup.log
-                export TAILSCALE_MANAGER_SOURCE_ONLY LOG_FILE
-                . "$MANAGER_BIN"
+                _source_lib firewall.sh || { echo "Failed to load firewall.sh"; exit 1; }
                 setup_tailscale_interface
                 setup_tailscale_firewall_zone
                 /etc/init.d/network reload >/dev/null 2>&1 || { echo "Failed to reload network"; exit 1; }
@@ -265,18 +310,35 @@ call)
             print_code_stdout "$code" "$stdout"
             ;;
         upgrade_scripts)
+            # Extract the script version and repository base URL without
+            # sourcing the manager entry script.
+            _rpc_version=$(_read_manager_var VERSION)
+            _rpc_repo_base_url=$(_get_repo_base_url)
+            _rpc_script_url="${_rpc_repo_base_url}/tailscale-manager.sh"
             start_background_task upgrade-scripts sh -c '
-                TAILSCALE_MANAGER_SOURCE_ONLY=1
                 TAILSCALE_MANAGER_SCRIPT_PATH="$1"
-                export TAILSCALE_MANAGER_SOURCE_ONLY TAILSCALE_MANAGER_SCRIPT_PATH
-                . "$1"
+                VERSION="$2"
+                OPENWRT_TAILSCALE_REPO_BASE_URL="$3"
+                MANAGER_SCRIPT_URL="$4"
+                _lib_dir="$5"
+                export TAILSCALE_MANAGER_SCRIPT_PATH VERSION
+                export OPENWRT_TAILSCALE_REPO_BASE_URL MANAGER_SCRIPT_URL
+
+                log_info()  { echo "[INFO] $1"; }
+                log_error() { echo "[ERROR] $1" >&2; }
+                log_warn()  { echo "[WARN] $1"; }
+
+                . "$_lib_dir/common.sh" 2>/dev/null || true
+                . "$_lib_dir/version.sh" || exit 1
+                . "$_lib_dir/selfupdate.sh" || exit 1
+
                 remote=$(get_remote_script_version) || exit 1
                 if version_lt "$VERSION" "$remote"; then
                     do_self_update sync-scripts
                 else
                     echo "Already up to date"
                 fi
-            ' sh "$MANAGER_BIN"
+            ' sh "$MANAGER_BIN" "$_rpc_version" "$_rpc_repo_base_url" "$_rpc_script_url" "$LIB_DIR"
             ;;
         get_logs)
             manager_log=""

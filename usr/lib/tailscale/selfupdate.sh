@@ -3,7 +3,7 @@
 # Sourced by tailscale-manager entry script.
 #
 # Required variables (set by entry script before sourcing):
-#   VERSION, SCRIPT_RAW_URL
+#   VERSION, MANAGER_SCRIPT_URL
 #
 # Required functions:
 #   log_info(), log_error(), log_warn()
@@ -90,7 +90,7 @@ do_self_update() {
     echo ""
     log_info "Downloading latest script..."
 
-    if ! wget -qO "$tmp_script" "$SCRIPT_RAW_URL" 2>&1; then
+    if ! wget -qO "$tmp_script" "$MANAGER_SCRIPT_URL" 2>&1; then
         log_error "Failed to download script update"
         rm -f "$tmp_script"
         return 1

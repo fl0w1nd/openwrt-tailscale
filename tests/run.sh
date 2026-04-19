@@ -905,8 +905,75 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_rpcd_bridge_upgrade_scripts_uses_repo_base_url() {
+    new_script rpcd-bridge-upgrade-scripts.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
+MANAGER="$TEST_DIR/tailscale-manager"
+LIB_DIR="$TEST_DIR/libs"
+TASK_DIR="$TEST_DIR/tasks"
+REPO_BASE_URL="https://mirror.example.test/openwrt-tailscale"
+
+sed \
+    -e "s#MANAGER_BIN=\"/usr/bin/tailscale-manager\"#MANAGER_BIN=\"$MANAGER\"#" \
+    -e "s#TASK_DIR=\"/tmp/tailscale-rpc-tasks\"#TASK_DIR=\"$TASK_DIR\"#" \
+    -e "s#LIB_DIR=\"/usr/lib/tailscale\"#LIB_DIR=\"$LIB_DIR\"#" \
+    "$BRIDGE" > "$TEST_DIR/bridge"
+chmod +x "$TEST_DIR/bridge"
+
+mkdir -p "$LIB_DIR"
+
+cat > "$MANAGER" <<'SCRIPT'
+#!/bin/sh
+VERSION="1.0.0"
+DEFAULT_REPO_BASE_URL="https://default.example.test/openwrt-tailscale"
+SCRIPT
+chmod +x "$MANAGER"
+
+cat > "$LIB_DIR/common.sh" <<'SCRIPT'
+#!/bin/sh
+SCRIPT
+
+cat > "$LIB_DIR/version.sh" <<'SCRIPT'
+#!/bin/sh
+get_remote_script_version() {
+    printf '1.0.1\n'
+}
+version_lt() {
+    [ "$1" = "1.0.0" ] && [ "$2" = "1.0.1" ]
+}
+SCRIPT
+
+cat > "$LIB_DIR/selfupdate.sh" <<'SCRIPT'
+#!/bin/sh
+do_self_update() {
+    printf '%s\n' "$OPENWRT_TAILSCALE_REPO_BASE_URL" > "$TEST_DIR/repo-base-url"
+    printf '%s\n' "$MANAGER_SCRIPT_URL" > "$TEST_DIR/manager-script-url"
+    echo "updated"
+}
+SCRIPT
+
+start=$(OPENWRT_TAILSCALE_REPO_BASE_URL="$REPO_BASE_URL" sh "$TEST_DIR/bridge" call upgrade_scripts)
+printf '%s' "$start" | grep -Fq '"started":true'
+task=$(printf '%s' "$start" | sed -n 's/.*"task":"\([^"]*\)".*/\1/p')
+[ -n "$task" ]
+
+sleep 1
+status=$(printf '{"task":"%s"}' "$task" | sh "$TEST_DIR/bridge" call get_task_status)
+printf '%s' "$status" | grep -Fq '"done":true'
+printf '%s' "$status" | grep -Fq '"code":0'
+printf '%s' "$status" | grep -Fq 'updated'
+[ "$(cat "$TEST_DIR/repo-base-url")" = "$REPO_BASE_URL" ]
+[ "$(cat "$TEST_DIR/manager-script-url")" = "${REPO_BASE_URL}/tailscale-manager.sh" ]
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_json_script_local_info_reports_current_version() {
-	new_script json-script-local-info.sh <<EOF
+		new_script json-script-local-info.sh <<EOF
 #!/bin/sh
 set -eu
 $(source_manager)
@@ -915,7 +982,83 @@ output=\$(cmd_json_script_local_info)
 printf '%s' "\$output" | grep -Fq '"current":"' || { echo "should include current script version: \$output"; exit 1; }
 EOF
 
-	run_with_test_shell "$LAST_SCRIPT"
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_official_base_url_override_is_used() {
+    write_stub wget <<'EOF'
+#!/bin/sh
+case "$*" in
+    *'https://mirror.example.test/stable/?mode=json'*)
+        printf '%s' '{"TarballsVersion":"1.90.1"}'
+        ;;
+    *'https://mirror.example.test/stable/#static'*)
+        cat <<'HTML'
+<html>
+<body>
+<select>
+<option value="1.90.1">1.90.1</option>
+</select>
+</body>
+</html>
+HTML
+        ;;
+    *'https://mirror.example.test/stable/tailscale_1.90.1_amd64.tgz'*)
+        exit 0
+        ;;
+    *)
+        exit 1
+        ;;
+esac
+EOF
+
+    new_script manager-official-base-override.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_OFFICIAL_BASE_URL="https://mirror.example.test/stable"
+export TAILSCALE_OFFICIAL_BASE_URL
+$(source_manager)
+
+version=\$(get_official_latest_version amd64)
+[ "\$version" = "1.90.1" ]
+output=\$(list_official_versions 1)
+[ "\$output" = "1.90.1" ]
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_small_base_url_override_is_used() {
+    write_stub wget <<'EOF'
+#!/bin/sh
+case "$*" in
+    *'https://git.example.test/api/v3/repos/acme/openwrt-tailscale/releases/latest'*)
+        printf '%s' '{"tag_name":"v1.91.0"}'
+        ;;
+    *'https://git.example.test/api/v3/repos/acme/openwrt-tailscale/releases?per_page=20'*)
+        printf '%s' '[{"tag_name":"v1.91.0"}]'
+        ;;
+    *'https://git.example.test/acme/openwrt-tailscale/releases/download/v1.91.0/tailscale-small_1.91.0_mipsle.tgz'*)
+        exit 0
+        ;;
+    *)
+        exit 1
+        ;;
+esac
+EOF
+
+    new_script manager-small-base-override.sh <<EOF
+#!/bin/sh
+set -eu
+TAILSCALE_SMALL_BASE_URL="https://git.example.test/acme/openwrt-tailscale"
+export TAILSCALE_SMALL_BASE_URL
+$(source_manager)
+
+version=\$(get_small_latest_version mipsle)
+[ "\$version" = "1.91.0" ]
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
 }
 
 test_check_script_update_skips_non_interactive() {
@@ -953,8 +1096,8 @@ chmod +x "$SCRIPT_PATH"
 LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
 TAILSCALE_MANAGER_SCRIPT_PATH="$SCRIPT_PATH"
-TAILSCALE_SCRIPT_URL="https://example.test/tailscale-manager.sh"
-export LIB_DIR TAILSCALE_MANAGER_SOURCE_ONLY TAILSCALE_MANAGER_SCRIPT_PATH TAILSCALE_SCRIPT_URL
+OPENWRT_TAILSCALE_REPO_BASE_URL="https://example.test"
+export LIB_DIR TAILSCALE_MANAGER_SOURCE_ONLY TAILSCALE_MANAGER_SCRIPT_PATH OPENWRT_TAILSCALE_REPO_BASE_URL
 . "$SCRIPT_PATH"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -1386,7 +1529,7 @@ set -eu
 
 LIB_DIR="$TEST_DIR/boot-libs"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
-TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
+OPENWRT_TAILSCALE_REPO_BASE_URL="https://example.test"
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -1444,7 +1587,7 @@ _ensure_libraries
 
 for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
     [ -f "$LIB_DIR/$lib" ] || { echo "missing $lib"; exit 1; }
-    grep -Fq "https://example.test/runtime-libs/$lib" "$TEST_DIR/downloads.log" || {
+    grep -Fq "https://example.test/usr/lib/tailscale/$lib" "$TEST_DIR/downloads.log" || {
         echo "unexpected download path for $lib"
         exit 1
     }
@@ -1469,7 +1612,7 @@ set -eu
 
 LIB_DIR="$TEST_DIR/partial-libs"
 TAILSCALE_MANAGER_SOURCE_ONLY=1
-TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
+OPENWRT_TAILSCALE_REPO_BASE_URL="https://example.test"
 . "$REPO_ROOT/tailscale-manager.sh"
 LOG_FILE="$TEST_DIR/tailscale-manager.log"
 
@@ -1557,8 +1700,7 @@ SCRIPT
 chmod +x "$STUB_BIN/wget"
 
 LIB_DIR="$TEST_DIR/missing-libs"
-TAILSCALE_LIB_BASE_URL="https://example.test/runtime-libs"
-TAILSCALE_RAW_BASE_URL="https://example.test"
+OPENWRT_TAILSCALE_REPO_BASE_URL="https://example.test"
 
 set +e
 output=
@@ -1566,8 +1708,7 @@ output=$(
     TEST_DIR="$TEST_DIR" \
     STUB_BIN="$STUB_BIN" \
     LIB_DIR="$LIB_DIR" \
-    TAILSCALE_LIB_BASE_URL="$TAILSCALE_LIB_BASE_URL" \
-    TAILSCALE_RAW_BASE_URL="$TAILSCALE_RAW_BASE_URL" \
+    OPENWRT_TAILSCALE_REPO_BASE_URL="$OPENWRT_TAILSCALE_REPO_BASE_URL" \
     sh "$REPO_ROOT/tailscale-manager.sh" sync-scripts 2>&1
 )
 status=$?
@@ -1578,7 +1719,7 @@ set -e
     exit 1
 }
 
-printf '%s\n' "$output" | grep -Fq 'Failed to initialize runtime libraries from https://example.test/runtime-libs' || {
+printf '%s\n' "$output" | grep -Fq 'Failed to initialize runtime libraries from https://example.test/usr/lib/tailscale' || {
     echo "missing bootstrap failure message"
     exit 1
 }
@@ -1756,6 +1897,71 @@ esac
 EOF
 
     run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_tailscale_update_respects_custom_base_urls() {
+    mkdir -p "$TEST_DIR/binroot"
+    printf '1.76.0\n' > "$TEST_DIR/binroot/version"
+    printf 'small\n' > "$TEST_DIR/binroot/source"
+
+    cat > "$TEST_DIR/common.sh" <<'EOF'
+validate_version_format() {
+    case "$1" in
+        ''|.*|*.|*..*|*[!0-9.]*) return 1 ;;
+        *.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+EOF
+
+    cat > "$TEST_DIR/functions.sh" <<'EOF'
+config_load() {
+    return 0
+}
+
+config_get() {
+    var=$1
+    option=$3
+    default=$4
+
+    case "$option" in
+        bin_dir) value="$TEST_DIR/binroot" ;;
+        download_source) value="small" ;;
+        auto_update) value="1" ;;
+        *) value="$default" ;;
+    esac
+
+    eval "$var=\$value"
+}
+EOF
+
+    write_stub wget <<'EOF'
+#!/bin/sh
+case "$*" in
+    *'https://git.example.test/api/v3/repos/acme/openwrt-tailscale/releases/latest'*)
+        printf '%s' '{"tag_name":"v1.77.0"}'
+        ;;
+    *)
+        exit 1
+        ;;
+esac
+EOF
+
+    write_stub tailscale-manager <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" > "$TEST_DIR/manager-call"
+exit 0
+EOF
+
+    TAILSCALE_COMMON_LIB_PATH="$TEST_DIR/common.sh" \
+    TAILSCALE_FUNCTIONS_PATH="$TEST_DIR/functions.sh" \
+    TAILSCALE_MANAGER_BIN="$STUB_BIN/tailscale-manager" \
+    TAILSCALE_UPDATE_LOG_FILE="$TEST_DIR/update.log" \
+    TAILSCALE_SMALL_BASE_URL="https://git.example.test/acme/openwrt-tailscale" \
+    run_with_test_shell "$REPO_ROOT/usr/bin/tailscale-update"
+
+    assert_file_contains "$TEST_DIR/update.log" 'Update available: v1.76.0 -> v1.77.0 (source: small)' 'update script should use custom small base url'
+    assert_file_contains "$TEST_DIR/manager-call" 'update --auto' 'update script should invoke manager update'
 }
 
 test_json_latest_version_uses_installed_source() {
@@ -2340,6 +2546,8 @@ run_test 'version fetchers validate official and small API payloads' test_versio
 run_test 'official version listing parses package page options' test_list_official_versions_parsing
 run_test 'official latest version falls back to available arch build' test_official_latest_version_falls_back_to_available_arch_build
 run_test 'small latest version falls back to available arch build' test_small_latest_version_falls_back_to_available_arch_build
+run_test 'official base url override is used across version lookups' test_official_base_url_override_is_used
+run_test 'small base url override is used across API and downloads' test_small_base_url_override_is_used
 run_test 'version_lt handles sort and fallback comparisons' test_version_lt_covers_sort_and_fallback
 run_test 'sync-scripts installs runtime files and update script together' test_sync_managed_scripts_installs_all_files
 run_test 'net-mode refreshes runtime scripts before restart' test_net_mode_reinstalls_runtime_scripts
@@ -2348,12 +2556,14 @@ run_test 'interactive install stops when finalize step fails' test_install_inter
 run_test 'install-quiet deploys LuCI app files' test_install_quiet_installs_luci_app
 run_test 'install-version avoids managed file reinstall' test_install_version_quiet_does_not_reinstall_managed_files
 run_test 'tailscale-update rejects malformed upstream versions' test_update_script_rejects_invalid_version
+run_test 'tailscale-update respects custom base urls' test_tailscale_update_respects_custom_base_urls
 run_test 'rpcd exec bridge list output is valid JSON' test_rpcd_bridge_list_output_valid_json
 run_test 'rpcd exec bridge dispatches json-status' test_rpcd_bridge_dispatches_json_status
 run_test 'rpcd exec bridge validates service actions' test_rpcd_bridge_service_control_validates_action
 run_test 'rpcd exec bridge passes install params' test_rpcd_bridge_install_passes_params
 run_test 'rpcd exec bridge reports async task status' test_rpcd_bridge_reports_task_status
 run_test 'rpcd exec bridge keeps multiline output valid JSON' test_rpcd_bridge_multiline_output_stays_valid_json
+run_test 'rpcd exec bridge upgrade_scripts uses repo base url' test_rpcd_bridge_upgrade_scripts_uses_repo_base_url
 run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
 run_test 'do_self_update respects explicit script path when sourced' test_do_self_update_uses_explicit_script_path_when_sourced
 run_test 'sync-scripts writes marker only after full success' test_sync_managed_scripts_marks_version_only_after_full_success

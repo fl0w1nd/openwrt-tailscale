@@ -3,8 +3,9 @@
 # Sourced by tailscale-manager entry script.
 #
 # Required variables (set by entry script before sourcing):
-#   API_URL, SMALL_API_URL, SMALL_RELEASES_API,
-#   SMALL_DOWNLOAD_BASE, DOWNLOAD_SOURCE, SCRIPT_RAW_URL
+#   API_URL, OFFICIAL_VERSIONS_URL, SMALL_API_URL,
+#   SMALL_RELEASES_API, SMALL_DOWNLOAD_BASE,
+#   DOWNLOAD_SOURCE, MANAGER_SCRIPT_URL
 #
 # Required functions (from common.sh):
 #   validate_version_format()
@@ -184,7 +185,7 @@ list_official_versions() {
     local limit="${1:-20}"
     local html_data
 
-    html_data=$(wget -T 5 -qO- 'https://pkgs.tailscale.com/stable/#static' 2>/dev/null) || {
+    html_data=$(wget -T 5 -qO- "$OFFICIAL_VERSIONS_URL" 2>/dev/null) || {
         log_error "Failed to fetch versions from Tailscale packages page"
         return 1
     }
@@ -233,13 +234,13 @@ version_lt() {
     fi
 }
 
-# Get remote script version from GitHub
+# Get remote script version from the project repository
 get_remote_script_version() {
     local remote_version
     local tmp_file="/tmp/.script-version-check.$$"
     local timeout_secs=5
 
-    (wget -qO- "$SCRIPT_RAW_URL" 2>/dev/null | head -50 > "$tmp_file") &
+    (wget -qO- "$MANAGER_SCRIPT_URL" 2>/dev/null | head -50 > "$tmp_file") &
     local pid=$!
 
     local count=0

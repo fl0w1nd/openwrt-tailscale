@@ -5,6 +5,32 @@
 
 set -e
 
+normalize_base_url() {
+    printf '%s' "${1%/}"
+}
+
+derive_small_api_base_url() {
+    local base_url="$1"
+    local scheme host path
+
+    scheme=$(printf '%s' "$base_url" | sed -n 's#^\([A-Za-z][A-Za-z0-9+.-]*\)://.*#\1#p')
+    host=$(printf '%s' "$base_url" | sed -n 's#^[A-Za-z][A-Za-z0-9+.-]*://\([^/]*\)/.*#\1#p')
+    path=$(printf '%s' "$base_url" | sed -n 's#^[A-Za-z][A-Za-z0-9+.-]*://[^/]*/\(.*\)$#\1#p')
+
+    [ -n "$scheme" ] || return 1
+    [ -n "$host" ] || return 1
+    [ -n "$path" ] || return 1
+
+    case "$host" in
+        github.com)
+            printf '%s://api.github.com/repos/%s' "$scheme" "$path"
+            ;;
+        *)
+            printf '%s://%s/api/v3/repos/%s' "$scheme" "$host" "$path"
+            ;;
+    esac
+}
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -17,14 +43,20 @@ VERSION="4.0.6"
 DOWNLOAD_SOURCE="${TAILSCALE_SOURCE:-official}"
 
 # Official Tailscale download
-API_URL="https://pkgs.tailscale.com/stable/?mode=json"
-DOWNLOAD_BASE="https://pkgs.tailscale.com/stable"
+DEFAULT_TAILSCALE_OFFICIAL_BASE_URL="https://pkgs.tailscale.com/stable"
+TAILSCALE_OFFICIAL_BASE_URL=$(normalize_base_url "${TAILSCALE_OFFICIAL_BASE_URL:-$DEFAULT_TAILSCALE_OFFICIAL_BASE_URL}")
+API_URL="${TAILSCALE_OFFICIAL_BASE_URL}/?mode=json"
+DOWNLOAD_BASE="$TAILSCALE_OFFICIAL_BASE_URL"
+OFFICIAL_VERSIONS_URL="${TAILSCALE_OFFICIAL_BASE_URL}/#static"
 
 # Small binary download (GitHub releases)
 SMALL_REPO="fl0w1nd/openwrt-tailscale"
-SMALL_API_URL="https://api.github.com/repos/${SMALL_REPO}/releases/latest"
-SMALL_RELEASES_API="https://api.github.com/repos/${SMALL_REPO}/releases"
-SMALL_DOWNLOAD_BASE="https://github.com/${SMALL_REPO}/releases/download"
+DEFAULT_TAILSCALE_SMALL_BASE_URL="https://github.com/${SMALL_REPO}"
+TAILSCALE_SMALL_BASE_URL=$(normalize_base_url "${TAILSCALE_SMALL_BASE_URL:-$DEFAULT_TAILSCALE_SMALL_BASE_URL}")
+SMALL_API_BASE_URL=$(derive_small_api_base_url "$TAILSCALE_SMALL_BASE_URL")
+SMALL_API_URL="${SMALL_API_BASE_URL}/releases/latest"
+SMALL_RELEASES_API="${SMALL_API_BASE_URL}/releases"
+SMALL_DOWNLOAD_BASE="${TAILSCALE_SMALL_BASE_URL}/releases/download"
 
 # Architectures supported by small binaries
 # Must match the architectures built in GitHub Actions
@@ -40,29 +72,23 @@ INIT_SCRIPT="/etc/init.d/tailscale"
 CRON_SCRIPT="/usr/bin/tailscale-update"
 LOG_FILE="/var/log/tailscale-manager.log"
 
-# Script self-update configuration
-DEFAULT_RAW_BASE_URL="https://raw.githubusercontent.com/${SMALL_REPO}/main"
-SCRIPT_RAW_URL="${TAILSCALE_SCRIPT_URL:-}"
-if [ -n "$SCRIPT_RAW_URL" ]; then
-    RAW_BASE_URL="${TAILSCALE_RAW_BASE_URL:-${SCRIPT_RAW_URL%/tailscale-manager.sh}}"
-else
-    RAW_BASE_URL="${TAILSCALE_RAW_BASE_URL:-$DEFAULT_RAW_BASE_URL}"
-    SCRIPT_RAW_URL="${RAW_BASE_URL}/tailscale-manager.sh"
-fi
-CONFIG_TEMPLATE_URL="${RAW_BASE_URL}/etc/config/tailscale"
-INIT_SCRIPT_URL="${RAW_BASE_URL}/etc/init.d/tailscale"
-UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-update"
-SCRIPT_UPDATE_SCRIPT_URL="${RAW_BASE_URL}/usr/bin/tailscale-script-update"
+# Project repository raw base URL
+DEFAULT_REPO_BASE_URL="https://raw.githubusercontent.com/${SMALL_REPO}/main"
+REPO_BASE_URL="${OPENWRT_TAILSCALE_REPO_BASE_URL:-$DEFAULT_REPO_BASE_URL}"
+MANAGER_SCRIPT_URL="${REPO_BASE_URL}/tailscale-manager.sh"
+CONFIG_TEMPLATE_URL="${REPO_BASE_URL}/etc/config/tailscale"
+INIT_SCRIPT_URL="${REPO_BASE_URL}/etc/init.d/tailscale"
+UPDATE_SCRIPT_URL="${REPO_BASE_URL}/usr/bin/tailscale-update"
+SCRIPT_UPDATE_SCRIPT_URL="${REPO_BASE_URL}/usr/bin/tailscale-script-update"
 SCRIPT_UPDATE_CRON_SCRIPT="/usr/bin/tailscale-script-update"
-COMMON_LIB_URL="${RAW_BASE_URL}/usr/lib/tailscale/common.sh"
+COMMON_LIB_URL="${REPO_BASE_URL}/usr/lib/tailscale/common.sh"
 COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
-LIB_BASE_URL="${TAILSCALE_LIB_BASE_URL:-${RAW_BASE_URL}/usr/lib/tailscale}"
 
 # LuCI app file URLs
-LUCI_VIEW_BASE_URL="${RAW_BASE_URL}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale"
-LUCI_RPC_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
-LUCI_MENU_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
-LUCI_ACL_URL="${RAW_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
+LUCI_VIEW_BASE_URL="${REPO_BASE_URL}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale"
+LUCI_RPC_URL="${REPO_BASE_URL}/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
+LUCI_MENU_URL="${REPO_BASE_URL}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
+LUCI_ACL_URL="${REPO_BASE_URL}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
 
 # LuCI app destination paths (overridable for testing)
 LUCI_VIEW_DIR="${LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}"
@@ -345,7 +371,7 @@ _ensure_libraries() {
     [ "$_missing" -eq 0 ] && return 0
 
     for _lib in $MODULE_LIBS; do
-        download_repo_file "${LIB_BASE_URL}/${_lib}" "${LIB_DIR}/${_lib}" 644 || return 1
+        download_repo_file "${REPO_BASE_URL}/usr/lib/tailscale/${_lib}" "${LIB_DIR}/${_lib}" 644 || return 1
     done
     for _lib in $MODULE_LIBS; do
         [ -f "$LIB_DIR/$_lib" ] || {
@@ -386,7 +412,7 @@ check_dependencies() {
     fi
 
     # --- HTTPS support (libustream-*) ---
-    if ! wget -q --spider https://pkgs.tailscale.com 2>/dev/null; then
+    if ! wget -q --spider "$TAILSCALE_OFFICIAL_BASE_URL" 2>/dev/null; then
         if command -v wget >/dev/null 2>&1; then
             warn_count=$((warn_count + 1))
             log_warn "HTTPS support may be missing (wget cannot reach https endpoint)"
@@ -692,7 +718,7 @@ main() {
         -h|--help|help) ;;
         *)
             _ensure_libraries || {
-                log_error "Failed to initialize runtime libraries from ${LIB_BASE_URL}"
+                log_error "Failed to initialize runtime libraries from ${REPO_BASE_URL}/usr/lib/tailscale"
                 exit 1
             }
             ;;
