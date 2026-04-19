@@ -453,7 +453,7 @@ grep -Fq 'luci_installed' "\$CALLS"
 grep -Fxq "\$VERSION" "\$MANAGED_SYNC_VERSION_FILE"
 
 # Verify new library files were installed
-for lib in version.sh download.sh firewall.sh deploy.sh selfupdate.sh json.sh; do
+for lib in jsonutil.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh json.sh; do
     [ -f "\$LIB_DIR/\$lib" ] || { echo "MISSING: \$LIB_DIR/\$lib"; exit 1; }
 done
 EOF
@@ -763,7 +763,7 @@ test_rpcd_bridge_list_output_valid_json() {
 set -eu
 
 bridge="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
-output=$(sh "$bridge" list)
+output=$(LIB_DIR="$REPO_ROOT/usr/lib/tailscale" sh "$bridge" list)
 printf '%s' "$output" | python3 -m json.tool >/dev/null
 
 	printf '%s' "$output" | grep -Fq '"get_status": {}'
@@ -783,9 +783,6 @@ set -eu
 BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 MANAGER="$TEST_DIR/tailscale-manager"
 
-sed "s#MANAGER_BIN=\"/usr/bin/tailscale-manager\"#MANAGER_BIN=\"$MANAGER\"#" "$BRIDGE" > "$TEST_DIR/bridge"
-chmod +x "$TEST_DIR/bridge"
-
 cat > "$MANAGER" <<'SCRIPT'
 #!/bin/sh
 printf '%s\n' "$*" > "$TEST_DIR/manager-call"
@@ -793,7 +790,7 @@ printf '{"installed":false}'
 SCRIPT
 chmod +x "$MANAGER"
 
-output=$(sh "$TEST_DIR/bridge" call get_status)
+output=$(MANAGER_BIN="$MANAGER" LIB_DIR="$REPO_ROOT/usr/lib/tailscale" sh "$BRIDGE" call get_status)
 [ "$output" = '{"installed":false}' ]
 grep -Fq 'json-status' "$TEST_DIR/manager-call"
 EOF
@@ -807,6 +804,7 @@ test_rpcd_bridge_service_control_validates_action() {
 set -eu
 
 bridge="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
+export LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 output=$(printf '{"action":"rm"}' | sh "$bridge" call service_control)
 printf '%s' "$output" | grep -Fq '"code":-1'
 printf '%s' "$output" | grep -Fq 'Invalid action'
@@ -822,9 +820,8 @@ set -eu
 
 BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 MANAGER="$TEST_DIR/tailscale-manager"
-
-sed "s#MANAGER_BIN=\"/usr/bin/tailscale-manager\"#MANAGER_BIN=\"$MANAGER\"#" "$BRIDGE" > "$TEST_DIR/bridge"
-chmod +x "$TEST_DIR/bridge"
+export MANAGER_BIN="$MANAGER"
+export LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 
 cat > "$MANAGER" <<'SCRIPT'
 #!/bin/sh
@@ -833,7 +830,7 @@ printf 'install ok\n'
 SCRIPT
 chmod +x "$MANAGER"
 
-output=$(printf '{"source":"small","storage":"ram","auto_update":"1"}' | sh "$TEST_DIR/bridge" call do_install)
+output=$(printf '{"source":"small","storage":"ram","auto_update":"1"}' | sh "$BRIDGE" call do_install)
 printf '%s' "$output" | grep -Fq '"started":true'
 printf '%s' "$output" | grep -Eq '"task":"install-[^"]+"'
 grep -Fq 'install-quiet --source small --storage ram --auto-update 1' "$TEST_DIR/manager-call"
@@ -849,9 +846,8 @@ set -eu
 
 BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 MANAGER="$TEST_DIR/tailscale-manager"
-
-sed "s#MANAGER_BIN=\"/usr/bin/tailscale-manager\"#MANAGER_BIN=\"$MANAGER\"#" "$BRIDGE" > "$TEST_DIR/bridge"
-chmod +x "$TEST_DIR/bridge"
+export MANAGER_BIN="$MANAGER"
+export LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 
 cat > "$MANAGER" <<'SCRIPT'
 #!/bin/sh
@@ -859,13 +855,13 @@ printf 'hello from task\n'
 SCRIPT
 chmod +x "$MANAGER"
 
-start=$(printf '{"source":"small"}' | sh "$TEST_DIR/bridge" call do_install)
+start=$(printf '{"source":"small"}' | sh "$BRIDGE" call do_install)
 printf '%s' "$start" | grep -Fq '"started":true'
 task=$(printf '%s' "$start" | sed -n 's/.*"task":"\([^"]*\)".*/\1/p')
 [ -n "$task" ]
 
 sleep 1
-status=$(printf '{"task":"%s"}' "$task" | sh "$TEST_DIR/bridge" call get_task_status)
+status=$(printf '{"task":"%s"}' "$task" | sh "$BRIDGE" call get_task_status)
 printf '%s' "$status" | grep -Fq '"done":true'
 printf '%s' "$status" | grep -Fq '"code":0'
 printf '%s' "$status" | grep -Fq 'hello from task'
@@ -885,9 +881,8 @@ set -eu
 
 BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 MANAGER="$TEST_DIR/tailscale-manager"
-
-sed "s#MANAGER_BIN=\"/usr/bin/tailscale-manager\"#MANAGER_BIN=\"$MANAGER\"#" "$BRIDGE" > "$TEST_DIR/bridge"
-chmod +x "$TEST_DIR/bridge"
+export MANAGER_BIN="$MANAGER"
+export LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
 
 cat > "$MANAGER" <<'SCRIPT'
 #!/bin/sh
@@ -895,10 +890,10 @@ printf 'line1\nline2\n'
 SCRIPT
 chmod +x "$MANAGER"
 
-start=$(printf '{"source":"small"}' | sh "$TEST_DIR/bridge" call do_install)
+start=$(printf '{"source":"small"}' | sh "$BRIDGE" call do_install)
 task=$(printf '%s' "$start" | sed -n 's/.*"task":"\([^"]*\)".*/\1/p')
 sleep 1
-status=$(printf '{"task":"%s"}' "$task" | sh "$TEST_DIR/bridge" call get_task_status)
+status=$(printf '{"task":"%s"}' "$task" | sh "$BRIDGE" call get_task_status)
 printf '%s' "$status" | python3 -m json.tool >/dev/null
 EOF
 
@@ -912,18 +907,13 @@ set -eu
 
 BRIDGE="$REPO_ROOT/luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale"
 MANAGER="$TEST_DIR/tailscale-manager"
-LIB_DIR="$TEST_DIR/libs"
-TASK_DIR="$TEST_DIR/tasks"
+export MANAGER_BIN="$MANAGER"
+export LIB_DIR="$TEST_DIR/libs"
+export TASK_DIR="$TEST_DIR/tasks"
 REPO_BASE_URL="https://mirror.example.test/openwrt-tailscale"
 
-sed \
-    -e "s#MANAGER_BIN=\"/usr/bin/tailscale-manager\"#MANAGER_BIN=\"$MANAGER\"#" \
-    -e "s#TASK_DIR=\"/tmp/tailscale-rpc-tasks\"#TASK_DIR=\"$TASK_DIR\"#" \
-    -e "s#LIB_DIR=\"/usr/lib/tailscale\"#LIB_DIR=\"$LIB_DIR\"#" \
-    "$BRIDGE" > "$TEST_DIR/bridge"
-chmod +x "$TEST_DIR/bridge"
-
 mkdir -p "$LIB_DIR"
+cp "$REPO_ROOT/usr/lib/tailscale/jsonutil.sh" "$LIB_DIR/jsonutil.sh"
 
 cat > "$MANAGER" <<'SCRIPT'
 #!/bin/sh
@@ -955,13 +945,13 @@ do_self_update() {
 }
 SCRIPT
 
-start=$(OPENWRT_TAILSCALE_REPO_BASE_URL="$REPO_BASE_URL" sh "$TEST_DIR/bridge" call upgrade_scripts)
+start=$(OPENWRT_TAILSCALE_REPO_BASE_URL="$REPO_BASE_URL" sh "$BRIDGE" call upgrade_scripts)
 printf '%s' "$start" | grep -Fq '"started":true'
 task=$(printf '%s' "$start" | sed -n 's/.*"task":"\([^"]*\)".*/\1/p')
 [ -n "$task" ]
 
 sleep 1
-status=$(printf '{"task":"%s"}' "$task" | sh "$TEST_DIR/bridge" call get_task_status)
+status=$(printf '{"task":"%s"}' "$task" | sh "$BRIDGE" call get_task_status)
 printf '%s' "$status" | grep -Fq '"done":true'
 printf '%s' "$status" | grep -Fq '"code":0'
 printf '%s' "$status" | grep -Fq 'updated'

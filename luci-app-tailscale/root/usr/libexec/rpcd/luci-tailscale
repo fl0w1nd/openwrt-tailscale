@@ -2,33 +2,12 @@
 
 # LuCI RPC bridge for Tailscale management via rpcd exec plugin.
 
-MANAGER_BIN="/usr/bin/tailscale-manager"
-TASK_DIR="/tmp/tailscale-rpc-tasks"
-LIB_DIR="/usr/lib/tailscale"
+MANAGER_BIN="${MANAGER_BIN:-/usr/bin/tailscale-manager}"
+TASK_DIR="${TASK_DIR:-/tmp/tailscale-rpc-tasks}"
+LIB_DIR="${LIB_DIR:-/usr/lib/tailscale}"
 
-json_escape_inline() {
-    printf '%s' "$1" | awk 'BEGIN { ORS="" } {
-        gsub(/\\/, "\\\\");
-        gsub(/"/, "\\\"");
-        gsub(/\r/, "\\r");
-        gsub(/\t/, "\\t");
-        if (NR > 1)
-            printf "\\n";
-        printf "%s", $0;
-    }'
-}
-
-json_array_from_lines_inline() {
-    local first=1
-    printf '['
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        [ "$first" = "1" ] || printf ','
-        printf '"%s"' "$(json_escape_inline "$line")"
-        first=0
-    done
-    printf ']'
-}
+# shellcheck source=/dev/null
+. "$LIB_DIR/jsonutil.sh"
 
 # Lightweight logging for sourced library modules.
 # Libraries call log_info/log_error/log_warn; provide minimal implementations
@@ -113,7 +92,7 @@ json_get_int_param() {
 print_code_stdout() {
     local code="$1"
     local stdout="$2"
-    printf '{"code":%s,"stdout":"%s"}' "$code" "$(json_escape_inline "$stdout")"
+    printf '{"code":%s,"stdout":"%s"}' "$code" "$(json_escape "$stdout")"
 }
 
 task_path() {
@@ -163,7 +142,7 @@ print_task_status() {
     if [ -f "$status_file" ]; then
         code=$(cat "$status_file" 2>/dev/null)
         stdout=$(cat "$log_file" 2>/dev/null)
-        printf '{"done":true,"code":%s,"stdout":"%s"}' "${code:-1}" "$(json_escape_inline "$stdout")"
+        printf '{"done":true,"code":%s,"stdout":"%s"}' "${code:-1}" "$(json_escape "$stdout")"
         rm -f "$pid_file" "$status_file" "$log_file"
         return 0
     fi
@@ -241,7 +220,7 @@ call)
             [ -n "$limit" ] || limit=20
             versions=$("$MANAGER_BIN" list-versions "$limit" 2>/dev/null || true)
             printf '{"versions":'
-            printf '%s\n' "$versions" | json_array_from_lines_inline
+            printf '%s\n' "$versions" | json_array_from_lines
             printf '}'
             ;;
         list_official_releases)
@@ -250,7 +229,7 @@ call)
             [ -n "$limit" ] || limit=20
             versions=$("$MANAGER_BIN" list-official-versions "$limit" 2>/dev/null || true)
             printf '{"versions":'
-            printf '%s\n' "$versions" | json_array_from_lines_inline
+            printf '%s\n' "$versions" | json_array_from_lines
             printf '}'
             ;;
         service_control)
@@ -345,7 +324,7 @@ call)
             tailscale_log=""
             [ -f /var/log/tailscale-manager.log ] && manager_log=$(tail -n 500 /var/log/tailscale-manager.log 2>/dev/null)
             [ -f /var/log/tailscale.log ] && tailscale_log=$(tail -n 500 /var/log/tailscale.log 2>/dev/null)
-            printf '{"manager":"%s","tailscale":"%s"}' "$(json_escape_inline "$manager_log")" "$(json_escape_inline "$tailscale_log")"
+            printf '{"manager":"%s","tailscale":"%s"}' "$(json_escape "$manager_log")" "$(json_escape "$tailscale_log")"
             ;;
         clear_log)
             input=$(read_input)

@@ -118,7 +118,7 @@ mark_managed_sync_version() {
 install_runtime_scripts() {
     install_common_lib || return 1
 
-    local module_libs="${MODULE_LIBS:-version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh}"
+    local module_libs="${MODULE_LIBS:-jsonutil.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh}"
     local lib
     for lib in $module_libs; do
         download_repo_file "${REPO_BASE_URL}/usr/lib/tailscale/${lib}" "${LIB_DIR}/${lib}" 644 || return 1

@@ -1,4 +1,4 @@
-SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-update usr/lib/tailscale/common.sh tests/run.sh
+SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-update usr/lib/tailscale/common.sh usr/lib/tailscale/jsonutil.sh tests/run.sh
 SHELLCHECK_FLAGS := -s sh -e SC1091,SC3043
 TEST_SHELL ?= sh
 
@@ -55,7 +55,7 @@ check-static:
 			printf 'Legacy rpc object in %s\n' "$$f"; exit 1; \
 		fi; \
 	done
-	@for lib in common.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do \
+	@for lib in common.sh jsonutil.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do \
 		[ -f "usr/lib/tailscale/$$lib" ] || { printf 'MISSING: usr/lib/tailscale/%s\n' "$$lib"; exit 1; }; \
 	done
 	@TAILSCALE_MANAGER_SOURCE_ONLY=1 sh -c '. ./tailscale-manager.sh; \

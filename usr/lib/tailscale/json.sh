@@ -15,45 +15,11 @@
 #   log_error() (entry script)
 
 # ============================================================================
-# JSON Generation Helpers
+# JSON Generation Helpers (from jsonutil.sh)
 # ============================================================================
 
-json_escape() {
-    printf '%s' "$1" | awk 'BEGIN { ORS="" } {
-        gsub(/\\/, "\\\\");
-        gsub(/"/, "\\\"");
-        gsub(/\r/, "\\r");
-        gsub(/\t/, "\\t");
-        if (NR > 1)
-            printf "\\n";
-        printf "%s", $0;
-    }'
-}
-
-json_array_from_lines() {
-    local first=1
-    printf '['
-    while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        [ "$first" = "1" ] || printf ','
-        printf '"%s"' "$(json_escape "$line")"
-        first=0
-    done
-    printf ']'
-}
-
-# ============================================================================
-# Internal JSON Output Helpers
-# ============================================================================
-
-# Output "key":"value" or "key":null
-_jstr() {
-    if [ -n "$2" ]; then
-        printf '"%s":"%s"' "$1" "$(json_escape "$2")"
-    else
-        printf '"%s":null' "$1"
-    fi
-}
+# shellcheck source=jsonutil.sh
+. "${LIB_DIR:-/usr/lib/tailscale}/jsonutil.sh"
 
 # ============================================================================
 # Internal Helpers
