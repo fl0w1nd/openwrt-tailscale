@@ -2,6 +2,10 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.8 (2026-04-19)
+
+- Switch script updates to managed packages
+
 ## v4.0.7 (2026-04-19)
 
 - Add download checksum verification for binary integrity
