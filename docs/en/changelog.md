@@ -2,6 +2,25 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.7 (2026-04-19)
+
+- Add download checksum verification for binary integrity
+- Add update rollback flow: auto-restore on download/startup failure with manual rollback command
+- Decouple rpcd bridge from manager entry script, unify download URL resolution across CLI/rpcd/cron
+- Extract shared JSON helpers into dedicated module to reduce duplication
+- Split test suite into per-module files with TEST_MODULE support
+- Correct small binary size references (~8-10MB)
+
+## v4.0.6 (2026-04-12)
+
+- Rename `tun-mode` to `net-mode` for accurate networking mode naming (TUN/userspace), with auto-migration of UCI config
+- Add project roadmap documentation
+
+## v4.0.5 (2026-04-11)
+
+- Fix official binary size references
+- Fix docs site logo path
+
 ## v4.0.4 (2026-04-10)
 
 - Fix incorrect official binary size display
