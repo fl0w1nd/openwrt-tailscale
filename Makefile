@@ -1,4 +1,4 @@
-SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-update usr/lib/tailscale/common.sh usr/lib/tailscale/jsonutil.sh tests/run.sh
+SHELL_SCRIPTS := tailscale-manager.sh etc/init.d/tailscale usr/bin/tailscale-update usr/lib/tailscale/common.sh usr/lib/tailscale/jsonutil.sh tests/run.sh tests/helpers.sh tests/common.sh tests/version.sh tests/download.sh tests/firewall.sh tests/deploy.sh tests/selfupdate.sh tests/json.sh tests/rpcd.sh
 SHELLCHECK_FLAGS := -s sh -e SC1091,SC3043
 TEST_SHELL ?= sh
 
@@ -65,4 +65,4 @@ check-static:
 		done' 2>/dev/null
 
 test:
-	@TEST_SHELL="$(TEST_SHELL)" sh tests/run.sh
+	@TEST_SHELL="$(TEST_SHELL)" TEST_MODULE="$(TEST_MODULE)" sh tests/run.sh
