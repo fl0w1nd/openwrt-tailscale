@@ -29,6 +29,24 @@ Running without arguments opens the interactive menu.
 | `install-version <ver>` | Install a specific Tailscale version |
 | `download-only` | Download binary without installing |
 
+#### Install Options
+
+Both `install-quiet` and `install-version` accept these flags:
+
+| Flag | Values | Description |
+|------|--------|-------------|
+| `--source` | `official` / `small` | Download source |
+| `--storage` | `persistent` / `ram` | Storage mode (`install-quiet` only) |
+| `--auto-update` | `0` / `1` | Enable daily auto-update cron (`install-quiet` only) |
+| `--bin-dir` | absolute path | Custom binary directory for persistent mode (see [Storage Modes](/en/guide/storage-modes#custom-binary-directory)) |
+
+Examples:
+
+```sh
+tailscale-manager install-quiet --source small --bin-dir /mnt/sda1/tailscale
+tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
+```
+
 ### Version Management
 
 | Command | Description |

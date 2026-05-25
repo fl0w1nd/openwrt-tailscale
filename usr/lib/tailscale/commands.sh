@@ -36,7 +36,14 @@ do_install() {
     echo "============================================="
     echo ""
 
-    if [ -f "${PERSISTENT_DIR}/version" ] || [ -f "${RAM_DIR}/version" ]; then
+    local installed_bin_dir=""
+    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        config_get installed_bin_dir settings bin_dir ""
+    fi
+    if [ -f "${PERSISTENT_DIR}/version" ] || [ -f "${RAM_DIR}/version" ] || \
+       { [ -n "$installed_bin_dir" ] && [ -f "${installed_bin_dir}/version" ]; }; then
         echo "Tailscale appears to be already installed."
         printf "Do you want to reinstall? [y/N]: "
         read -r answer
@@ -128,7 +135,7 @@ do_install() {
     echo "Select storage mode:"
     echo ""
     echo "  1) Persistent (recommended)"
-    echo "     - Binaries stored in /opt/tailscale"
+    echo "     - Binaries stored in ${PERSISTENT_DIR}"
     echo "     - Survives reboots, no re-download needed"
     if [ "$DOWNLOAD_SOURCE" = "small" ]; then
         echo "     - Uses ~8-10 MB disk space"
@@ -155,6 +162,12 @@ do_install() {
         *)
             storage_mode="persistent"
             bin_dir="$PERSISTENT_DIR"
+            echo ""
+            printf "Binary directory [%s]: " "$PERSISTENT_DIR"
+            read -r custom_bin_dir
+            if [ -n "$custom_bin_dir" ]; then
+                bin_dir="$custom_bin_dir"
+            fi
             ;;
     esac
 
@@ -429,8 +442,18 @@ do_uninstall() {
     remove_cron
     remove_symlinks
 
+    local uci_bin_dir=""
+    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        config_get uci_bin_dir settings bin_dir ""
+    fi
+
     rm -rf "$PERSISTENT_DIR"
     rm -rf "$RAM_DIR"
+    if [ -n "$uci_bin_dir" ] && [ "$uci_bin_dir" != "$PERSISTENT_DIR" ] && [ "$uci_bin_dir" != "$RAM_DIR" ]; then
+        rm -rf "$uci_bin_dir"
+    fi
 
     rm -f "$INIT_SCRIPT"
     rm -f "$CRON_SCRIPT"
@@ -468,9 +491,17 @@ do_status() {
     echo "============================================="
     echo ""
 
+    local uci_bin_dir=""
+    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        config_get uci_bin_dir settings bin_dir ""
+    fi
+
+    local persistent_dir="${uci_bin_dir:-$PERSISTENT_DIR}"
     local persistent_ver
     local ram_ver
-    persistent_ver=$(get_installed_version "$PERSISTENT_DIR")
+    persistent_ver=$(get_installed_version "$persistent_dir")
     ram_ver=$(get_installed_version "$RAM_DIR")
     local install_dir=""
     local source_type="official"
@@ -478,9 +509,9 @@ do_status() {
     echo "Installation:"
     if [ "$persistent_ver" != "not installed" ]; then
         echo "  Mode: Persistent"
-        echo "  Directory: $PERSISTENT_DIR"
+        echo "  Directory: $persistent_dir"
         echo "  Version: $persistent_ver"
-        install_dir="$PERSISTENT_DIR"
+        install_dir="$persistent_dir"
     elif [ "$ram_ver" != "not installed" ]; then
         echo "  Mode: RAM"
         echo "  Directory: $RAM_DIR"
@@ -682,6 +713,12 @@ do_install_version() {
         if [ "$sm_choice" = "2" ]; then
             storage_mode="ram"
             bin_dir="$RAM_DIR"
+        else
+            printf "Binary directory [%s]: " "$PERSISTENT_DIR"
+            read -r custom_bin_dir
+            if [ -n "$custom_bin_dir" ]; then
+                bin_dir="$custom_bin_dir"
+            fi
         fi
         printf "Enable auto-update? [y/N]: "
         read -r au_answer
@@ -733,13 +770,14 @@ do_download_only() {
 }
 
 cmd_install() {
-    local opt_source="" opt_storage="" opt_auto_update=""
+    local opt_source="" opt_storage="" opt_auto_update="" opt_bin_dir=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
             --source) opt_source="$2"; shift 2 ;;
             --storage) opt_storage="$2"; shift 2 ;;
             --auto-update) opt_auto_update="$2"; shift 2 ;;
+            --bin-dir) opt_bin_dir="$2"; shift 2 ;;
             *) log_error "Unknown option: $1"; return 1 ;;
         esac
     done
@@ -747,6 +785,7 @@ cmd_install() {
     local download_source="${opt_source:-small}"
     local storage_mode="${opt_storage:-persistent}"
     local auto_update="${opt_auto_update:-0}"
+    local persistent_bin_dir="$PERSISTENT_DIR"
     local bin_dir="$PERSISTENT_DIR"
 
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
@@ -755,11 +794,14 @@ cmd_install() {
         [ -z "$opt_source" ] && config_get download_source settings download_source "$download_source"
         [ -z "$opt_storage" ] && config_get storage_mode settings storage_mode "$storage_mode"
         [ -z "$opt_auto_update" ] && config_get auto_update settings auto_update "$auto_update"
+        [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
     fi
+
+    [ -n "$opt_bin_dir" ] && persistent_bin_dir="$opt_bin_dir"
 
     case "$storage_mode" in
         ram) bin_dir="$RAM_DIR" ;;
-        *) bin_dir="$PERSISTENT_DIR"; storage_mode="persistent" ;;
+        *) bin_dir="$persistent_bin_dir"; storage_mode="persistent" ;;
     esac
 
     DOWNLOAD_SOURCE="$download_source"
@@ -803,11 +845,12 @@ cmd_install() {
 cmd_install_version() {
     local target_version="$1"
     shift || true
-    local opt_source=""
+    local opt_source="" opt_bin_dir=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
             --source) opt_source="$2"; shift 2 ;;
+            --bin-dir) opt_bin_dir="$2"; shift 2 ;;
             *) log_error "Unknown option: $1"; return 1 ;;
         esac
     done
@@ -826,6 +869,7 @@ cmd_install_version() {
 
     local download_source="${opt_source:-official}"
     local storage_mode="persistent"
+    local persistent_bin_dir="$PERSISTENT_DIR"
     local bin_dir="$PERSISTENT_DIR"
     local auto_update="0"
 
@@ -834,13 +878,15 @@ cmd_install_version() {
         config_load tailscale 2>/dev/null || true
         [ -z "$opt_source" ] && config_get download_source settings download_source "$download_source"
         config_get storage_mode settings storage_mode "$storage_mode"
-        config_get bin_dir settings bin_dir "$bin_dir"
+        [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
         config_get auto_update settings auto_update "$auto_update"
     fi
 
+    [ -n "$opt_bin_dir" ] && persistent_bin_dir="$opt_bin_dir"
+
     case "$storage_mode" in
         ram) bin_dir="$RAM_DIR" ;;
-        *) bin_dir="$PERSISTENT_DIR" ;;
+        *) bin_dir="$persistent_bin_dir" ;;
     esac
 
     DOWNLOAD_SOURCE="$download_source"

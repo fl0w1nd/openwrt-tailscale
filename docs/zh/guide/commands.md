@@ -29,6 +29,24 @@ tailscale-manager [命令] [选项]
 | `install-version <版本>` | 安装指定版本 |
 | `download-only` | 仅下载二进制文件，不安装 |
 
+#### 安装选项
+
+`install-quiet` 与 `install-version` 均支持以下参数：
+
+| 参数 | 可选值 | 说明 |
+|------|--------|------|
+| `--source` | `official` / `small` | 下载源 |
+| `--storage` | `persistent` / `ram` | 存储模式（仅 `install-quiet`） |
+| `--auto-update` | `0` / `1` | 启用每日自动更新定时任务（仅 `install-quiet`） |
+| `--bin-dir` | 绝对路径 | 持久化模式下的自定义二进制目录（详见[存储模式](/zh/guide/storage-modes#自定义二进制目录)） |
+
+示例：
+
+```sh
+tailscale-manager install-quiet --source small --bin-dir /mnt/sda1/tailscale
+tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
+```
+
 ### 版本管理
 
 | 命令 | 说明 |

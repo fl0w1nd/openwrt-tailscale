@@ -63,7 +63,9 @@ SMALL_DOWNLOAD_BASE="${TAILSCALE_SMALL_BASE_URL}/releases/download"
 SMALL_SUPPORTED_ARCHS="amd64 arm64 arm armv6 armv5 mipsle mips"
 
 # Installation paths
-PERSISTENT_DIR="/opt/tailscale"
+# PERSISTENT_DIR can be overridden via env var, e.g. to point at an external
+# mount such as a USB stick on devices with limited internal flash.
+PERSISTENT_DIR="${PERSISTENT_DIR:-/opt/tailscale}"
 RAM_DIR="/tmp/tailscale"
 STATE_FILE="/etc/config/tailscaled.state"
 STATE_DIR="/etc/tailscale"

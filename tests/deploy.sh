@@ -137,7 +137,7 @@ get_configured_net_mode() { echo userspace; }
 get_effective_net_mode() { echo userspace; }
 show_userspace_subnet_guidance() { echo userspace-guidance >> "$CALLS"; }
 
-printf '\n\n\n' | do_install >/dev/null
+printf '\n\n\n\n' | do_install >/dev/null
 
 grep -Fq 'runtime' "$CALLS"
 grep -Fq 'update' "$CALLS"
@@ -176,7 +176,7 @@ get_configured_net_mode() { echo userspace; }
 get_effective_net_mode() { echo userspace; }
 show_userspace_subnet_guidance() { echo userspace-guidance >> "$CALLS"; }
 
-if printf '\n\n\n' | do_install >/dev/null; then
+if printf '\n\n\n\n' | do_install >/dev/null; then
     echo 'do_install should fail when finalize step fails'
     exit 1
 fi

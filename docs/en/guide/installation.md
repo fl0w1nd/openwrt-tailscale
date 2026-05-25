@@ -26,8 +26,10 @@ The interactive installer will guide you through:
 
 1. **Download source** — Choose Official (~30-35 MB) or Small (~8-10 MB)
 2. **Storage mode** — Persistent (`/opt/tailscale`) or RAM (`/tmp/tailscale`)
-3. **Download & install** — Automatically fetches the correct binary for your architecture
-4. **Start service** — Starts Tailscale via the procd init system
+3. **Binary directory** (persistent only) — Accept the default or type an absolute path such as `/mnt/sda1/tailscale` to install onto an external mount; see [Custom Binary Directory](/en/guide/storage-modes#custom-binary-directory)
+4. **Auto-update** — Optional daily cron to fetch new Tailscale releases (default: off)
+5. **Download & install** — Automatically fetches the correct binary for your architecture
+6. **Start service** — Starts Tailscale via the procd init system
 
 ## Dependencies
 

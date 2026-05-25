@@ -26,8 +26,10 @@ wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/ope
 
 1. **下载源** — 选择官方版（~30-35 MB）或小体积版（~8-10 MB）
 2. **存储模式** — 持久化（`/opt/tailscale`）或内存（`/tmp/tailscale`）
-3. **下载安装** — 自动获取适配你设备架构的二进制文件
-4. **启动服务** — 通过 procd 初始化系统启动 Tailscale
+3. **二进制目录**（仅持久化模式）— 接受默认值，或输入绝对路径（如 `/mnt/sda1/tailscale`）把二进制装到外置挂载点；详见[自定义二进制目录](/zh/guide/storage-modes#自定义二进制目录)
+4. **自动更新** — 可选的每日定时拉取新版本（默认关闭）
+5. **下载安装** — 自动获取适配你设备架构的二进制文件
+6. **启动服务** — 通过 procd 初始化系统启动 Tailscale
 
 ## 依赖管理
 

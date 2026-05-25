@@ -16,7 +16,7 @@ config tailscale 'settings'
     option download_source 'small'  # Download source: official | small
     option net_mode 'auto'          # Networking mode: auto | tun | userspace
     option proxy_listen 'localhost' # Proxy listen: localhost | lan
-    option auto_update '1'          # Auto-update: 0 | 1
+    option auto_update '0'          # Auto-update: 0 | 1
 ```
 
 ## Editing Configuration
@@ -40,11 +40,11 @@ If the [LuCI interface](/en/guide/luci) is installed, use **Services → Tailsca
 | `enabled` | `0` / `1` | `1` | Enable or disable the Tailscale service |
 | `port` | integer | `41641` | UDP port for Tailscale WireGuard traffic |
 | `storage_mode` | `persistent` / `ram` | `persistent` | Where to store binaries |
-| `bin_dir` | path | `/opt/tailscale` | Binary installation directory |
+| `bin_dir` | path | `/opt/tailscale` | Binary installation directory (configurable at install time via `--bin-dir` or the interactive prompt — useful for external mounts; see [Storage Modes](/en/guide/storage-modes#custom-binary-directory)) |
 | `state_file` | path | `/etc/config/tailscaled.state` | Tailscale state file |
 | `statedir` | path | `/etc/tailscale` | Tailscale state directory |
 | `fw_mode` | `nftables` / `iptables` | `nftables` | Firewall backend |
 | `download_source` | `official` / `small` | `small` | Binary download source |
 | `net_mode` | `auto` / `tun` / `userspace` | `auto` | Network mode |
 | `proxy_listen` | `localhost` / `lan` | `localhost` | Proxy listen address (userspace only) |
-| `auto_update` | `0` / `1` | `1` | Enable daily auto-update cron job |
+| `auto_update` | `0` / `1` | `0` | Enable daily auto-update cron job |

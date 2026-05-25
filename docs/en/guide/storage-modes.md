@@ -11,13 +11,42 @@ Tailscale binaries can be stored in two modes, chosen during installation.
 
 ## Persistent Mode
 
-Binaries are stored in `/opt/tailscale` and survive reboots. This is the recommended mode for routers with sufficient flash storage.
+Binaries are stored in `/opt/tailscale` by default and survive reboots. This is the recommended mode for routers with sufficient flash storage.
 
 ```
 /opt/tailscale/
 ├── tailscale       # CLI tool
 └── tailscaled      # Daemon
 ```
+
+### Custom Binary Directory
+
+If your router's internal flash is too small but you have an external mount (USB stick, SD card, NAS share), you can install the persistent binaries there.
+
+**Interactive install** — when you choose persistent mode, the installer asks:
+
+```
+Binary directory [/opt/tailscale]:
+```
+
+Enter any absolute path (e.g. `/mnt/sda1/tailscale`) or press Enter for the default.
+
+**Non-interactive install** — pass `--bin-dir`:
+
+```sh
+tailscale-manager install --bin-dir /mnt/sda1/tailscale
+tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
+```
+
+**Environment variable** — override the default path for all commands in the current shell:
+
+```sh
+PERSISTENT_DIR=/mnt/sda1/tailscale tailscale-manager install
+```
+
+::: tip
+Make sure the external mount is mounted at boot (via `/etc/fstab` or `block mount`) before the Tailscale init script runs.
+:::
 
 ## RAM Mode
 
