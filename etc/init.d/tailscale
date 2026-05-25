@@ -159,10 +159,31 @@ start_service() {
         fi
     fi
     
-    # Check binary exists
+    # Check binary exists.
+    # For persistent mode, wait up to 30s in case bin_dir lives on a
+    # late-mounted filesystem (USB, external storage, etc.).
+    # RAM mode just downloaded above, so no waiting is needed.
+    if [ "$STORAGE_MODE" != "ram" ]; then
+        local wait_max=30
+        local wait_i=0
+        while [ $wait_i -lt $wait_max ]; do
+            check_binary && break
+            wait_i=$((wait_i + 1))
+            sleep 1
+        done
+        if [ $wait_i -gt 0 ] && check_binary; then
+            log_msg "info" "tailscaled binary became available after ${wait_i}s"
+        fi
+    fi
+
     if ! check_binary; then
         log_msg "error" "tailscaled binary not found at ${BIN_DIR}/tailscaled"
-        log_msg "info" "Please run: tailscale-manager install"
+        if [ "$STORAGE_MODE" = "ram" ]; then
+            log_msg "info" "RAM mode: binary download appears to have failed; check network and retry"
+        else
+            log_msg "info" "If bin_dir (${BIN_DIR}) is on external/USB storage, verify the device is plugged in and the mount point is configured to come up at boot"
+            log_msg "info" "Otherwise run: tailscale-manager install"
+        fi
         return 1
     fi
     
