@@ -216,6 +216,73 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_install_quiet_honors_bin_dir_flag() {
+    setup_install_stubs
+    new_script manager-install-quiet-bindir.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
+
+custom_dir="$TEST_DIR/root/mnt/sda1/tailscale"
+cmd_install --source official --storage persistent --bin-dir "$custom_dir" >/dev/null
+
+[ -f "$custom_dir/version" ] || { echo "expected version file in $custom_dir"; exit 1; }
+grep -Fq "uci persistent $custom_dir official 0" "$CALLS" || {
+    echo "UCI config did not record custom bin_dir"
+    cat "$CALLS"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_quiet_rejects_relative_bin_dir() {
+    setup_install_stubs
+    new_script manager-install-quiet-bindir-relative.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
+
+if cmd_install --bin-dir relative/path >/dev/null 2>&1; then
+    echo 'cmd_install should reject relative --bin-dir'
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_quiet_rejects_system_bin_dir() {
+    setup_install_stubs
+    new_script manager-install-quiet-bindir-system.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
+
+for bad in / /etc /usr /usr/bin; do
+    if cmd_install --bin-dir "$bad" >/dev/null 2>&1; then
+        echo "cmd_install should reject reserved path: $bad"
+        exit 1
+    fi
+done
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_install_version_quiet_does_not_reinstall_managed_files() {
     setup_install_stubs
     new_script manager-install-version-quiet.sh <<'EOF'
@@ -843,6 +910,9 @@ run_deploy_tests() {
     run_test 'interactive install deploys LuCI app files' test_install_interactive_installs_luci_app
     run_test 'interactive install stops when finalize step fails' test_install_interactive_propagates_finalize_failure
     run_test 'install-quiet deploys LuCI app files' test_install_quiet_installs_luci_app
+    run_test 'install-quiet honors --bin-dir flag for persistent mode' test_install_quiet_honors_bin_dir_flag
+    run_test 'install-quiet rejects relative --bin-dir' test_install_quiet_rejects_relative_bin_dir
+    run_test 'install-quiet rejects reserved system --bin-dir' test_install_quiet_rejects_system_bin_dir
     run_test 'install-version avoids managed file reinstall' test_install_version_quiet_does_not_reinstall_managed_files
     run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
     run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install

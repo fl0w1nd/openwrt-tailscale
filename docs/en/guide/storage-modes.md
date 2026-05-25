@@ -31,10 +31,10 @@ Binary directory [/opt/tailscale]:
 
 Enter any absolute path (e.g. `/mnt/sda1/tailscale`) or press Enter for the default.
 
-**Non-interactive install** — pass `--bin-dir`:
+**Non-interactive install** — pass `--bin-dir` (note: the interactive `install` command ignores flags, use `install-quiet` for scripting):
 
 ```sh
-tailscale-manager install --bin-dir /mnt/sda1/tailscale
+tailscale-manager install-quiet --bin-dir /mnt/sda1/tailscale
 tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 ```
 

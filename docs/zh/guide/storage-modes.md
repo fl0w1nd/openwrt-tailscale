@@ -31,10 +31,10 @@ Binary directory [/opt/tailscale]:
 
 输入任意绝对路径（如 `/mnt/sda1/tailscale`），或直接回车使用默认值。
 
-**非交互式安装** — 使用 `--bin-dir` 参数：
+**非交互式安装** — 使用 `--bin-dir` 参数（注意：交互式 `install` 命令不解析参数，脚本化场景需用 `install-quiet`）：
 
 ```sh
-tailscale-manager install --bin-dir /mnt/sda1/tailscale
+tailscale-manager install-quiet --bin-dir /mnt/sda1/tailscale
 tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 ```
 

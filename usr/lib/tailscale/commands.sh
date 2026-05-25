@@ -2,20 +2,46 @@
 # Core install, update, uninstall, status, and automation commands
 # Sourced by tailscale-manager entry script.
 
-# Validate that a path is absolute (begins with /). Returns 0 if absolute,
-# logs an error and returns 1 otherwise. Used to guard user-provided
-# --bin-dir flag values and interactive bin_dir prompts so that downstream
-# file operations do not resolve against the script's current directory.
+# Validate that a user-supplied bin_dir is safe to use. Requires:
+#   - non-empty value
+#   - absolute path (begins with /)
+#   - not one of a small denylist of system roots that would clobber the OS
+#     or be catastrophic at uninstall time (e.g. / /usr /etc /bin)
+# Used to guard --bin-dir flag values and interactive bin_dir prompts.
 require_absolute_path() {
     local path="$1"
     local label="${2:-Path}"
+
+    if [ -z "$path" ]; then
+        log_error "${label} must not be empty"
+        return 1
+    fi
+
     case "$path" in
-        /*) return 0 ;;
+        /*) ;;
         *)
             log_error "${label} must be an absolute path, got: ${path}"
             return 1
             ;;
     esac
+
+    # Strip a trailing slash for comparison so "/usr" and "/usr/" match the
+    # same denylist entry, but leave "/" as itself.
+    local normalized="$path"
+    case "$normalized" in
+        /) ;;
+        */) normalized="${normalized%/}" ;;
+    esac
+
+    case "$normalized" in
+        /|/bin|/sbin|/usr|/usr/bin|/usr/sbin|/usr/lib|/usr/local|/lib|/lib64|\
+/etc|/dev|/proc|/sys|/root|/boot|/var|/tmp|/mnt|/opt|/home)
+            log_error "${label} '${path}' is a reserved system directory; pick a sub-path like ${normalized%/}/tailscale"
+            return 1
+            ;;
+    esac
+
+    return 0
 }
 
 # Shared post-install flow: deploy managed files, configure cron, enable and
