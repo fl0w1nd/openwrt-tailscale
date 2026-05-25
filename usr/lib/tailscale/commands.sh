@@ -746,7 +746,7 @@ cmd_install() {
 
     local download_source="${opt_source:-small}"
     local storage_mode="${opt_storage:-persistent}"
-    local auto_update="${opt_auto_update:-1}"
+    local auto_update="${opt_auto_update:-0}"
     local bin_dir="$PERSISTENT_DIR"
 
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
