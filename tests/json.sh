@@ -132,6 +132,27 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_json_find_bin_dir_uses_configured_defaults() {
+    new_script json-find-bin-dir-defaults.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+
+PERSISTENT_DIR="$TEST_DIR/custom/tailscale"
+RAM_DIR="$TEST_DIR/ram/tailscale"
+mkdir -p "\$PERSISTENT_DIR"
+printf '1.76.1\n' > "\$PERSISTENT_DIR/version"
+
+bin_dir=\$(_find_bin_dir)
+[ "\$bin_dir" = "\$PERSISTENT_DIR" ] || {
+    echo "expected \$PERSISTENT_DIR, got \$bin_dir"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_json_latest_versions_both_sources() {
     write_stub wget <<'EOF'
 #!/bin/sh
@@ -612,6 +633,7 @@ run_json_tests() {
     run_test 'json-status returns not-installed state with valid JSON' test_json_status_not_installed
     run_test 'json-install-info reports arch when not installed' test_json_install_info_reports_arch
     run_test 'json-install-info reports installed state' test_json_install_info_installed
+    run_test '_find_bin_dir uses configured default dirs' test_json_find_bin_dir_uses_configured_defaults
     run_test 'json-latest-versions fetches both sources' test_json_latest_versions_both_sources
     run_test 'json-latest-version respects installed source' test_json_latest_version_uses_installed_source
     run_test 'json-script-local-info reports current version' test_json_script_local_info_reports_current_version

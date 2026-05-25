@@ -33,7 +33,7 @@ _find_bin_dir() {
         echo "$uci_dir"
         return 0
     fi
-    for d in /opt/tailscale /tmp/tailscale; do
+    for d in "$PERSISTENT_DIR" "$RAM_DIR"; do
         [ -f "$d/version" ] && { echo "$d"; return 0; }
     done
     return 1
