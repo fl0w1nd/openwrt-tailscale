@@ -38,6 +38,18 @@ tailscale-manager install-quiet --bin-dir /mnt/sda1/tailscale
 tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 ```
 
+**后续更换目录** — 使用新路径再执行一次安装命令即可。Tailscale 状态文件单独保存，这个操作只会替换二进制文件并更新当前配置的二进制目录：
+
+```sh
+tailscale-manager install-quiet --bin-dir /mnt/sdb1/tailscale
+```
+
+如果想保持当前已安装的 Tailscale 版本，显式安装该版本：
+
+```sh
+tailscale-manager install-version 1.78.0 --bin-dir /mnt/sdb1/tailscale
+```
+
 **环境变量** — 覆盖当前 shell 内所有命令的默认路径：
 
 ```sh
