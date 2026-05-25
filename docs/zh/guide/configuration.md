@@ -16,7 +16,7 @@ config tailscale 'settings'
     option download_source 'small'  # 下载源：official | small
     option net_mode 'auto'          # 网络模式：auto | tun | userspace
     option proxy_listen 'localhost' # 代理监听：localhost | lan
-    option auto_update '1'          # 自动更新：0 | 1
+    option auto_update '0'          # 自动更新：0 | 1
 ```
 
 ## 修改配置
@@ -40,11 +40,11 @@ uci commit tailscale
 | `enabled` | `0` / `1` | `1` | 启用或禁用 Tailscale 服务 |
 | `port` | 整数 | `41641` | Tailscale WireGuard 流量的 UDP 端口 |
 | `storage_mode` | `persistent` / `ram` | `persistent` | 二进制文件存储位置 |
-| `bin_dir` | 路径 | `/opt/tailscale` | 二进制文件安装目录 |
+| `bin_dir` | 路径 | `/opt/tailscale` | 二进制文件安装目录（安装时可通过 `--bin-dir` 参数或交互式提示自定义，适合外置挂载场景，详见[存储模式](/zh/guide/storage-modes#自定义二进制目录)） |
 | `state_file` | 路径 | `/etc/config/tailscaled.state` | Tailscale 状态文件 |
 | `statedir` | 路径 | `/etc/tailscale` | Tailscale 状态目录 |
 | `fw_mode` | `nftables` / `iptables` | `nftables` | 防火墙后端 |
 | `download_source` | `official` / `small` | `small` | 二进制下载源 |
 | `net_mode` | `auto` / `tun` / `userspace` | `auto` | 网络模式 |
 | `proxy_listen` | `localhost` / `lan` | `localhost` | 代理监听地址（仅用户空间模式） |
-| `auto_update` | `0` / `1` | `1` | 启用每日自动更新定时任务 |
+| `auto_update` | `0` / `1` | `0` | 启用每日自动更新定时任务 |

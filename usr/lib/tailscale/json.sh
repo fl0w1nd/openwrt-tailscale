@@ -27,7 +27,13 @@
 
 _find_bin_dir() {
     local d
-    for d in /opt/tailscale /tmp/tailscale; do
+    local uci_dir
+    uci_dir=$(uci -q get tailscale.settings.bin_dir 2>/dev/null) || uci_dir=""
+    if [ -n "$uci_dir" ] && [ -f "$uci_dir/version" ]; then
+        echo "$uci_dir"
+        return 0
+    fi
+    for d in "$PERSISTENT_DIR" "$RAM_DIR"; do
         [ -f "$d/version" ] && { echo "$d"; return 0; }
     done
     return 1
