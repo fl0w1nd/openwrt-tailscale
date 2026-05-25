@@ -44,6 +44,15 @@ require_absolute_path() {
     return 0
 }
 
+require_persistent_dir() {
+    require_absolute_path "$PERSISTENT_DIR" "PERSISTENT_DIR"
+}
+
+require_configured_persistent_bin_dir() {
+    local bin_dir="$1"
+    require_absolute_path "$bin_dir" "Configured bin_dir"
+}
+
 # Shared post-install flow: deploy managed files, configure cron, enable and
 # start the service, then verify it came up.  Returns 1 if tailscaled fails
 # to start so callers can decide whether to abort or continue.
@@ -210,6 +219,8 @@ do_install() {
             if [ -n "$custom_bin_dir" ]; then
                 require_absolute_path "$custom_bin_dir" "Binary directory" || return 1
                 bin_dir="$custom_bin_dir"
+            else
+                require_persistent_dir || return 1
             fi
             ;;
     esac
@@ -300,6 +311,10 @@ do_update() {
     config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
     config_get storage_mode settings storage_mode persistent
     config_get DOWNLOAD_SOURCE settings download_source official
+
+    if [ "$storage_mode" != "ram" ]; then
+        require_configured_persistent_bin_dir "$bin_dir" || return 1
+    fi
 
     local current_version
     current_version=$(get_installed_version "$bin_dir")
@@ -406,6 +421,8 @@ do_rollback() {
     config_load tailscale
     config_get bin_dir settings bin_dir "$PERSISTENT_DIR"
 
+    require_configured_persistent_bin_dir "$bin_dir" || return 1
+
     local rollback_file="${bin_dir}/.rollback_version"
     if [ ! -f "$rollback_file" ]; then
         log_error "No rollback version recorded. Nothing to roll back to."
@@ -484,6 +501,8 @@ do_uninstall() {
 
     remove_cron
     remove_symlinks
+
+    require_persistent_dir || return 1
 
     local uci_bin_dir=""
     if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
@@ -775,6 +794,8 @@ do_install_version() {
             if [ -n "$custom_bin_dir" ]; then
                 require_absolute_path "$custom_bin_dir" "Binary directory" || return 1
                 bin_dir="$custom_bin_dir"
+            else
+                require_persistent_dir || return 1
             fi
         fi
         printf "Enable auto-update? [y/N]: "
@@ -861,7 +882,11 @@ cmd_install() {
 
     case "$storage_mode" in
         ram) bin_dir="$RAM_DIR" ;;
-        *) bin_dir="$persistent_bin_dir"; storage_mode="persistent" ;;
+        *)
+            require_configured_persistent_bin_dir "$persistent_bin_dir" || return 1
+            bin_dir="$persistent_bin_dir"
+            storage_mode="persistent"
+            ;;
     esac
 
     DOWNLOAD_SOURCE="$download_source"
@@ -949,7 +974,10 @@ cmd_install_version() {
 
     case "$storage_mode" in
         ram) bin_dir="$RAM_DIR" ;;
-        *) bin_dir="$persistent_bin_dir" ;;
+        *)
+            require_configured_persistent_bin_dir "$persistent_bin_dir" || return 1
+            bin_dir="$persistent_bin_dir"
+            ;;
     esac
 
     DOWNLOAD_SOURCE="$download_source"

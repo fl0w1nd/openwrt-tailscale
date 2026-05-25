@@ -283,6 +283,47 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_install_quiet_rejects_unsafe_persistent_dir_env() {
+    setup_install_stubs
+    new_script manager-install-quiet-persistent-env.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
+PERSISTENT_DIR="/"
+
+if cmd_install --source official --storage persistent >/dev/null 2>&1; then
+    echo 'cmd_install should reject unsafe PERSISTENT_DIR'
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_install_quiet_rejects_unsafe_uci_bin_dir() {
+    setup_install_stubs
+    new_script manager-install-quiet-uci-bindir.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+. "$TEST_DIR/install-stubs.sh"
+
+if require_configured_persistent_bin_dir /usr >/dev/null 2>&1; then
+    echo 'configured bin_dir validator should reject unsafe path'
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_install_version_quiet_does_not_reinstall_managed_files() {
     setup_install_stubs
     new_script manager-install-version-quiet.sh <<'EOF'
@@ -913,6 +954,8 @@ run_deploy_tests() {
     run_test 'install-quiet honors --bin-dir flag for persistent mode' test_install_quiet_honors_bin_dir_flag
     run_test 'install-quiet rejects relative --bin-dir' test_install_quiet_rejects_relative_bin_dir
     run_test 'install-quiet rejects reserved system --bin-dir' test_install_quiet_rejects_system_bin_dir
+    run_test 'install-quiet rejects unsafe PERSISTENT_DIR env' test_install_quiet_rejects_unsafe_persistent_dir_env
+    run_test 'install-quiet rejects unsafe configured bin_dir' test_install_quiet_rejects_unsafe_uci_bin_dir
     run_test 'install-version avoids managed file reinstall' test_install_version_quiet_does_not_reinstall_managed_files
     run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
     run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
