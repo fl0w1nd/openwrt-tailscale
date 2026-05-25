@@ -2,6 +2,22 @@
 # Core install, update, uninstall, status, and automation commands
 # Sourced by tailscale-manager entry script.
 
+# Validate that a path is absolute (begins with /). Returns 0 if absolute,
+# logs an error and returns 1 otherwise. Used to guard user-provided
+# --bin-dir flag values and interactive bin_dir prompts so that downstream
+# file operations do not resolve against the script's current directory.
+require_absolute_path() {
+    local path="$1"
+    local label="${2:-Path}"
+    case "$path" in
+        /*) return 0 ;;
+        *)
+            log_error "${label} must be an absolute path, got: ${path}"
+            return 1
+            ;;
+    esac
+}
+
 # Shared post-install flow: deploy managed files, configure cron, enable and
 # start the service, then verify it came up.  Returns 1 if tailscaled fails
 # to start so callers can decide whether to abort or continue.
@@ -166,6 +182,7 @@ do_install() {
             printf "Binary directory [%s]: " "$PERSISTENT_DIR"
             read -r custom_bin_dir
             if [ -n "$custom_bin_dir" ]; then
+                require_absolute_path "$custom_bin_dir" "Binary directory" || return 1
                 bin_dir="$custom_bin_dir"
             fi
             ;;
@@ -451,8 +468,21 @@ do_uninstall() {
 
     rm -rf "$PERSISTENT_DIR"
     rm -rf "$RAM_DIR"
+    # For a user-configured bin_dir (which may point at an external mount),
+    # only remove the specific files this script installs, then try rmdir.
+    # This avoids rm -rf wiping unrelated content if bin_dir was misconfigured.
     if [ -n "$uci_bin_dir" ] && [ "$uci_bin_dir" != "$PERSISTENT_DIR" ] && [ "$uci_bin_dir" != "$RAM_DIR" ]; then
-        rm -rf "$uci_bin_dir"
+        case "$uci_bin_dir" in
+            /*)
+                rm -f "${uci_bin_dir}/tailscale" \
+                      "${uci_bin_dir}/tailscaled" \
+                      "${uci_bin_dir}/tailscale.combined" \
+                      "${uci_bin_dir}/version" \
+                      "${uci_bin_dir}/source" \
+                      "${uci_bin_dir}/.rollback_version" 2>/dev/null || true
+                rmdir "$uci_bin_dir" 2>/dev/null || true
+                ;;
+        esac
     fi
 
     rm -f "$INIT_SCRIPT"
@@ -717,6 +747,7 @@ do_install_version() {
             printf "Binary directory [%s]: " "$PERSISTENT_DIR"
             read -r custom_bin_dir
             if [ -n "$custom_bin_dir" ]; then
+                require_absolute_path "$custom_bin_dir" "Binary directory" || return 1
                 bin_dir="$custom_bin_dir"
             fi
         fi
@@ -797,7 +828,10 @@ cmd_install() {
         [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
     fi
 
-    [ -n "$opt_bin_dir" ] && persistent_bin_dir="$opt_bin_dir"
+    if [ -n "$opt_bin_dir" ]; then
+        require_absolute_path "$opt_bin_dir" "--bin-dir" || return 1
+        persistent_bin_dir="$opt_bin_dir"
+    fi
 
     case "$storage_mode" in
         ram) bin_dir="$RAM_DIR" ;;
@@ -882,7 +916,10 @@ cmd_install_version() {
         config_get auto_update settings auto_update "$auto_update"
     fi
 
-    [ -n "$opt_bin_dir" ] && persistent_bin_dir="$opt_bin_dir"
+    if [ -n "$opt_bin_dir" ]; then
+        require_absolute_path "$opt_bin_dir" "--bin-dir" || return 1
+        persistent_bin_dir="$opt_bin_dir"
+    fi
 
     case "$storage_mode" in
         ram) bin_dir="$RAM_DIR" ;;
