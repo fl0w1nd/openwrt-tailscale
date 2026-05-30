@@ -7,6 +7,19 @@ All notable changes to the tailscale-manager script are documented here. Version
 - Remove cron-based auto-update for management scripts and LuCI; script/UI updates are now manual only (Tailscale binary auto-update is retained)
 - Automatically purge the legacy script auto-update cron job and `/usr/bin/tailscale-script-update` on upgrade
 
+## v4.0.10 (2026-05-26)
+
+- Init script now polls for the tailscaled binary up to 30s on boot, accommodating late-mounted external storage in persistent mode
+- Show mount-configuration hint when binary wait times out
+
+## v4.0.9 (2026-05-25)
+
+- Add configurable persistent binary directory (`--bin-dir`), allowing binaries to be installed to external storage (e.g. USB) for devices with limited internal flash
+- Add interactive bin-dir prompt during install
+- Validate bin_dir as absolute path on a persistent filesystem; clean up custom directory on uninstall
+- JSON status fallback now correctly uses the UCI-configured bin_dir
+- Fix auto_update defaulting to enabled in non-interactive cmd_install
+
 ## v4.0.8 (2026-04-19)
 
 - Switch script updates to managed packages
