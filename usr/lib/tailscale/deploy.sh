@@ -5,7 +5,6 @@
 # Required variables (set by entry script before sourcing):
 #   COMMON_LIB_URL, COMMON_LIB_PATH, INIT_SCRIPT_URL, INIT_SCRIPT,
 #   UPDATE_SCRIPT_URL, CRON_SCRIPT,
-#   SCRIPT_UPDATE_SCRIPT_URL, SCRIPT_UPDATE_CRON_SCRIPT,
 #   MGMT_BUNDLE_URL, MGMT_BUNDLE_SHA256_URL,
 #   MANAGER_BIN_PATH,
 #   LUCI_VIEW_BASE_URL, LUCI_VIEW_DIR,
@@ -23,8 +22,10 @@
 
 # Cron tag comments for deterministic management
 CRON_TAG_BINARY="# openwrt-tailscale:binary-update"
+# Legacy script auto-update tag/path retained only so stale cron entries and
+# files from older installs are purged on upgrade. The feature itself is gone.
 CRON_TAG_SCRIPT="# openwrt-tailscale:script-update"
-SCRIPT_UPDATE_CRON_SCRIPT="${SCRIPT_UPDATE_CRON_SCRIPT:-/usr/bin/tailscale-script-update}"
+LEGACY_SCRIPT_UPDATE_CRON_SCRIPT="/usr/bin/tailscale-script-update"
 
 # Create UCI tailscale configuration
 create_uci_config() {
@@ -50,8 +51,6 @@ set tailscale.settings.statedir='${STATE_DIR}'
 set tailscale.settings.download_source='${download_source}'
 set tailscale.settings.auto_update='${auto_update}'
 set tailscale.settings.update_cron='30 3 * * *'
-set tailscale.settings.script_auto_update='0'
-set tailscale.settings.script_update_cron='0 4 * * 0'
 set tailscale.settings.net_mode='auto'
 set tailscale.settings.log_stdout='1'
 set tailscale.settings.log_stderr='1'
@@ -81,12 +80,6 @@ install_init_script() {
 install_update_script() {
     download_repo_file "$UPDATE_SCRIPT_URL" "$CRON_SCRIPT" 755 || return 1
     log_info "Installed update script at ${CRON_SCRIPT}"
-}
-
-# Install script auto-update cron script
-install_script_update_script() {
-    download_repo_file "$SCRIPT_UPDATE_SCRIPT_URL" "$SCRIPT_UPDATE_CRON_SCRIPT" 755 || return 1
-    log_info "Installed script update script at ${SCRIPT_UPDATE_CRON_SCRIPT}"
 }
 
 deploy_management_bundle() {
@@ -121,7 +114,6 @@ usr/lib/tailscale/commands.sh|${LIB_DIR}/commands.sh|644
 usr/lib/tailscale/menu.sh|${LIB_DIR}/menu.sh|644
 usr/lib/tailscale/json.sh|${LIB_DIR}/json.sh|644
 usr/bin/tailscale-update|${CRON_SCRIPT}|755
-usr/bin/tailscale-script-update|${SCRIPT_UPDATE_CRON_SCRIPT}|755
 etc/init.d/tailscale|${INIT_SCRIPT}|755
 luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js|${LUCI_VIEW_DIR}/config.js|644
 luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js|${LUCI_VIEW_DIR}/status.js|644
@@ -251,7 +243,6 @@ install_runtime_scripts() {
     done
 
     install_init_script || return 1
-    install_script_update_script || return 1
 }
 
 # Deploy LuCI app files with atomic staging and rollback
@@ -389,20 +380,18 @@ sync_managed_scripts() {
 # Removes all managed entries and re-adds only enabled ones
 setup_cron() {
     local auto_update="" update_cron=""
-    local script_auto_update="" script_update_cron=""
 
     if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
         . /lib/functions.sh
         config_load tailscale
         config_get auto_update settings auto_update "0"
         config_get update_cron settings update_cron "30 3 * * *"
-        config_get script_auto_update settings script_auto_update "0"
-        config_get script_update_cron settings script_update_cron "0 4 * * 0"
     fi
 
-    # Remove all managed entries first
+    # Remove all managed entries first, including legacy script auto-update
+    # entries from older installs (the feature is no longer supported).
     local existing
-    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$SCRIPT_UPDATE_CRON_SCRIPT") || true
+    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT") || true
 
     local new_cron="$existing"
 
@@ -411,13 +400,11 @@ setup_cron() {
 ${update_cron} ${CRON_SCRIPT} ${CRON_TAG_BINARY}"
     fi
 
-    if [ "$script_auto_update" = "1" ] && [ -n "$script_update_cron" ]; then
-        new_cron="${new_cron}
-${script_update_cron} ${SCRIPT_UPDATE_CRON_SCRIPT} ${CRON_TAG_SCRIPT}"
-    fi
-
     # Remove trailing/leading blank lines and apply
     printf '%s\n' "$new_cron" | grep -v '^$' | crontab - 2>/dev/null || true
+
+    # Purge the defunct script auto-update helper left over from older installs.
+    rm -f "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT" 2>/dev/null || true
 
     [ -x /etc/init.d/cron ] && /etc/init.d/cron restart >/dev/null 2>&1
     log_info "Cron jobs reconciled from UCI configuration"
@@ -426,7 +413,7 @@ ${script_update_cron} ${SCRIPT_UPDATE_CRON_SCRIPT} ${CRON_TAG_SCRIPT}"
 # Remove all managed cron jobs
 remove_cron() {
     local existing
-    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$SCRIPT_UPDATE_CRON_SCRIPT") || true
+    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT") || true
     printf '%s\n' "$existing" | grep -v '^$' | crontab - 2>/dev/null || true
     log_info "Removed managed cron jobs"
 }

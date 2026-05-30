@@ -2,6 +2,11 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.0.11 (2026-05-30)
+
+- 移除管理脚本与 LuCI 的自动更新（cron）功能，脚本和界面更新改为仅手动触发；Tailscale 二进制自动更新保留
+- 升级时自动清理遗留的脚本自动更新定时任务与 `/usr/bin/tailscale-script-update`
+
 ## v4.0.8 (2026-04-19)
 
 - 将脚本更新切换为管理包

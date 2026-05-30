@@ -312,7 +312,7 @@ return view.extend({
 		var m, s, o;
 
 		m = new form.Map('tailscale', _('Tailscale Maintenance'),
-			_('Manage update schedules, version control, and maintenance tasks.'));
+			_('Manage the binary update schedule, version control, and maintenance tasks.'));
 
 		s = m.section(form.NamedSection, 'settings', 'tailscale', _('Tailscale Binary Auto-Update'));
 		s.anonymous = false;
@@ -328,28 +328,6 @@ return view.extend({
 		o.default = '30 3 * * *';
 		o.placeholder = '30 3 * * *';
 		o.depends('auto_update', '1');
-		o.rmempty = false;
-		o.validate = function(section_id, value) {
-			if (!/^\s*(\S+\s+){4}\S+\s*$/.test(value))
-				return _('Invalid cron expression. Expected 5 fields: minute hour day month weekday.');
-			return true;
-		};
-
-		s = m.section(form.NamedSection, 'settings', 'tailscale', _('Management Script & LuCI Auto-Update'));
-		s.anonymous = false;
-		s.addremove = false;
-		s.description = _('Updates the management script, helper libraries, and LuCI interface files. This does not update the Tailscale binary.');
-
-		o = s.option(form.Flag, 'script_auto_update', _('Enable'),
-			_('Automatically check for and install management script and LuCI app updates.'));
-		o.default = '0';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'script_update_cron', _('Update Schedule'),
-			_('Cron expression for script & LuCI update checks. Format: minute hour day month weekday.'));
-		o.default = '0 4 * * 0';
-		o.placeholder = '0 4 * * 0';
-		o.depends('script_auto_update', '1');
 		o.rmempty = false;
 		o.validate = function(section_id, value) {
 			if (!/^\s*(\S+\s+){4}\S+\s*$/.test(value))

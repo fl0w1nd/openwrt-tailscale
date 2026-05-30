@@ -10,7 +10,7 @@ tailscale-manager uninstall
 
 - Tailscale 二进制文件（`tailscale`、`tailscaled`）
 - Init 脚本（`/etc/init.d/tailscale`）
-- 定时任务（`/usr/bin/tailscale-update`、`/usr/bin/tailscale-script-update`）
+- 定时任务（`/usr/bin/tailscale-update`，以及旧版本遗留的脚本更新任务）
 - UCI 配置（`/etc/config/tailscale`）
 - 模块库（`/usr/lib/tailscale/`）
 - LuCI 界面文件（如已安装）

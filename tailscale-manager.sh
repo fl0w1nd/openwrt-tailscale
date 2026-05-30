@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.0.10"
+VERSION="4.0.11"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -87,8 +87,6 @@ MGMT_BUNDLE_SHA256_URL="${MGMT_BASE_URL}/latest/tailscale-mgmt.tar.gz.sha256"
 CONFIG_TEMPLATE_URL="${REPO_BASE_URL}/etc/config/tailscale"
 INIT_SCRIPT_URL="${REPO_BASE_URL}/etc/init.d/tailscale"
 UPDATE_SCRIPT_URL="${REPO_BASE_URL}/usr/bin/tailscale-update"
-SCRIPT_UPDATE_SCRIPT_URL="${REPO_BASE_URL}/usr/bin/tailscale-script-update"
-SCRIPT_UPDATE_CRON_SCRIPT="/usr/bin/tailscale-script-update"
 COMMON_LIB_URL="${REPO_BASE_URL}/usr/lib/tailscale/common.sh"
 COMMON_LIB_PATH="/usr/lib/tailscale/common.sh"
 

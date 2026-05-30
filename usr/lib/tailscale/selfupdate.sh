@@ -74,7 +74,6 @@ usr/lib/tailscale/deploy.sh
 usr/lib/tailscale/selfupdate.sh
 usr/lib/tailscale/jsonutil.sh
 usr/bin/tailscale-update
-usr/bin/tailscale-script-update
 etc/init.d/tailscale
 luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale
 luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js

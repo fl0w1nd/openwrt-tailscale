@@ -49,7 +49,6 @@ LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 MANAGED_SYNC_VERSION_FILE="\$LIB_DIR/.managed-version"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
-SCRIPT_UPDATE_CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-script-update"
 
 # Override LuCI paths so install_luci_app writes to test dir
 LUCI_VIEW_DIR="$TEST_DIR/root/www/luci-static/resources/view/tailscale"
@@ -98,7 +97,6 @@ sync_managed_scripts
 [ -f "\$COMMON_LIB_PATH" ]
 [ -f "\$INIT_SCRIPT" ]
 [ -f "\$CRON_SCRIPT" ]
-[ -f "\$SCRIPT_UPDATE_CRON_SCRIPT" ]
 [ -f "\$MANAGED_SYNC_VERSION_FILE" ]
 [ -f "\$LUCI_VIEW_DIR/config.js" ]
 [ -f "\$LUCI_VIEW_DIR/maintenance.js" ]
@@ -586,7 +584,6 @@ $(source_manager)
 LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 MANAGED_SYNC_VERSION_FILE="\$LIB_DIR/.managed-version"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
-SCRIPT_UPDATE_CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-script-update"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 COMMON_LIB_PATH="\$LIB_DIR/common.sh"
 
@@ -611,48 +608,6 @@ fi
 
 [ ! -f "\$MANAGED_SYNC_VERSION_FILE" ] || {
     echo "managed sync marker should be written only after full success"
-    exit 1
-}
-EOF
-
-    run_with_test_shell "$LAST_SCRIPT"
-}
-
-test_script_auto_update_runs_manager_self_update() {
-    new_script script-auto-update-sync.sh <<'EOF'
-#!/bin/sh
-set -eu
-
-MANAGER_BIN="$TEST_DIR/fake-manager.sh"
-FUNCTIONS_LIB="$TEST_DIR/functions.sh"
-LOG_FILE="$TEST_DIR/tailscale-manager.log"
-CALLS="$TEST_DIR/calls.log"
-
-cat > "$FUNCTIONS_LIB" <<'LIB'
-config_load() { :; }
-config_get() {
-    eval "$1=1"
-}
-LIB
-
-cat > "$MANAGER_BIN" <<'MANAGER'
-#!/bin/sh
-printf '%s\n' "$*" >> "$CALLS"
-MANAGER
-chmod +x "$MANAGER_BIN"
-
-TAILSCALE_MANAGER_BIN="$MANAGER_BIN" \
-TAILSCALE_FUNCTIONS_PATH="$FUNCTIONS_LIB" \
-TAILSCALE_SCRIPT_UPDATE_LOG_FILE="$LOG_FILE" \
-    CALLS="$CALLS" sh "$REPO_ROOT/usr/bin/tailscale-script-update"
-
-grep -Fq 'self-update --non-interactive' "$CALLS" || {
-    echo "script auto-update should call manager self-update"
-    exit 1
-}
-
-grep -Fq 'Script update completed' "$LOG_FILE" || {
-    echo "missing script update completion log entry"
     exit 1
 }
 EOF
@@ -962,7 +917,6 @@ run_deploy_tests() {
     run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade
     run_test 'uninstall removes overridden LuCI paths' test_uninstall_removes_overridden_luci_paths
     run_test 'sync-scripts writes marker only after full success' test_sync_managed_scripts_marks_version_only_after_full_success
-    run_test 'script auto-update runs manager self-update command' test_script_auto_update_runs_manager_self_update
     run_test 'all library functions are loadable via source' test_library_files_sourceable_independently
     run_test 'install_runtime_scripts installs all library files' test_install_runtime_scripts_installs_library_files
     run_test 'ensure_libraries bootstraps all runtime modules' test_ensure_libraries_bootstraps_all_modules

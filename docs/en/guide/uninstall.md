@@ -10,7 +10,7 @@ This removes:
 
 - Tailscale binaries (`tailscale`, `tailscaled`)
 - Init script (`/etc/init.d/tailscale`)
-- Cron jobs (`/usr/bin/tailscale-update`, `/usr/bin/tailscale-script-update`)
+- Cron jobs (`/usr/bin/tailscale-update`, plus any legacy script-update job from older installs)
 - UCI configuration (`/etc/config/tailscale`)
 - Module libraries (`/usr/lib/tailscale/`)
 - LuCI interface files (if installed)

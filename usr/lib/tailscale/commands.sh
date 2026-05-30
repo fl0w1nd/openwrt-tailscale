@@ -532,6 +532,7 @@ do_uninstall() {
 
     rm -f "$INIT_SCRIPT"
     rm -f "$CRON_SCRIPT"
+    rm -f /usr/bin/tailscale-script-update
     rm -rf "$LIB_DIR"
     rm -f /usr/bin/tailscale_update_check
 

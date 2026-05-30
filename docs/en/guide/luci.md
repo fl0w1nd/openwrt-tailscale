@@ -23,8 +23,8 @@ The LuCI app is organized into four tabs:
 
 - Install or update Tailscale
 - Switch versions
-- Enable/disable auto-updates
-- Self-update the manager script
+- Enable/disable binary auto-updates
+- Manually update the management script and LuCI interface
 - Sync runtime scripts
 - Uninstall Tailscale
 

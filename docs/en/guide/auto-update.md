@@ -1,6 +1,6 @@
 # Auto-Update
 
-The manager supports automatic updates for both Tailscale binaries and the manager script itself.
+The manager auto-updates the Tailscale binary on a schedule. The management script and LuCI interface are **manual-only** and never upgrade themselves.
 
 ## Binary Auto-Update
 

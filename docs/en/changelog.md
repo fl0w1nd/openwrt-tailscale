@@ -2,6 +2,11 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.11 (2026-05-30)
+
+- Remove cron-based auto-update for management scripts and LuCI; script/UI updates are now manual only (Tailscale binary auto-update is retained)
+- Automatically purge the legacy script auto-update cron job and `/usr/bin/tailscale-script-update` on upgrade
+
 ## v4.0.8 (2026-04-19)
 
 - Switch script updates to managed packages

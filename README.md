@@ -27,7 +27,7 @@ Then follow the interactive prompts.
 
 - **One-command install** — interactive menu handles dependency detection, download, and service setup
 - **Small binary** — UPX-compressed Tailscale (~8-10 MB), 80% smaller than official packages
-- **Auto-updates** — daily cron for Tailscale binary and management script self-update
+- **Auto-updates** — daily cron for the Tailscale binary; management script/LuCI updates are manual only
 - **Dual download source** — choose between official full binaries or compressed small binaries
 - **Subnet routing** — one-click network interface and firewall configuration
 - **Full OpenWrt integration** — UCI config, procd service, optional LuCI web UI

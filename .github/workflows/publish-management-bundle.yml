@@ -8,7 +8,6 @@ on:
       - 'tailscale-manager.sh'
       - 'etc/init.d/tailscale'
       - 'usr/bin/tailscale-update'
-      - 'usr/bin/tailscale-script-update'
       - 'usr/lib/tailscale/**'
       - 'luci-app-tailscale/**'
       - '.github/workflows/publish-management-bundle.yml'
@@ -69,7 +68,6 @@ jobs:
             tailscale-manager.sh \
             etc/init.d/tailscale \
             usr/bin/tailscale-update \
-            usr/bin/tailscale-script-update \
             usr/lib/tailscale \
             luci-app-tailscale/htdocs/luci-static/resources/view/tailscale \
             luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale \

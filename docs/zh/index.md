@@ -22,7 +22,7 @@ features:
     details: UPX 压缩后的 Tailscale 二进制，比官方包小 80%。最低仅需 8 MB 可用存储，也支持纯 RAM 运行模式。
   - icon: 🔄
     title: 自动更新
-    details: 内置定时任务自动保持 Tailscale 二进制和管理脚本为最新版本。无需 opkg，无需手动操作。
+    details: 内置定时任务自动保持 Tailscale 二进制为最新版本，无需 opkg。管理脚本与界面则按需手动更新。
   - icon: 🌐
     title: 子网路由
     details: 一键配置网络接口和防火墙规则，从任何 Tailscale 设备访问路由器背后的局域网。

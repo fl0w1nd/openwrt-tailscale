@@ -21,8 +21,8 @@ features:
     title: 8-10 MB Compressed Binary
     details: UPX-compressed Tailscale binary — 80% smaller than official packages. Runs on devices with as little as 8 MB free storage, or entirely from RAM.
   - icon: 🔄
-    title: Self-Updating
-    details: Built-in cron jobs keep the Tailscale binary and management scripts up to date. No opkg, no manual intervention.
+    title: Auto-Updating Binary
+    details: A built-in cron job keeps the Tailscale binary up to date — no opkg required. The management script and UI are updated manually on demand.
   - icon: 🌐
     title: Subnet Routing
     details: One-click network interface and firewall configuration for accessing your LAN from any Tailscale device.

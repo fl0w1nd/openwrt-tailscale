@@ -59,7 +59,6 @@ cp "$REPO_ROOT/usr/lib/tailscale/commands.sh" "$STAGING_ROOT/usr/lib/tailscale/c
 cp "$REPO_ROOT/usr/lib/tailscale/menu.sh" "$STAGING_ROOT/usr/lib/tailscale/menu.sh"
 cp "$REPO_ROOT/usr/lib/tailscale/json.sh" "$STAGING_ROOT/usr/lib/tailscale/json.sh"
 cp "$REPO_ROOT/usr/bin/tailscale-update" "$STAGING_ROOT/usr/bin/tailscale-update"
-cp "$REPO_ROOT/usr/bin/tailscale-script-update" "$STAGING_ROOT/usr/bin/tailscale-script-update"
 cp "$REPO_ROOT/etc/init.d/tailscale" "$STAGING_ROOT/etc/init.d/tailscale"
 cp "$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js" "$STAGING_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js"
 cp "$REPO_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js" "$STAGING_ROOT/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js"
@@ -78,13 +77,12 @@ COMMON_LIB_URL=""
 LIB_DIR="$TEST_DIR/root/usr/lib/tailscale"
 INIT_SCRIPT="$TEST_DIR/root/etc/init.d/tailscale"
 CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-update"
-SCRIPT_UPDATE_CRON_SCRIPT="$TEST_DIR/root/usr/bin/tailscale-script-update"
 LUCI_VIEW_DIR="$TEST_DIR/root/www/luci-static/resources/view/tailscale"
 LUCI_RPC_DEST="$TEST_DIR/root/usr/libexec/rpcd/luci-tailscale"
 LUCI_MENU_DEST="$TEST_DIR/root/usr/share/luci/menu.d/luci-app-tailscale.json"
 LUCI_ACL_DEST="$TEST_DIR/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
 MANAGED_SYNC_VERSION_FILE="$TEST_DIR/root/usr/lib/tailscale/.managed-version"
-export MANAGER_BIN_PATH COMMON_LIB_PATH COMMON_LIB_URL LIB_DIR INIT_SCRIPT CRON_SCRIPT SCRIPT_UPDATE_CRON_SCRIPT LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST MANAGED_SYNC_VERSION_FILE
+export MANAGER_BIN_PATH COMMON_LIB_PATH COMMON_LIB_URL LIB_DIR INIT_SCRIPT CRON_SCRIPT LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST MANAGED_SYNC_VERSION_FILE
 
 wget() {
     if [ "$1" = "-qO" ] && [ "$2" = "/tmp/tailscale-mgmt.tar.gz.$$" ]; then
