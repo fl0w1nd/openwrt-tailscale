@@ -343,20 +343,7 @@ mkdir -p "\$ROOT/etc/apk" "\$ROOT/etc/opkg"
 
 # Reload with overridden file paths via a wrapper
 test_get_arch() {
-    local arch=""
-    if [ -r "\$ROOT/etc/openwrt_release" ]; then
-        arch=\$(grep -E '^DISTRIB_ARCH=' "\$ROOT/etc/openwrt_release" 2>/dev/null \\
-            | head -n1 | cut -d= -f2- | tr -d "'\"")
-    fi
-    if [ -z "\$arch" ] && [ -r "\$ROOT/etc/apk/arch" ]; then
-        arch=\$(head -n1 "\$ROOT/etc/apk/arch" 2>/dev/null)
-    fi
-    if [ -z "\$arch" ] && [ -r "\$ROOT/etc/opkg.conf" ]; then
-        arch=\$(awk '/^arch[[:space:]]/ {
-            if (\$2 != "all" && \$2 != "noarch") { print \$2; exit }
-        }' "\$ROOT/etc/opkg.conf" 2>/dev/null)
-    fi
-    printf '%s' "\$arch"
+    get_openwrt_arch "\$ROOT"
 }
 
 # --- Case 1: DISTRIB_ARCH wins over everything else ---

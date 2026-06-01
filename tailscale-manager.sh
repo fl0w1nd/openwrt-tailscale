@@ -183,18 +183,19 @@ if [ -f "$COMMON_LIB_PATH" ]; then
     . "$COMMON_LIB_PATH"
 else
     get_openwrt_arch() {
+        local root="${1:-}"
         local arch=""
-        if [ -r /etc/openwrt_release ]; then
-            arch=$(grep -E '^DISTRIB_ARCH=' /etc/openwrt_release 2>/dev/null \
+        if [ -r "${root}/etc/openwrt_release" ]; then
+            arch=$(grep -E '^DISTRIB_ARCH=' "${root}/etc/openwrt_release" 2>/dev/null \
                 | head -n1 | cut -d= -f2- | tr -d "'\"")
         fi
-        if [ -z "$arch" ] && [ -r /etc/apk/arch ]; then
-            arch=$(head -n1 /etc/apk/arch 2>/dev/null)
+        if [ -z "$arch" ] && [ -r "${root}/etc/apk/arch" ]; then
+            arch=$(head -n1 "${root}/etc/apk/arch" 2>/dev/null)
         fi
-        if [ -z "$arch" ] && [ -r /etc/opkg.conf ]; then
-            arch=$(awk '/^arch[[:space:]]/ {
+        if [ -z "$arch" ] && [ -r "${root}/etc/opkg.conf" ]; then
+            arch=$(awk '/^[[:space:]]*arch[[:space:]]/ {
                 if ($2 != "all" && $2 != "noarch") { print $2; exit }
-            }' /etc/opkg.conf 2>/dev/null)
+            }' "${root}/etc/opkg.conf" 2>/dev/null)
         fi
         printf '%s' "$arch"
     }
