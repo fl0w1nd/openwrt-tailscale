@@ -182,6 +182,7 @@ if [ -f "$COMMON_LIB_PATH" ]; then
     # shellcheck source=/dev/null
     . "$COMMON_LIB_PATH"
 else
+    # shellcheck disable=SC2120
     get_openwrt_arch() {
         local root="${1:-}"
         local arch=""
@@ -232,6 +233,7 @@ else
                 result="mipsle"
                 ;;
             mips)
+                # shellcheck disable=SC2119
                 owrt_arch=$(get_openwrt_arch)
                 case "$owrt_arch" in
                     mipsel*) result="mipsle" ;;
@@ -251,6 +253,7 @@ else
                 result="mips64le"
                 ;;
             mips64)
+                # shellcheck disable=SC2119
                 owrt_arch=$(get_openwrt_arch)
                 case "$owrt_arch" in
                     mips64el*|mipsel*) result="mips64le" ;;

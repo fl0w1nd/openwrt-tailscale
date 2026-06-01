@@ -13,6 +13,7 @@
 # x86_64, aarch64_cortex-a53). Tries multiple sources for compatibility
 # across OpenWrt versions (opkg-based <= 24.10, apk-based >= 25.12) and
 # downstream derivatives (iStoreOS, ImmortalWrt, ...).
+# shellcheck disable=SC2120
 get_openwrt_arch() {
     local root="${1:-}"
     local arch=""
@@ -77,6 +78,7 @@ get_arch() {
             # uname -m returns "mips" on some kernels for both BE and LE.
             # Prefer OpenWrt's own arch string (covers opkg & apk worlds),
             # then fall back to /proc/cpuinfo endian hints, then default to BE.
+            # shellcheck disable=SC2119
             owrt_arch=$(get_openwrt_arch)
             case "$owrt_arch" in
                 mipsel*) result="mipsle" ;;
@@ -100,6 +102,7 @@ get_arch() {
             ;;
         mips64)
             # Mirror the mips branch for 64-bit MIPS.
+            # shellcheck disable=SC2119
             owrt_arch=$(get_openwrt_arch)
             case "$owrt_arch" in
                 mips64el*|mipsel*) result="mips64le" ;;
