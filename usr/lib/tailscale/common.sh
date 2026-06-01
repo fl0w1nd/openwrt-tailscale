@@ -9,8 +9,40 @@
 # Architecture Detection
 # ============================================================================
 
+# Return the OpenWrt-style arch string (e.g. mips_24kc, mipsel_24kc,
+# x86_64, aarch64_cortex-a53). Tries multiple sources for compatibility
+# across OpenWrt versions (opkg-based <= 24.10, apk-based >= 25.12) and
+# downstream derivatives (iStoreOS, ImmortalWrt, ...).
+# shellcheck disable=SC2120
+get_openwrt_arch() {
+    local root="${1:-}"
+    local arch=""
+
+    # 1. /etc/openwrt_release exists on every OpenWrt release and is
+    #    preserved by all known derivatives; this is the most universal source.
+    if [ -r "${root}/etc/openwrt_release" ]; then
+        arch=$(grep -E '^DISTRIB_ARCH=' "${root}/etc/openwrt_release" 2>/dev/null \
+            | head -n1 | cut -d= -f2- | tr -d "'\"")
+    fi
+
+    # 2. /etc/apk/arch on apk-based systems (snapshot/24.10+ snapshots, 25.12+)
+    if [ -z "$arch" ] && [ -r "${root}/etc/apk/arch" ]; then
+        arch=$(head -n1 "${root}/etc/apk/arch" 2>/dev/null)
+    fi
+
+    # 3. /etc/opkg.conf has lines like:  arch mipsel_24kc 10
+    #    Skip the universal "all" / "noarch" entries.
+    if [ -z "$arch" ] && [ -r "${root}/etc/opkg.conf" ]; then
+        arch=$(awk '/^[[:space:]]*arch[[:space:]]/ {
+            if ($2 != "all" && $2 != "noarch") { print $2; exit }
+        }' "${root}/etc/opkg.conf" 2>/dev/null)
+    fi
+
+    printf '%s' "$arch"
+}
+
 get_arch() {
-    local arch
+    local arch owrt_arch
     local result=""
 
     arch=$(uname -m)
@@ -38,29 +70,53 @@ get_arch() {
         armv5tel|armv5tejl|armv5l|armv5)
             result="armv5"
             ;;
+        mipsel)
+            # uname -m returns mipsel on little-endian MIPS Linux
+            result="mipsle"
+            ;;
         mips)
-            # Check endianness - try multiple methods for better compatibility
-            if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
-                result="mipsle"
-            elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
-                result="mips"
-            elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
-                result="mipsle"
-            else
-                result="mips"
-            fi
+            # uname -m returns "mips" on some kernels for both BE and LE.
+            # Prefer OpenWrt's own arch string (covers opkg & apk worlds),
+            # then fall back to /proc/cpuinfo endian hints, then default to BE.
+            # shellcheck disable=SC2119
+            owrt_arch=$(get_openwrt_arch)
+            case "$owrt_arch" in
+                mipsel*) result="mipsle" ;;
+                mips_*)  result="mips" ;;
+                *)
+                    if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                        result="mipsle"
+                    elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                        result="mips"
+                    else
+                        # Default to mips (BE): Atheros/QCA and most legacy
+                        # MIPS OpenWrt routers are big-endian.
+                        result="mips"
+                    fi
+                    ;;
+            esac
+            ;;
+        mips64el)
+            # uname -m returns mips64el on little-endian MIPS64 Linux
+            result="mips64le"
             ;;
         mips64)
-            # Check endianness - try multiple methods for better compatibility
-            if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
-                result="mips64le"
-            elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
-                result="mips64"
-            elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
-                result="mips64le"
-            else
-                result="mips64"
-            fi
+            # Mirror the mips branch for 64-bit MIPS.
+            # shellcheck disable=SC2119
+            owrt_arch=$(get_openwrt_arch)
+            case "$owrt_arch" in
+                mips64el*|mipsel*) result="mips64le" ;;
+                mips64_*|mips_*)   result="mips64" ;;
+                *)
+                    if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                        result="mips64le"
+                    elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                        result="mips64"
+                    else
+                        result="mips64"
+                    fi
+                    ;;
+            esac
             ;;
         i686|i386)
             result="386"

@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.0.11"
+VERSION="4.0.12"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -182,8 +182,27 @@ if [ -f "$COMMON_LIB_PATH" ]; then
     # shellcheck source=/dev/null
     . "$COMMON_LIB_PATH"
 else
+    # shellcheck disable=SC2120
+    get_openwrt_arch() {
+        local root="${1:-}"
+        local arch=""
+        if [ -r "${root}/etc/openwrt_release" ]; then
+            arch=$(grep -E '^DISTRIB_ARCH=' "${root}/etc/openwrt_release" 2>/dev/null \
+                | head -n1 | cut -d= -f2- | tr -d "'\"")
+        fi
+        if [ -z "$arch" ] && [ -r "${root}/etc/apk/arch" ]; then
+            arch=$(head -n1 "${root}/etc/apk/arch" 2>/dev/null)
+        fi
+        if [ -z "$arch" ] && [ -r "${root}/etc/opkg.conf" ]; then
+            arch=$(awk '/^[[:space:]]*arch[[:space:]]/ {
+                if ($2 != "all" && $2 != "noarch") { print $2; exit }
+            }' "${root}/etc/opkg.conf" 2>/dev/null)
+        fi
+        printf '%s' "$arch"
+    }
+
     get_arch() {
-        local arch
+        local arch owrt_arch
         local result=""
 
         arch=$(uname -m)
@@ -210,27 +229,45 @@ else
             armv5tel|armv5tejl|armv5l|armv5)
                 result="armv5"
                 ;;
+            mipsel)
+                result="mipsle"
+                ;;
             mips)
-                if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
-                    result="mipsle"
-                elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
-                    result="mips"
-                elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
-                    result="mipsle"
-                else
-                    result="mips"
-                fi
+                # shellcheck disable=SC2119
+                owrt_arch=$(get_openwrt_arch)
+                case "$owrt_arch" in
+                    mipsel*) result="mipsle" ;;
+                    mips_*)  result="mips" ;;
+                    *)
+                        if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                            result="mipsle"
+                        elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                            result="mips"
+                        else
+                            result="mips"
+                        fi
+                        ;;
+                esac
+                ;;
+            mips64el)
+                result="mips64le"
                 ;;
             mips64)
-                if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
-                    result="mips64le"
-                elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
-                    result="mips64"
-                elif printf 'I' | hexdump -o 2>/dev/null | grep -q '0001'; then
-                    result="mips64le"
-                else
-                    result="mips64"
-                fi
+                # shellcheck disable=SC2119
+                owrt_arch=$(get_openwrt_arch)
+                case "$owrt_arch" in
+                    mips64el*|mipsel*) result="mips64le" ;;
+                    mips64_*|mips_*)   result="mips64" ;;
+                    *)
+                        if grep -q "little endian" /proc/cpuinfo 2>/dev/null; then
+                            result="mips64le"
+                        elif grep -q "big endian" /proc/cpuinfo 2>/dev/null; then
+                            result="mips64"
+                        else
+                            result="mips64"
+                        fi
+                        ;;
+                esac
                 ;;
             i686|i386)
                 result="386"

@@ -2,6 +2,14 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.0.12 (2026-06-01)
+
+- 修复 MIPS 大端路由器（如 Atheros/QCA）被误判为小端导致下载错误二进制、启动崩溃的问题 (#14)
+- 新增 `mipsel`/`mips64el` 的 `uname -m` 分支（Linux 内核已区分字节序）
+- 引入 `get_openwrt_arch()` 辅助函数，优先读取 `/etc/openwrt_release` 的 `DISTRIB_ARCH`（覆盖所有 OpenWrt 版本及衍生版），其次回退至 `/etc/apk/arch` 和 `/etc/opkg.conf`
+- 移除不可靠的 `hexdump -o` 字节序检测，所有检测方法均失败时默认大端
+- 新增 MIPS 字节序检测与 OpenWrt 架构源优先级的测试
+
 ## v4.0.11 (2026-05-30)
 
 - 移除管理脚本与 LuCI 的自动更新（cron）功能，脚本和界面更新改为仅手动触发；Tailscale 二进制自动更新保留
