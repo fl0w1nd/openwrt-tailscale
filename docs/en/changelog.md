@@ -2,6 +2,14 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.12 (2026-06-01)
+
+- Fix MIPS big-endian routers (e.g. Atheros/QCA) being misdetected as little-endian, causing wrong binary download and crash on boot (#14)
+- Add `mipsel`/`mips64el` cases for `uname -m` (Linux already distinguishes endianness at the kernel level)
+- Introduce `get_openwrt_arch()` helper that reads `DISTRIB_ARCH` from `/etc/openwrt_release` (covers all OpenWrt versions and derivatives), then falls back to `/etc/apk/arch` and `/etc/opkg.conf`
+- Remove unreliable `hexdump -o` byte-order heuristic; default to big-endian when all detection methods fail
+- Add tests for MIPS endianness detection and OpenWrt arch source priority
+
 ## v4.0.11 (2026-05-30)
 
 - Remove cron-based auto-update for management scripts and LuCI; script/UI updates are now manual only (Tailscale binary auto-update is retained)

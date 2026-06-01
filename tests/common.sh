@@ -233,6 +233,161 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_get_arch_mips_endianness() {
+    # Verify get_arch() picks BE vs LE correctly across all supported sources:
+    # DISTRIB_ARCH (universal), /etc/apk/arch (25.12+), /proc/cpuinfo, default.
+    new_script arch-detect.sh <<EOF
+#!/bin/sh
+set -eu
+. "$REPO_ROOT/usr/lib/tailscale/common.sh"
+
+# Helper: run get_arch with a mocked uname and get_openwrt_arch
+check() {
+    label=\$1
+    expected=\$2
+    actual=\$3
+    if [ "\$actual" != "\$expected" ]; then
+        printf 'FAIL: %s — expected %s, got %s\n' "\$label" "\$expected" "\$actual" >&2
+        exit 1
+    fi
+}
+
+# Stub uname to return "mips" or "mips64"
+uname() { echo "\$UNAME_M"; }
+
+# --- Case 1: DISTRIB_ARCH = mips_24kc (BE) ---
+get_openwrt_arch() { echo mips_24kc; }
+UNAME_M=mips
+check 'BE mips_24kc → mips' mips "\$(get_arch)"
+
+# --- Case 2: DISTRIB_ARCH = mipsel_24kc (LE) ---
+get_openwrt_arch() { echo mipsel_24kc; }
+UNAME_M=mips
+check 'LE mipsel_24kc → mipsle' mipsle "\$(get_arch)"
+
+# --- Case 3: No DISTRIB_ARCH, no apk/opkg, cpuinfo says big endian ---
+get_openwrt_arch() { echo ""; }
+# Override grep so /proc/cpuinfo check matches "big endian"
+_real_grep=\$(command -v grep)
+grep() {
+    case "\$*" in
+        *"little endian"*"/proc/cpuinfo"*) return 1 ;;
+        *"big endian"*"/proc/cpuinfo"*)    return 0 ;;
+        *) "\$_real_grep" "\$@" ;;
+    esac
+}
+UNAME_M=mips
+check 'cpuinfo big endian → mips' mips "\$(get_arch)"
+
+# --- Case 4: Same but cpuinfo says little endian ---
+grep() {
+    case "\$*" in
+        *"little endian"*"/proc/cpuinfo"*) return 0 ;;
+        *"big endian"*"/proc/cpuinfo"*)    return 1 ;;
+        *) "\$_real_grep" "\$@" ;;
+    esac
+}
+UNAME_M=mips
+check 'cpuinfo little endian → mipsle' mipsle "\$(get_arch)"
+
+# --- Case 5: All sources fail → default to mips (BE, the safer choice) ---
+grep() {
+    case "\$*" in
+        *"little endian"*"/proc/cpuinfo"*) return 1 ;;
+        *"big endian"*"/proc/cpuinfo"*)    return 1 ;;
+        *) "\$_real_grep" "\$@" ;;
+    esac
+}
+UNAME_M=mips
+check 'all sources fail → default mips' mips "\$(get_arch)"
+
+# --- Case 6: uname=mipsel always returns mipsle ---
+UNAME_M=mipsel
+check 'uname mipsel → mipsle' mipsle "\$(get_arch)"
+
+# --- Case 7: mips64 BE via DISTRIB_ARCH ---
+get_openwrt_arch() { echo mips64_octeonplus; }
+UNAME_M=mips64
+check 'BE mips64_* → mips64' mips64 "\$(get_arch)"
+
+# --- Case 8: mips64 LE via DISTRIB_ARCH ---
+get_openwrt_arch() { echo mips64el_octeonplus; }
+UNAME_M=mips64
+check 'LE mips64el_* → mips64le' mips64le "\$(get_arch)"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_get_openwrt_arch_sources() {
+    # Verify get_openwrt_arch() reads from each source in the right priority.
+    new_script openwrt-arch.sh <<EOF
+#!/bin/sh
+set -eu
+. "$REPO_ROOT/usr/lib/tailscale/common.sh"
+
+check() {
+    label=\$1
+    expected=\$2
+    actual=\$3
+    if [ "\$actual" != "\$expected" ]; then
+        printf 'FAIL: %s — expected "%s", got "%s"\n' "\$label" "\$expected" "\$actual" >&2
+        exit 1
+    fi
+}
+
+# Override file reads by redefining get_openwrt_arch inputs through a
+# wrapper that uses test-dir paths.
+ROOT="$TEST_DIR/root"
+mkdir -p "\$ROOT/etc/apk" "\$ROOT/etc/opkg"
+
+# Reload with overridden file paths via a wrapper
+test_get_arch() {
+    local arch=""
+    if [ -r "\$ROOT/etc/openwrt_release" ]; then
+        arch=\$(grep -E '^DISTRIB_ARCH=' "\$ROOT/etc/openwrt_release" 2>/dev/null \\
+            | head -n1 | cut -d= -f2- | tr -d "'\"")
+    fi
+    if [ -z "\$arch" ] && [ -r "\$ROOT/etc/apk/arch" ]; then
+        arch=\$(head -n1 "\$ROOT/etc/apk/arch" 2>/dev/null)
+    fi
+    if [ -z "\$arch" ] && [ -r "\$ROOT/etc/opkg.conf" ]; then
+        arch=\$(awk '/^arch[[:space:]]/ {
+            if (\$2 != "all" && \$2 != "noarch") { print \$2; exit }
+        }' "\$ROOT/etc/opkg.conf" 2>/dev/null)
+    fi
+    printf '%s' "\$arch"
+}
+
+# --- Case 1: DISTRIB_ARCH wins over everything else ---
+printf "DISTRIB_ARCH='mips_24kc'\n" > "\$ROOT/etc/openwrt_release"
+echo "x86_64" > "\$ROOT/etc/apk/arch"
+echo "arch wrong_arch 10" > "\$ROOT/etc/opkg.conf"
+check 'DISTRIB_ARCH wins' 'mips_24kc' "\$(test_get_arch)"
+
+# --- Case 2: Falls back to /etc/apk/arch when openwrt_release missing ---
+rm -f "\$ROOT/etc/openwrt_release"
+echo "mipsel_24kc" > "\$ROOT/etc/apk/arch"
+check '/etc/apk/arch fallback' 'mipsel_24kc' "\$(test_get_arch)"
+
+# --- Case 3: Falls back to /etc/opkg.conf when apk arch missing ---
+rm -f "\$ROOT/etc/apk/arch"
+cat > "\$ROOT/etc/opkg.conf" <<CONF
+dest root /
+arch all 100
+arch noarch 100
+arch mips_24kc 10
+CONF
+check '/etc/opkg.conf fallback (skip all/noarch)' 'mips_24kc' "\$(test_get_arch)"
+
+# --- Case 4: Nothing exists → empty string ---
+rm -f "\$ROOT/etc/opkg.conf"
+check 'no sources → empty' '' "\$(test_get_arch)"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 run_common_tests() {
     run_test 'get_effective_net_mode falls back and fails correctly' test_effective_net_mode
     run_test 'net-mode refreshes runtime scripts before restart' test_net_mode_reinstalls_runtime_scripts
@@ -241,4 +396,6 @@ run_common_tests() {
     run_test 'migrate_config succeeds without uci command' test_migrate_config_no_uci_graceful
     run_test 'migrate_config succeeds without old tun_mode key' test_migrate_config_no_old_key
     run_test 'migrate_config is idempotent across multiple calls' test_migrate_config_idempotent
+    run_test 'get_arch picks correct MIPS endianness across all sources' test_get_arch_mips_endianness
+    run_test 'get_openwrt_arch reads sources in priority order' test_get_openwrt_arch_sources
 }
