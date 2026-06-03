@@ -2,6 +2,12 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.15 (2026-06-03)
+
+- After a successful self-update, automatically `exec` into the freshly-installed manager so the running session immediately uses the new code instead of the old in-memory copy (reported in issue #14: "answered Y to upgrade to v4.0.13 but the session stayed on v4.0.12, only a re-launch picked up the new version")
+- Use a `TAILSCALE_MANAGER_REEXEC` environment marker to break re-exec loops in degenerate cases and skip a redundant version round-trip on first run after exec
+- Fall back to the in-memory old code (with a warning) if the installed binary is missing or `exec` fails, preserving the previous observable behavior in degraded environments
+
 ## v4.0.14 (2026-06-03)
 
 - Fix v4.0.13 regressing `get_small_checksum()` on BusyBox awk: BusyBox treats `*{` as the start of a `{n,m}` interval expression and rejects the original `},[[:space:]]*{` regex with "Invalid contents of {}" / "Unmatched \{"; switch to character classes `[}],[[:space:]]*[{]` so braces are never parsed as interval delimiters

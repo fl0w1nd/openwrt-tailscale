@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.0.14"
+VERSION="4.0.15"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -755,6 +755,7 @@ configure_net_mode() {
 
 main() {
     mkdir -p "$(dirname "$LOG_FILE")"
+    local reexeced="${TAILSCALE_MANAGER_REEXEC:-0}"
 
     # Bootstrap: ensure module libraries are available for commands that need them
     case "${1:-}" in
@@ -767,13 +768,18 @@ main() {
             ;;
     esac
 
-    # Check for script updates (only if selfupdate module is loaded)
-    if type check_script_update >/dev/null 2>&1; then
+    # Check for script updates (only if selfupdate module is loaded).
+    # Skip the network round-trip when we were just re-execed by an update
+    # that completed in the previous process; the new VERSION matches the
+    # latest by definition, so re-checking would just waste a request.
+    if [ "$reexeced" != "1" ] \
+        && type check_script_update >/dev/null 2>&1; then
         case "${1:-}" in
             self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
             *) check_script_update "$@" || true ;;
         esac
     fi
+    unset TAILSCALE_MANAGER_REEXEC
 
     case "${1:-}" in
         install)
@@ -812,9 +818,12 @@ main() {
             do_setup_subnet_routing
             ;;
         self-update)
+            if [ "$reexeced" = "1" ]; then
+                return 0
+            fi
             local rc=0
             shift
-            check_script_update "$@" || rc=$?
+            check_script_update self-update "$@" || rc=$?
             case "$rc" in
                 0) ;;
                 10)
