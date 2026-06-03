@@ -167,6 +167,67 @@ EOF
     run_with_test_shell "$LAST_SCRIPT" < /dev/null
 }
 
+test_main_self_update_preserves_command_for_reexec() {
+    write_stub tailscale-manager <<EOF
+#!/bin/sh
+{
+    printf 'argv:'
+    for a in "\$@"; do printf ' [%s]' "\$a"; done
+    printf '\n'
+    printf 'reexec:%s\n' "\${TAILSCALE_MANAGER_REEXEC:-unset}"
+} > "$TEST_DIR/main-reexec.log"
+exit 0
+EOF
+
+    new_script main-reexec-self-update.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+MANAGER_BIN_PATH="$STUB_BIN/tailscale-manager"
+export MANAGER_BIN_PATH
+
+get_remote_script_version() { echo "9.9.9"; }
+do_self_update() { return 0; }
+
+( main self-update --non-interactive ) >/dev/null 2>&1
+
+grep -q '^argv: \[self-update\] \[--non-interactive\]\$' "$TEST_DIR/main-reexec.log" || {
+    echo "self-update argv mismatch across re-exec"
+    cat "$TEST_DIR/main-reexec.log"
+    exit 1
+}
+grep -q '^reexec:1\$' "$TEST_DIR/main-reexec.log" || {
+    echo "TAILSCALE_MANAGER_REEXEC marker missing on main re-exec"
+    cat "$TEST_DIR/main-reexec.log"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT" < /dev/null
+}
+
+test_main_reexeced_self_update_exits_success() {
+    new_script main-reexeced-self-update.sh <<EOF
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_REEXEC=1
+export LIB_DIR TAILSCALE_MANAGER_REEXEC
+
+sh "$REPO_ROOT/tailscale-manager.sh" self-update --non-interactive > "$TEST_DIR/reexeced.out" 2>&1 || {
+    cat "$TEST_DIR/reexeced.out"
+    exit 1
+}
+if [ -s "$TEST_DIR/reexeced.out" ]; then
+    echo "expected quiet success"
+    cat "$TEST_DIR/reexeced.out"
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT" < /dev/null
+}
+
 test_check_script_update_skips_reexec_when_marker_set() {
     # If we already re-execed once and the new manager somehow still wants
     # to update, the helper must refuse to loop and let the caller fall
@@ -222,6 +283,8 @@ run_selfupdate_tests() {
     run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
     run_test 'do_self_update installs management bundle atomically' test_do_self_update_installs_management_bundle
     run_test 'check_script_update re-execs into new manager after update' test_check_script_update_reexecs_after_update
+    run_test 'main self-update preserves command name for re-exec' test_main_self_update_preserves_command_for_reexec
+    run_test 'main re-execed self-update exits successfully' test_main_reexeced_self_update_exits_success
     run_test 'check_script_update does not loop re-exec when marker set' test_check_script_update_skips_reexec_when_marker_set
     run_test 'check_script_update falls back when manager binary missing' test_check_script_update_falls_back_when_binary_missing
 }

@@ -755,6 +755,7 @@ configure_net_mode() {
 
 main() {
     mkdir -p "$(dirname "$LOG_FILE")"
+    local reexeced="${TAILSCALE_MANAGER_REEXEC:-0}"
 
     # Bootstrap: ensure module libraries are available for commands that need them
     case "${1:-}" in
@@ -771,7 +772,7 @@ main() {
     # Skip the network round-trip when we were just re-execed by an update
     # that completed in the previous process; the new VERSION matches the
     # latest by definition, so re-checking would just waste a request.
-    if [ "${TAILSCALE_MANAGER_REEXEC:-0}" != "1" ] \
+    if [ "$reexeced" != "1" ] \
         && type check_script_update >/dev/null 2>&1; then
         case "${1:-}" in
             self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
@@ -817,9 +818,12 @@ main() {
             do_setup_subnet_routing
             ;;
         self-update)
+            if [ "$reexeced" = "1" ]; then
+                return 0
+            fi
             local rc=0
             shift
-            check_script_update "$@" || rc=$?
+            check_script_update self-update "$@" || rc=$?
             case "$rc" in
                 0) ;;
                 10)
