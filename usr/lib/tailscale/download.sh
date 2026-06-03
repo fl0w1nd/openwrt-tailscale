@@ -78,19 +78,22 @@ get_small_checksum() {
 
     filename_pattern=$(printf '%s\n' "$filename" | sed 's/[][\\/.*^$]/\\&/g')
 
-    # GitHub's REST API returns compact single-line JSON. First strip all
-    # newlines so both compact and pretty-printed input become a single line,
-    # then re-introduce a newline only at asset object boundaries (},{) so each
-    # asset ends up on its own line. Without this, the greedy .* in the digest
-    # substitution captures the *last* sha256 in the entire response (typically
-    # the asset listed last alphabetically) instead of the one for the
-    # requested file.
+    # GitHub's REST API may return compact single-line JSON depending on the
+    # client / network path. First strip all newlines so both compact and
+    # pretty-printed input become a single line, then re-introduce a newline
+    # only at asset object boundaries (},{) so each asset ends up on its own
+    # line. Without this, the greedy .* in the digest substitution captures
+    # the *last* sha256 in the entire response (typically the asset listed
+    # last alphabetically) instead of the one for the requested file.
     #
     # awk is used for the boundary split because POSIX/BSD sed does not
     # portably interpret \n in the replacement as a newline; awk's gsub does.
+    # Braces are wrapped in character classes ([{] / [}]) because BusyBox awk
+    # otherwise reads `*{` as the start of a {n,m} interval expression and
+    # rejects the regex with "Invalid contents of {}".
     digest=$(printf '%s' "$api_data" \
         | tr -d '\n' \
-        | awk '{gsub(/},[[:space:]]*{/, "}\n{"); print}' \
+        | awk '{gsub(/[}],[[:space:]]*[{]/, "}\n{"); print}' \
         | sed -n "/\"name\"[[:space:]]*:[[:space:]]*\"${filename_pattern}\"/{
             s/.*\"sha256:\([0-9a-f]*\)\".*/\1/p
             q

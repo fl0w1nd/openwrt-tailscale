@@ -2,10 +2,14 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.0.14 (2026-06-03)
+
+- 修复 v4.0.13 在 BusyBox awk 上 `get_small_checksum()` 直接报错并跳过校验的问题：BusyBox awk 把 `*{` 视为 `{n,m}` 区间量词起始，原正则 `},[[:space:]]*{` 触发 "Invalid contents of {}" / "Unmatched \{"；改用字符类 `[}],[[:space:]]*[{]` 规避
+
 ## v4.0.13 (2026-06-03)
 
-- 修复使用小体积下载源时，除字母序最末（当前为 `mipsle`）以外的架构 SHA-256 校验必然失败的问题 (#14)
-- 根因：`get_small_checksum()` 假设 GitHub API 返回多行 pretty-printed JSON，但实际为紧凑单行，sed 范围匹配退化后贪婪 `.*` 捕获到的是整行最后一个 sha256，即字母序末尾 asset 的 digest
+- 修复使用小体积下载源时，当 GitHub API 响应被压成紧凑单行 JSON 时（部分网络/客户端会出现），除字母序末尾架构（当前为 `mipsle`）以外的架构 SHA-256 校验必然失败的问题 (#14)
+- 根因：`get_small_checksum()` 假设 API 返回多行 pretty-printed JSON，sed 范围匹配在紧凑单行下退化后，贪婪 `.*` 捕获到的是整行最后一个 sha256，即字母序末尾 asset 的 digest
 - 解析前先按 `},{` 边界拆分，使每个 asset 独占一行，确保抓到的就是目标文件的 digest
 - 新增针对真实紧凑 JSON 形态的回归测试，覆盖首/中/末/缺失等情况
 
