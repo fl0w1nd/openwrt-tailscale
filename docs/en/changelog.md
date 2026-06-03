@@ -2,10 +2,14 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.14 (2026-06-03)
+
+- Fix v4.0.13 regressing `get_small_checksum()` on BusyBox awk: BusyBox treats `*{` as the start of a `{n,m}` interval expression and rejects the original `},[[:space:]]*{` regex with "Invalid contents of {}" / "Unmatched \{"; switch to character classes `[}],[[:space:]]*[{]` so braces are never parsed as interval delimiters
+
 ## v4.0.13 (2026-06-03)
 
-- Fix SHA-256 verification always failing for every small-source architecture except the alphabetically-last one (currently `mipsle`) (#14)
-- Root cause: `get_small_checksum()` assumed pretty-printed multi-line JSON, but GitHub's REST API returns compact single-line JSON; the sed range collapses to a single line and the greedy `.*` captures the last sha256 in the response (the alphabetically-last asset's digest)
+- Fix SHA-256 verification failing for every small-source architecture except the alphabetically-last one (currently `mipsle`) when the GitHub API response is delivered as compact single-line JSON (which happens on some networks / clients) (#14)
+- Root cause: `get_small_checksum()` assumed pretty-printed multi-line JSON; on a single-line input the sed range collapses and the greedy `.*` captures the last sha256 in the response (the alphabetically-last asset's digest)
 - Pre-split the response on `},{` asset boundaries so each asset lives on its own line, guaranteeing the digest belongs to the requested file
 - Add regression tests using a real compact GitHub API fixture covering first/middle/last/missing assets
 
