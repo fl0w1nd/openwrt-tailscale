@@ -47,3 +47,18 @@ jobs:
 
       - name: Run shell test suite
         run: TEST_SHELL=${{ matrix.shell }} make test
+
+  busybox-userspace-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run download tests with BusyBox userspace
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" -w /repo busybox:1.38.0 sh -c '
+            busybox | head -1
+            echo "abc},{def" | awk "{gsub(/[}],[[:space:]]*[{]/, \"}\\n{\"); print}"
+            TEST_MODULE=download sh tests/run.sh
+          '
