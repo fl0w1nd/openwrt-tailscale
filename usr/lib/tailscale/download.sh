@@ -85,9 +85,12 @@ get_small_checksum() {
     # substitution captures the *last* sha256 in the entire response (typically
     # the asset listed last alphabetically) instead of the one for the
     # requested file.
+    #
+    # awk is used for the boundary split because POSIX/BSD sed does not
+    # portably interpret \n in the replacement as a newline; awk's gsub does.
     digest=$(printf '%s' "$api_data" \
         | tr -d '\n' \
-        | sed -e 's/},[[:space:]]*{/}\n{/g' \
+        | awk '{gsub(/},[[:space:]]*{/, "}\n{"); print}' \
         | sed -n "/\"name\"[[:space:]]*:[[:space:]]*\"${filename_pattern}\"/{
             s/.*\"sha256:\([0-9a-f]*\)\".*/\1/p
             q
