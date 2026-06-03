@@ -150,6 +150,60 @@ OUTER
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+# Regression for issue #14: GitHub REST API returns compact (single-line) JSON,
+# not the pretty-printed shape used by the previous fixture. With compact JSON
+# the greedy .* in the digest substitution used to capture the LAST sha256 in
+# the entire response (i.e. the asset listed last alphabetically) instead of
+# the one for the requested filename.
+test_get_small_checksum_parse_compact() {
+    new_script checksum-small-parse-compact.sh <<'OUTER'
+#!/bin/sh
+set -eu
+OUTER
+
+    cat >> "$LAST_SCRIPT" <<EOF
+$(source_manager)
+SMALL_RELEASES_API="file://"
+EOF
+
+    cat >> "$LAST_SCRIPT" <<'OUTER'
+# Real GitHub API shape: compact, no whitespace between fields, assets ordered
+# alphabetically with mipsle last (mirrors the v1.98.3 release exactly).
+cat > "$TEST_DIR/github-api.json" <<'APIJSON'
+{"tag_name":"v1.98.3","assets":[{"name":"tailscale-small_1.98.3_amd64.tgz","size":10654681,"digest":"sha256:e024c878c085ac6b54c6e3f3cf446184a3b6475a147657de83345d458ed1b02c"},{"name":"tailscale-small_1.98.3_arm.tgz","size":7945778,"digest":"sha256:0fa2d7628a8ea15a4470df5d963a125f9658532cf91741e9e40204f73bfefcca"},{"name":"tailscale-small_1.98.3_arm64.tgz","size":8641710,"digest":"sha256:ec1b35c7744fe0779328d25b43a2941b7f432e9d54c73e7ad705d816d9865d49"},{"name":"tailscale-small_1.98.3_mips.tgz","size":7744584,"digest":"sha256:7c12d950cfc3c1813de2d2e523437c53683398e28c8513e2d2578606a18674c2"},{"name":"tailscale-small_1.98.3_mipsle.tgz","size":7914233,"digest":"sha256:338d4794c3d57038da62eaefc6ed9f59489e56e8424ec3c68c27bad64e6f90c6"}]}
+APIJSON
+
+wget() {
+    cat "$TEST_DIR/github-api.json"
+}
+
+# Big-endian mips: the exact case from issue #14. Used to wrongly return the
+# mipsle digest because mipsle is alphabetically last.
+result=$(get_small_checksum "1.98.3" "tailscale-small_1.98.3_mips.tgz")
+[ "$result" = "7c12d950cfc3c1813de2d2e523437c53683398e28c8513e2d2578606a18674c2" ] || { echo "mips hash mismatch: $result"; exit 1; }
+
+# Last asset still parses correctly.
+result=$(get_small_checksum "1.98.3" "tailscale-small_1.98.3_mipsle.tgz")
+[ "$result" = "338d4794c3d57038da62eaefc6ed9f59489e56e8424ec3c68c27bad64e6f90c6" ] || { echo "mipsle hash mismatch: $result"; exit 1; }
+
+# A middle asset.
+result=$(get_small_checksum "1.98.3" "tailscale-small_1.98.3_arm.tgz")
+[ "$result" = "0fa2d7628a8ea15a4470df5d963a125f9658532cf91741e9e40204f73bfefcca" ] || { echo "arm hash mismatch: $result"; exit 1; }
+
+# First asset.
+result=$(get_small_checksum "1.98.3" "tailscale-small_1.98.3_amd64.tgz")
+[ "$result" = "e024c878c085ac6b54c6e3f3cf446184a3b6475a147657de83345d458ed1b02c" ] || { echo "amd64 hash mismatch: $result"; exit 1; }
+
+# Architecture not present in the release should fail.
+if get_small_checksum "1.98.3" "tailscale-small_1.98.3_mips64.tgz" 2>/dev/null; then
+    echo "missing arch should fail"
+    exit 1
+fi
+OUTER
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_verify_staged_binary_accepts_valid() {
     new_script verify-staged-ok.sh <<EOF
 #!/bin/sh
@@ -1006,6 +1060,7 @@ run_download_tests() {
     run_test 'verify_checksum skips when no tools available' test_verify_checksum_no_tools
     run_test 'get_official_checksum validates hex format' test_get_official_checksum_format
     run_test 'get_small_checksum parses GitHub API JSON' test_get_small_checksum_parse
+    run_test 'get_small_checksum parses compact (single-line) GitHub API JSON' test_get_small_checksum_parse_compact
     run_test 'verify_staged_binary accepts valid binary' test_verify_staged_binary_accepts_valid
     run_test 'verify_staged_binary rejects broken binary' test_verify_staged_binary_rejects_broken
     run_test 'verify_staged_binary prefers combined binary' test_verify_staged_binary_prefers_combined

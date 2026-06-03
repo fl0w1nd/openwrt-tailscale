@@ -2,6 +2,13 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.0.13 (2026-06-03)
+
+- Fix SHA-256 verification always failing for every small-source architecture except the alphabetically-last one (currently `mipsle`) (#14)
+- Root cause: `get_small_checksum()` assumed pretty-printed multi-line JSON, but GitHub's REST API returns compact single-line JSON; the sed range collapses to a single line and the greedy `.*` captures the last sha256 in the response (the alphabetically-last asset's digest)
+- Pre-split the response on `},{` asset boundaries so each asset lives on its own line, guaranteeing the digest belongs to the requested file
+- Add regression tests using a real compact GitHub API fixture covering first/middle/last/missing assets
+
 ## v4.0.12 (2026-06-01)
 
 - Fix MIPS big-endian routers (e.g. Atheros/QCA) being misdetected as little-endian, causing wrong binary download and crash on boot (#14)
