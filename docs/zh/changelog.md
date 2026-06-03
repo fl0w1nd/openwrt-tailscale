@@ -2,6 +2,13 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.0.13 (2026-06-03)
+
+- 修复使用小体积下载源时，除字母序最末（当前为 `mipsle`）以外的架构 SHA-256 校验必然失败的问题 (#14)
+- 根因：`get_small_checksum()` 假设 GitHub API 返回多行 pretty-printed JSON，但实际为紧凑单行，sed 范围匹配退化后贪婪 `.*` 捕获到的是整行最后一个 sha256，即字母序末尾 asset 的 digest
+- 解析前先按 `},{` 边界拆分，使每个 asset 独占一行，确保抓到的就是目标文件的 digest
+- 新增针对真实紧凑 JSON 形态的回归测试，覆盖首/中/末/缺失等情况
+
 ## v4.0.12 (2026-06-01)
 
 - 修复 MIPS 大端路由器（如 Atheros/QCA）被误判为小端导致下载错误二进制、启动崩溃的问题 (#14)
