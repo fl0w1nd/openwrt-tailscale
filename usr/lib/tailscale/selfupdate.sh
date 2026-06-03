@@ -108,6 +108,30 @@ sync_current_managed_files() {
     return 0
 }
 
+# Replace the running shell with the freshly-installed manager binary so the
+# user's session immediately uses the new code instead of the old one we still
+# have in memory. Returns only on failure (no installed binary, exec error,
+# or already re-execed once); callers should fall through to the old code path
+# in that case.
+_reexec_into_new_manager() {
+    # Guard against re-exec loops: if we already re-execed once and the new
+    # manager somehow still wants to update again (broken VERSION, partial
+    # bundle, etc.), do not loop. The manager entry script also short-circuits
+    # the auto update check when it sees this variable.
+    if [ "${TAILSCALE_MANAGER_REEXEC:-0}" = "1" ]; then
+        return 1
+    fi
+
+    local bin="${MANAGER_BIN_PATH:-/usr/bin/tailscale-manager}"
+    [ -x "$bin" ] || return 1
+
+    log_info "Re-executing ${bin} with the updated code..."
+    TAILSCALE_MANAGER_REEXEC=1 exec "$bin" "$@"
+    # exec only returns when it fails to replace the process.
+    log_warn "exec of ${bin} failed; continuing with the in-memory script"
+    return 1
+}
+
 # Check for script updates and prompt user
 # Return codes:
 #   0  update installed successfully (or re-execed)
@@ -134,7 +158,10 @@ check_script_update() {
 
     if version_lt "$VERSION" "$remote_version"; then
         if [ "$non_interactive" -eq 1 ]; then
-            do_self_update "$@"
+            if do_self_update "$@"; then
+                _reexec_into_new_manager "$@"
+                return 0
+            fi
             return $?
         fi
 
@@ -156,7 +183,10 @@ check_script_update() {
                 return 30
                 ;;
             *)
-                do_self_update "$@"
+                if do_self_update "$@"; then
+                    _reexec_into_new_manager "$@"
+                    return 0
+                fi
                 return $?
                 ;;
         esac

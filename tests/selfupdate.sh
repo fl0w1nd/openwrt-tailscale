@@ -120,7 +120,108 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_check_script_update_reexecs_after_update() {
+    # Stub manager binary that the helper should exec into.
+    # Records its argv and the re-exec marker so the test can verify them.
+    write_stub tailscale-manager <<EOF
+#!/bin/sh
+{
+    printf 'argv:'
+    for a in "\$@"; do printf ' [%s]' "\$a"; done
+    printf '\n'
+    printf 'reexec:%s\n' "\${TAILSCALE_MANAGER_REEXEC:-unset}"
+} > "$TEST_DIR/reexec.log"
+exit 0
+EOF
+
+    new_script reexec-after-update.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+MANAGER_BIN_PATH="$STUB_BIN/tailscale-manager"
+export MANAGER_BIN_PATH
+
+# Pretend a newer version is available so the update branch fires.
+get_remote_script_version() { echo "9.9.9"; }
+# Pretend the bundle install succeeded.
+do_self_update() { return 0; }
+
+# Run inside a subshell because exec replaces the process; if the helper
+# really execed, the subshell terminates inside the stub manager and we
+# come back here once the stub exits.
+( check_script_update --non-interactive ) >/dev/null 2>&1
+
+[ -f "$TEST_DIR/reexec.log" ] || { echo "stub manager was not invoked"; exit 1; }
+grep -q '^argv: \[--non-interactive\]\$' "$TEST_DIR/reexec.log" || {
+    echo "argv not preserved across re-exec"
+    cat "$TEST_DIR/reexec.log"
+    exit 1
+}
+grep -q '^reexec:1\$' "$TEST_DIR/reexec.log" || {
+    echo "TAILSCALE_MANAGER_REEXEC not set on re-exec"
+    cat "$TEST_DIR/reexec.log"
+    exit 1
+}
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT" < /dev/null
+}
+
+test_check_script_update_skips_reexec_when_marker_set() {
+    # If we already re-execed once and the new manager somehow still wants
+    # to update, the helper must refuse to loop and let the caller fall
+    # through to the in-memory code path.
+    write_stub tailscale-manager <<EOF
+#!/bin/sh
+echo "stub manager should not be invoked when reexec marker is set" >&2
+exit 99
+EOF
+
+    new_script reexec-no-loop.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+MANAGER_BIN_PATH="$STUB_BIN/tailscale-manager"
+export MANAGER_BIN_PATH TAILSCALE_MANAGER_REEXEC=1
+
+get_remote_script_version() { echo "9.9.9"; }
+do_self_update() { return 0; }
+
+# check_script_update should still return 0 (update succeeded) but the
+# helper must NOT exec the stub.
+rc=0
+check_script_update --non-interactive >/dev/null 2>&1 || rc=\$?
+[ "\$rc" -eq 0 ] || { echo "expected rc=0, got \$rc"; exit 1; }
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT" < /dev/null
+}
+
+test_check_script_update_falls_back_when_binary_missing() {
+    # No stub binary at MANAGER_BIN_PATH: the helper must return cleanly
+    # and check_script_update must still report the update as successful.
+    new_script reexec-no-binary.sh <<EOF
+#!/bin/sh
+set -eu
+$(source_manager)
+MANAGER_BIN_PATH="$TEST_DIR/does-not-exist/tailscale-manager"
+export MANAGER_BIN_PATH
+
+get_remote_script_version() { echo "9.9.9"; }
+do_self_update() { return 0; }
+
+rc=0
+check_script_update --non-interactive >/dev/null 2>&1 || rc=\$?
+[ "\$rc" -eq 0 ] || { echo "expected rc=0, got \$rc"; exit 1; }
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT" < /dev/null
+}
+
 run_selfupdate_tests() {
     run_test 'check_script_update skips when stdin is not a tty' test_check_script_update_skips_non_interactive
     run_test 'do_self_update installs management bundle atomically' test_do_self_update_installs_management_bundle
+    run_test 'check_script_update re-execs into new manager after update' test_check_script_update_reexecs_after_update
+    run_test 'check_script_update does not loop re-exec when marker set' test_check_script_update_skips_reexec_when_marker_set
+    run_test 'check_script_update falls back when manager binary missing' test_check_script_update_falls_back_when_binary_missing
 }

@@ -2,6 +2,12 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.0.15 (2026-06-03)
+
+- 自更新成功后自动 `exec` 进新版本管理脚本，避免当前会话继续使用内存里的旧代码（用户在 issue #14 反馈："Y 升级到 v4.0.13 但仍显示 v4.0.12，重新启动才生效"）
+- 通过 `TAILSCALE_MANAGER_REEXEC` 环境变量标记重入，防止异常情况下的循环 exec，并跳过新版本启动时的版本检查回环
+- 新版本的二进制不可执行或 `exec` 失败时回退到内存中的旧代码，并打印警告，保留旧的可观测行为
+
 ## v4.0.14 (2026-06-03)
 
 - 修复 v4.0.13 在 BusyBox awk 上 `get_small_checksum()` 直接报错并跳过校验的问题：BusyBox awk 把 `*{` 视为 `{n,m}` 区间量词起始，原正则 `},[[:space:]]*{` 触发 "Invalid contents of {}" / "Unmatched \{"；改用字符类 `[}],[[:space:]]*[{]` 规避

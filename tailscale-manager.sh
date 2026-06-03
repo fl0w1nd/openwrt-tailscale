@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.0.14"
+VERSION="4.0.15"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -767,13 +767,18 @@ main() {
             ;;
     esac
 
-    # Check for script updates (only if selfupdate module is loaded)
-    if type check_script_update >/dev/null 2>&1; then
+    # Check for script updates (only if selfupdate module is loaded).
+    # Skip the network round-trip when we were just re-execed by an update
+    # that completed in the previous process; the new VERSION matches the
+    # latest by definition, so re-checking would just waste a request.
+    if [ "${TAILSCALE_MANAGER_REEXEC:-0}" != "1" ] \
+        && type check_script_update >/dev/null 2>&1; then
         case "${1:-}" in
             self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
             *) check_script_update "$@" || true ;;
         esac
     fi
+    unset TAILSCALE_MANAGER_REEXEC
 
     case "${1:-}" in
         install)
