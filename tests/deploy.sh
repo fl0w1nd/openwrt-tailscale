@@ -364,6 +364,67 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_create_uci_config_preserves_existing_user_lists() {
+    write_stub uci <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$TEST_DIR/uci.log"
+case "$*" in
+    "-q get tailscale.settings") exit 0 ;;
+    "-q get tailscale.settings.port") echo "41641"; exit 0 ;;
+    "-q get tailscale.settings.update_cron") echo "15 4 * * *"; exit 0 ;;
+    "-q get tailscale.settings.net_mode") echo "userspace"; exit 0 ;;
+    "-q get tailscale.settings.proxy_listen") echo "lan"; exit 0 ;;
+    "-q get tailscale.settings.log_stdout") echo "1"; exit 0 ;;
+    "-q get tailscale.settings.log_stderr") echo "1"; exit 0 ;;
+    set\ tailscale.settings.*) exit 0 ;;
+    "commit tailscale") exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+
+    new_script manager-uci-preserve.sh <<'EOF'
+#!/bin/sh
+set -eu
+LIB_DIR="$REPO_ROOT/usr/lib/tailscale"
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. "$REPO_ROOT/tailscale-manager.sh"
+LOG_FILE="$TEST_DIR/tailscale-manager.log"
+
+CONFIG_FILE="$TEST_DIR/root/etc/config/tailscale"
+STATE_FILE="$TEST_DIR/root/etc/config/tailscaled.state"
+STATE_DIR="$TEST_DIR/root/etc/tailscale"
+mkdir -p "$(dirname "$CONFIG_FILE")"
+cat > "$CONFIG_FILE" <<'CONFIG'
+config tailscale 'settings'
+    option net_mode 'userspace'
+    option proxy_listen 'lan'
+    list extra_env 'GOMIPS=softfloat'
+    list extra_env 'TS_DEBUG_FIREWALL_MODE=nftables'
+    list extra_args '--socks5-server=192.168.10.1:1080'
+CONFIG
+
+download_repo_file() {
+    echo "download_repo_file should not run for existing config" >&2
+    exit 1
+}
+
+create_uci_config persistent /opt/tailscale small 1
+
+grep -Fq "list extra_env 'GOMIPS=softfloat'" "$CONFIG_FILE"
+grep -Fq "list extra_env 'TS_DEBUG_FIREWALL_MODE=nftables'" "$CONFIG_FILE"
+grep -Fq "list extra_args '--socks5-server=192.168.10.1:1080'" "$CONFIG_FILE"
+if grep -Fq 'set tailscale.settings.net_mode=auto' "$TEST_DIR/uci.log"; then
+    echo "net_mode should be preserved for existing config"
+    exit 1
+fi
+grep -Fq 'set tailscale.settings.bin_dir=/opt/tailscale' "$TEST_DIR/uci.log"
+grep -Fq 'set tailscale.settings.download_source=small' "$TEST_DIR/uci.log"
+grep -Fq 'set tailscale.settings.auto_update=1' "$TEST_DIR/uci.log"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 test_install_luci_app_reports_partial_failure() {
     new_script manager-luci-partial.sh <<EOF
 #!/bin/sh
@@ -912,6 +973,7 @@ run_deploy_tests() {
     run_test 'install-quiet rejects unsafe PERSISTENT_DIR env' test_install_quiet_rejects_unsafe_persistent_dir_env
     run_test 'install-quiet rejects unsafe configured bin_dir' test_install_quiet_rejects_unsafe_uci_bin_dir
     run_test 'install-version avoids managed file reinstall' test_install_version_quiet_does_not_reinstall_managed_files
+    run_test 'create_uci_config preserves existing user lists' test_create_uci_config_preserves_existing_user_lists
     run_test 'install_luci_app reports partial download failure' test_install_luci_app_reports_partial_failure
     run_test 'install_luci_app deploy rollback cleans first-install files' test_install_luci_app_deploy_rollback_first_install
     run_test 'install_luci_app deploy rollback restores old files on upgrade' test_install_luci_app_deploy_rollback_upgrade

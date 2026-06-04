@@ -10,6 +10,8 @@ STOP=1
 
 LOG_TAG="tailscale"
 LOG_FILE="/var/log/tailscale.log"
+EXTRA_ENV_KEYS=""
+EXTRA_ARG_FLAGS=""
 
 # ============================================================================
 # Logging
@@ -49,6 +51,11 @@ load_config() {
     config_get PROXY_LISTEN settings proxy_listen localhost
     config_get LOG_STDOUT settings log_stdout 1
     config_get LOG_STDERR settings log_stderr 1
+
+    EXTRA_ENV_KEYS=""
+    config_list_foreach settings extra_env remember_extra_env_key
+    EXTRA_ARG_FLAGS=""
+    config_list_foreach settings extra_args remember_extra_arg_flag
 }
 
 # ============================================================================
@@ -74,6 +81,61 @@ detect_ts_firewall_mode() {
 
 check_binary() {
     [ -x "${BIN_DIR}/tailscaled" ] || [ -x "${BIN_DIR}/tailscale.combined" ]
+}
+
+# config_list_foreach callbacks for user-defined extras
+remember_extra_env_key() {
+    local kv="$1"
+    local key
+    case "$kv" in
+        *=*)
+            key="${kv%%=*}"
+            [ -n "$key" ] && EXTRA_ENV_KEYS="${EXTRA_ENV_KEYS} ${key}"
+            ;;
+    esac
+}
+
+extra_env_has_key() {
+    local needle="$1"
+    local key
+    for key in $EXTRA_ENV_KEYS; do
+        [ "$key" = "$needle" ] && return 0
+    done
+    return 1
+}
+
+# Record the flag name (text up to '=' or whole arg) so we can detect
+# duplicates between user-supplied extra_args and the script's own defaults.
+remember_extra_arg_flag() {
+    local arg="$1"
+    local flag
+    case "$arg" in
+        --*=*) flag="${arg%%=*}" ;;
+        --*) flag="$arg" ;;
+        *) return 0 ;;
+    esac
+    [ -n "$flag" ] && EXTRA_ARG_FLAGS="${EXTRA_ARG_FLAGS} ${flag}"
+}
+
+extra_args_has_flag() {
+    local needle="$1"
+    local flag
+    for flag in $EXTRA_ARG_FLAGS; do
+        [ "$flag" = "$needle" ] && return 0
+    done
+    return 1
+}
+
+append_extra_env() {
+    local kv="$1"
+    [ -n "$kv" ] || return 0
+    procd_append_param env "$kv"
+}
+
+append_extra_arg() {
+    local arg="$1"
+    [ -n "$arg" ] || return 0
+    procd_append_param command "$arg"
 }
 
 # Download binaries for RAM mode
@@ -220,7 +282,11 @@ start_service() {
     # Start with procd
     procd_open_instance tailscale
     procd_set_param command "${BIN_DIR}/tailscaled"
-    procd_set_param env TS_DEBUG_FIREWALL_MODE="$FW_MODE"
+    if ! extra_env_has_key TS_DEBUG_FIREWALL_MODE; then
+        procd_set_param env TS_DEBUG_FIREWALL_MODE="$FW_MODE"
+    fi
+    # User-defined extra environment variables (UCI: list extra_env 'KEY=VAL')
+    config_list_foreach settings extra_env append_extra_env
     procd_append_param command --port "$PORT"
     procd_append_param command --state "$STATE_FILE"
     procd_append_param command --statedir "$STATE_DIR"
@@ -231,9 +297,15 @@ start_service() {
             lan|0.0.0.0) listen_addr="0.0.0.0" ;;
             *) listen_addr="localhost" ;;
         esac
-        procd_append_param command --socks5-server=${listen_addr}:1055
-        procd_append_param command --outbound-http-proxy-listen=${listen_addr}:1056
+        if ! extra_args_has_flag --socks5-server; then
+            procd_append_param command --socks5-server=${listen_addr}:1055
+        fi
+        if ! extra_args_has_flag --outbound-http-proxy-listen; then
+            procd_append_param command --outbound-http-proxy-listen=${listen_addr}:1056
+        fi
     fi
+    # User-defined extra command-line args (UCI: list extra_args '--flag=value')
+    config_list_foreach settings extra_args append_extra_arg
     procd_set_param respawn 3600 5 5
     procd_set_param stdout "$LOG_STDOUT"
     procd_set_param stderr "$LOG_STDERR"

@@ -2,6 +2,13 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.1.1 (2026-06-04)
+
+- 新增 UCI `list extra_env` 与 `list extra_args`，用于注入自定义 procd 环境变量与 `tailscaled` 启动参数，并在管理脚本升级时保留（#14）
+- 重装时不再覆盖用户改过的 `port` / `net_mode` / `proxy_listen` / `update_cron` / `log_stdout` / `log_stderr`；仅刷新安装期间用户主动选择的 `storage_mode` / `bin_dir` / `download_source` / `auto_update`
+- 当 `extra_args` 中已提供 `--socks5-server` 或 `--outbound-http-proxy-listen` 时，userspace 模式不再追加同名默认参数，避免出现重复 listener
+- 详细用法见[配置参考](/zh/guide/configuration#高级-自定义-env-和-cli-参数)
+
 ## v4.1.0 (2026-06-03)
 
 - 版本号晋升为 minor，归并 v4.0.12–v4.0.15 期间的修复（MIPS 大端检测、小体积源校验在紧凑 JSON 下的解析、BusyBox awk 兼容、自更新自动 re-exec），除 `VERSION` 字段外无代码改动
