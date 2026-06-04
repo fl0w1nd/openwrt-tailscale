@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion!
+        Please describe the **problem** before proposing a solution — it makes
+        it much easier to compare alternatives.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Be specific about the user / device / workflow.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Pseudocode, UCI examples, or LuCI mockups are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which surfaces does this touch?
+      multiple: true
+      options:
+        - tailscale-manager.sh (CLI)
+        - usr/lib/tailscale/* (libraries)
+        - LuCI app
+        - init / cron service
+        - Build / release pipeline
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?

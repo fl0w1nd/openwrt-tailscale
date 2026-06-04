@@ -13,6 +13,8 @@ Thumbs.db
 scripts/*
 !scripts/build-small.sh
 !scripts/generate-changelog.sh
+!scripts/dev/
+!scripts/dev/**
 
 # VitePress
 docs/.vitepress/dist/
@@ -23,3 +25,7 @@ docs/node_modules/
 /.claude
 /local-docs
 scripts/build-small.sh
+
+# Coverage / test artifacts
+/coverage/
+*.lcov

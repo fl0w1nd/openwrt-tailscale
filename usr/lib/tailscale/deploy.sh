@@ -164,6 +164,9 @@ luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json|${LUCI_ACL_
         chmod "$mode" "${dest}${stag_suffix}" 2>/dev/null || true
     done
 
+    # shellcheck disable=SC2167,SC2165
+    # The inner loop only runs on the error path that immediately returns,
+    # so re-using `entry` to walk the cleanup list is intentional.
     for entry in $files; do
         rel="${entry#*|}"
         dest="${rel%%|*}"
@@ -324,7 +327,9 @@ ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
         return 1
     fi
 
-    # Pre-flight: check writability
+    # Pre-flight: check writability.
+    # shellcheck disable=SC2167,SC2165
+    # Inner loop runs on the error path that returns, so re-using `_d` is intentional.
     for _d in $_dests; do
         if [ -e "$_d" ] && [ ! -w "$_d" ]; then
             for _d in $_dests; do rm -f "${_d}${stag}"; done
@@ -333,7 +338,9 @@ ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
         fi
     done
 
-    # Backup existing files
+    # Backup existing files.
+    # shellcheck disable=SC2167,SC2165
+    # Inner loop runs on the error path that returns, so re-using `_d` is intentional.
     for _d in $_dests; do
         if [ -f "$_d" ] && ! cp -f "$_d" "${_d}${bak}" 2>/dev/null; then
             for _d in $_dests; do rm -f "${_d}${stag}" "${_d}${bak}"; done

@@ -1,0 +1,22 @@
+# ShellCheck configuration for openwrt-tailscale.
+# All shell scripts target POSIX `sh` (BusyBox ash / dash) at runtime;
+# see Makefile for the canonical SHELL_SCRIPTS list.
+
+# Treat scripts without a shebang as POSIX sh.
+shell=sh
+
+# SC1091: "Not following: file not found"
+# Many libraries are sourced via dynamic LIB_DIR paths that don't exist
+# at lint time. The sync between libs and inline fallbacks is enforced
+# separately by `make check-sync`.
+disable=SC1091
+
+# SC3043: "In POSIX sh, 'local' is undefined"
+# OpenWrt's BusyBox ash does support `local`; using it makes the codebase
+# considerably more maintainable and we accept the formal POSIX deviation.
+disable=SC3043
+
+# SC2153: "Possible misspelling: FOO may not be assigned"
+# Library files are sourced by tailscale-manager.sh which sets these vars
+# at the top of the entry script; ShellCheck cannot follow that boundary.
+disable=SC2153

@@ -1,31 +1,50 @@
 name: Publish Management Bundle
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches:
       - main
-    paths:
-      - 'tailscale-manager.sh'
-      - 'etc/init.d/tailscale'
-      - 'usr/bin/tailscale-update'
-      - 'usr/lib/tailscale/**'
-      - 'luci-app-tailscale/**'
-      - '.github/workflows/publish-management-bundle.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: publish-management-bundle-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   detect-version-change:
+    # Only run when triggered by a successful CI run, or manually dispatched.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       should_publish: ${{ steps.detect.outputs.should_publish }}
       version: ${{ steps.detect.outputs.version }}
+      head_sha: ${{ steps.detect.outputs.head_sha }}
     steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
+      - name: Resolve target ref
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout commit that triggered CI
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
+          ref: ${{ steps.ref.outputs.ref }}
           fetch-depth: 2
 
       - name: Detect VERSION change
@@ -33,6 +52,7 @@ jobs:
         run: |
           VERSION=$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' tailscale-manager.sh | head -1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "head_sha=${{ steps.ref.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
@@ -56,9 +76,12 @@ jobs:
     needs: detect-version-change
     if: needs.detect-version-change.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
+      - name: Checkout commit that triggered CI
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          ref: ${{ needs.detect-version-change.outputs.head_sha }}
 
       - name: Package management bundle
         run: |
@@ -80,7 +103,7 @@ jobs:
           cp out/latest/VERSION "out/v${VERSION}/VERSION"
 
       - name: Checkout mgmt branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           ref: mgmt
           path: mgmt-branch
