@@ -2,9 +2,13 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.1.3 (2026-06-04)
+
+- Fix `extra_env` log line printing key name twice (e.g. `GOMIPS=GOMIPS=softfloat` instead of `GOMIPS=softfloat`); actual procd injection was correct, only the log output was affected (#14)
+
 ## v4.1.2 (2026-06-04)
 
-- Init script now logs each injected `extra_env` / `extra_args` entry (key name and full value) so users can confirm their tuning (e.g. `GOMIPS`, `GOMEMLIMIT`, `GODEBUG`) took effect in `/var/log/tailscale.log` and syslog (#14)
+- Init script now logs each injected `extra_env` / `extra_args` entry so users can confirm their tuning (e.g. `GOMIPS`, `GOMEMLIMIT`, `GODEBUG`) took effect in `/var/log/tailscale.log` and syslog (#14)
 
 ## v4.1.1 (2026-06-04)
 

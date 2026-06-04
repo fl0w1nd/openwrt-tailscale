@@ -2,9 +2,13 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.1.3 (2026-06-04)
+
+- 修复 `extra_env` 日志中键名重复打印的问题（如 `GOMIPS=GOMIPS=softfloat` 应为 `GOMIPS=softfloat`）；实际 procd 注入无误，仅日志显示受影响 (#14)
+
 ## v4.1.2 (2026-06-04)
 
-- init 脚本启动注入 `extra_env` / `extra_args` 时输出日志（键名与完整值），便于在 `/var/log/tailscale.log` 和 syslog 中确认自定义调优（如 `GOMIPS`、`GOMEMLIMIT`、`GODEBUG`）已生效 (#14)
+- init 脚本启动注入 `extra_env` / `extra_args` 时输出日志，便于在 `/var/log/tailscale.log` 和 syslog 中确认自定义调优（如 `GOMIPS`、`GOMEMLIMIT`、`GODEBUG`）已生效 (#14)
 
 ## v4.1.1 (2026-06-04)
 
