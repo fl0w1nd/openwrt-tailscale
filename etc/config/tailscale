@@ -12,3 +12,14 @@ config tailscale 'settings'
     option proxy_listen 'localhost'
     option log_stdout '1'
     option log_stderr '1'
+
+    # Advanced: extra environment variables passed to tailscaled via procd.
+    # Useful for low-end devices (e.g. MIPS without FPU) or Go runtime tuning.
+    # These are preserved across script upgrades.
+    # list extra_env 'GOMIPS=softfloat'
+    # list extra_env 'GOMEMLIMIT=24MiB'
+    # list extra_env 'GODEBUG=asyncpreemptoff=1'
+
+    # Advanced: extra command-line arguments appended to tailscaled.
+    # list extra_args '--socks5-server=192.168.10.1:1080'
+    # list extra_args '--outbound-http-proxy-listen=192.168.10.1:1081'

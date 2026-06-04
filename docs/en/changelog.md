@@ -2,6 +2,13 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.1.1 (2026-06-04)
+
+- Add UCI `list extra_env` and `list extra_args` to inject custom procd environment variables and `tailscaled` CLI arguments; entries are preserved across manager upgrades (#14)
+- Stop overwriting user-modified `port` / `net_mode` / `proxy_listen` / `update_cron` / `log_stdout` / `log_stderr` on reinstall; only install-time choices (`storage_mode`, `bin_dir`, `download_source`, `auto_update`) are still refreshed
+- Skip the default userspace `--socks5-server` / `--outbound-http-proxy-listen` flags when the same flag is supplied via `extra_args`, avoiding duplicate listener configuration
+- See [Configuration Reference](/en/guide/configuration#advanced-custom-env-and-cli-arguments) for usage
+
 ## v4.1.0 (2026-06-03)
 
 - Minor version bump consolidating the v4.0.12–v4.0.15 patch series (MIPS big-endian detection, small-source checksum parsing on compact JSON, BusyBox awk compatibility, self-update auto re-exec); no code changes beyond the `VERSION` field

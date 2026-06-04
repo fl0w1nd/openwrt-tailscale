@@ -39,22 +39,42 @@ create_uci_config() {
         return 1
     fi
 
-    download_repo_file "$CONFIG_TEMPLATE_URL" "$CONFIG_FILE" 644 || return 1
+    if [ ! -f "$CONFIG_FILE" ]; then
+        download_repo_file "$CONFIG_TEMPLATE_URL" "$CONFIG_FILE" 644 || return 1
+    fi
 
-    uci -q batch <<EOF >/dev/null
-set tailscale.settings.enabled='1'
-set tailscale.settings.port='41641'
-set tailscale.settings.storage_mode='${storage_mode}'
-set tailscale.settings.bin_dir='${bin_dir}'
-set tailscale.settings.state_file='${STATE_FILE}'
-set tailscale.settings.statedir='${STATE_DIR}'
-set tailscale.settings.download_source='${download_source}'
-set tailscale.settings.auto_update='${auto_update}'
-set tailscale.settings.update_cron='30 3 * * *'
-set tailscale.settings.net_mode='auto'
-set tailscale.settings.log_stdout='1'
-set tailscale.settings.log_stderr='1'
-EOF
+    if ! uci -q get tailscale.settings >/dev/null 2>&1; then
+        uci set tailscale.settings='tailscale' >/dev/null || {
+            log_error "Failed to create tailscale.settings UCI section"
+            return 1
+        }
+    fi
+
+    uci_set_value() {
+        uci set "tailscale.settings.${1}=${2}" >/dev/null || return 1
+    }
+
+    uci_set_default() {
+        local option="$1"
+        local value="$2"
+        uci -q get "tailscale.settings.${option}" >/dev/null 2>&1 && return 0
+        uci_set_value "$option" "$value"
+    }
+
+    uci_set_value enabled '1' || return 1
+    uci_set_value storage_mode "$storage_mode" || return 1
+    uci_set_value bin_dir "$bin_dir" || return 1
+    uci_set_value state_file "$STATE_FILE" || return 1
+    uci_set_value statedir "$STATE_DIR" || return 1
+    uci_set_value download_source "$download_source" || return 1
+    uci_set_value auto_update "$auto_update" || return 1
+
+    uci_set_default port '41641' || return 1
+    uci_set_default update_cron '30 3 * * *' || return 1
+    uci_set_default net_mode 'auto' || return 1
+    uci_set_default proxy_listen 'localhost' || return 1
+    uci_set_default log_stdout '1' || return 1
+    uci_set_default log_stderr '1' || return 1
 
     if ! uci commit tailscale >/dev/null 2>&1; then
         log_error "Failed to commit ${CONFIG_FILE}"

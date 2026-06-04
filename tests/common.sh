@@ -375,6 +375,197 @@ EOF
     run_with_test_shell "$LAST_SCRIPT"
 }
 
+test_init_extra_env_overrides_firewall_mode() {
+    new_script init-extra-env.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+INIT_UNDER_TEST="$TEST_DIR/init-under-test.sh"
+sed 's#^\. /usr/lib/tailscale/common.sh$#:#' "$REPO_ROOT/etc/init.d/tailscale" > "$INIT_UNDER_TEST"
+. "$INIT_UNDER_TEST"
+LOG_FILE="$TEST_DIR/tailscale.log"
+
+CALLS="$TEST_DIR/procd.log"
+BIN_DIR_VALUE="$TEST_DIR/tailscale-bin"
+mkdir -p "$BIN_DIR_VALUE"
+cat > "$BIN_DIR_VALUE/tailscaled" <<'BIN'
+#!/bin/sh
+exit 0
+BIN
+chmod +x "$BIN_DIR_VALUE/tailscaled"
+
+migrate_config() { :; }
+config_load() { :; }
+config_get() {
+    var="$1"
+    option="$3"
+    default="${4:-}"
+    case "$option" in
+        bin_dir) value="$BIN_DIR_VALUE" ;;
+        state_file) value="$TEST_DIR/tailscaled.state" ;;
+        statedir) value="$TEST_DIR/state" ;;
+        *) value="$default" ;;
+    esac
+    eval "$var=\$value"
+}
+config_list_foreach() {
+    list="$2"
+    callback="$3"
+    case "$list" in
+        extra_env)
+            "$callback" 'TS_DEBUG_FIREWALL_MODE=nftables'
+            "$callback" 'GOMIPS=softfloat'
+            ;;
+        extra_args)
+            "$callback" '--socks5-server=192.168.10.1:1080'
+            ;;
+    esac
+}
+detect_ts_firewall_mode() { echo iptables; }
+wait_for_network() { return 0; }
+get_effective_net_mode() { echo tun; }
+procd_open_instance() { printf 'open %s\n' "$*" >> "$CALLS"; }
+procd_set_param() { printf 'set %s\n' "$*" >> "$CALLS"; }
+procd_append_param() { printf 'append %s\n' "$*" >> "$CALLS"; }
+procd_close_instance() { printf 'close\n' >> "$CALLS"; }
+
+start_service
+
+grep -Fq 'append env TS_DEBUG_FIREWALL_MODE=nftables' "$CALLS"
+grep -Fq 'append env GOMIPS=softfloat' "$CALLS"
+grep -Fq 'append command --socks5-server=192.168.10.1:1080' "$CALLS"
+if grep -Fq 'set env TS_DEBUG_FIREWALL_MODE=iptables' "$CALLS"; then
+    echo "detected firewall mode should yield to extra_env"
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_init_extra_args_overrides_userspace_defaults() {
+    new_script init-extra-args-userspace.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+INIT_UNDER_TEST="$TEST_DIR/init-under-test.sh"
+sed 's#^\. /usr/lib/tailscale/common.sh$#:#' "$REPO_ROOT/etc/init.d/tailscale" > "$INIT_UNDER_TEST"
+. "$INIT_UNDER_TEST"
+LOG_FILE="$TEST_DIR/tailscale.log"
+
+CALLS="$TEST_DIR/procd.log"
+BIN_DIR_VALUE="$TEST_DIR/tailscale-bin"
+mkdir -p "$BIN_DIR_VALUE"
+cat > "$BIN_DIR_VALUE/tailscaled" <<'BIN'
+#!/bin/sh
+exit 0
+BIN
+chmod +x "$BIN_DIR_VALUE/tailscaled"
+
+migrate_config() { :; }
+config_load() { :; }
+config_get() {
+    var="$1"
+    option="$3"
+    default="${4:-}"
+    case "$option" in
+        bin_dir) value="$BIN_DIR_VALUE" ;;
+        state_file) value="$TEST_DIR/tailscaled.state" ;;
+        statedir) value="$TEST_DIR/state" ;;
+        net_mode) value="userspace" ;;
+        proxy_listen) value="localhost" ;;
+        *) value="$default" ;;
+    esac
+    eval "$var=\$value"
+}
+config_list_foreach() {
+    list="$2"
+    callback="$3"
+    case "$list" in
+        extra_args)
+            "$callback" '--socks5-server=192.168.10.1:1080'
+            "$callback" '--outbound-http-proxy-listen=192.168.10.1:1081'
+            ;;
+    esac
+}
+detect_ts_firewall_mode() { echo nftables; }
+wait_for_network() { return 0; }
+get_effective_net_mode() { echo userspace; }
+procd_open_instance() { printf 'open %s\n' "$*" >> "$CALLS"; }
+procd_set_param() { printf 'set %s\n' "$*" >> "$CALLS"; }
+procd_append_param() { printf 'append %s\n' "$*" >> "$CALLS"; }
+procd_close_instance() { printf 'close\n' >> "$CALLS"; }
+
+start_service
+
+grep -Fq 'append command --socks5-server=192.168.10.1:1080' "$CALLS"
+grep -Fq 'append command --outbound-http-proxy-listen=192.168.10.1:1081' "$CALLS"
+if grep -Fq 'append command --socks5-server=localhost:1055' "$CALLS"; then
+    echo "extra_args --socks5-server should suppress default localhost:1055"
+    exit 1
+fi
+if grep -Fq 'append command --outbound-http-proxy-listen=localhost:1056' "$CALLS"; then
+    echo "extra_args --outbound-http-proxy-listen should suppress default localhost:1056"
+    exit 1
+fi
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
+test_init_extra_args_userspace_defaults_remain_without_override() {
+    new_script init-extra-args-userspace-defaults.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+INIT_UNDER_TEST="$TEST_DIR/init-under-test.sh"
+sed 's#^\. /usr/lib/tailscale/common.sh$#:#' "$REPO_ROOT/etc/init.d/tailscale" > "$INIT_UNDER_TEST"
+. "$INIT_UNDER_TEST"
+LOG_FILE="$TEST_DIR/tailscale.log"
+
+CALLS="$TEST_DIR/procd.log"
+BIN_DIR_VALUE="$TEST_DIR/tailscale-bin"
+mkdir -p "$BIN_DIR_VALUE"
+cat > "$BIN_DIR_VALUE/tailscaled" <<'BIN'
+#!/bin/sh
+exit 0
+BIN
+chmod +x "$BIN_DIR_VALUE/tailscaled"
+
+migrate_config() { :; }
+config_load() { :; }
+config_get() {
+    var="$1"
+    option="$3"
+    default="${4:-}"
+    case "$option" in
+        bin_dir) value="$BIN_DIR_VALUE" ;;
+        state_file) value="$TEST_DIR/tailscaled.state" ;;
+        statedir) value="$TEST_DIR/state" ;;
+        net_mode) value="userspace" ;;
+        proxy_listen) value="localhost" ;;
+        *) value="$default" ;;
+    esac
+    eval "$var=\$value"
+}
+config_list_foreach() { :; }
+detect_ts_firewall_mode() { echo nftables; }
+wait_for_network() { return 0; }
+get_effective_net_mode() { echo userspace; }
+procd_open_instance() { printf 'open %s\n' "$*" >> "$CALLS"; }
+procd_set_param() { printf 'set %s\n' "$*" >> "$CALLS"; }
+procd_append_param() { printf 'append %s\n' "$*" >> "$CALLS"; }
+procd_close_instance() { printf 'close\n' >> "$CALLS"; }
+
+start_service
+
+grep -Fq 'append command --socks5-server=localhost:1055' "$CALLS"
+grep -Fq 'append command --outbound-http-proxy-listen=localhost:1056' "$CALLS"
+EOF
+
+    run_with_test_shell "$LAST_SCRIPT"
+}
+
 run_common_tests() {
     run_test 'get_effective_net_mode falls back and fails correctly' test_effective_net_mode
     run_test 'net-mode refreshes runtime scripts before restart' test_net_mode_reinstalls_runtime_scripts
@@ -385,4 +576,7 @@ run_common_tests() {
     run_test 'migrate_config is idempotent across multiple calls' test_migrate_config_idempotent
     run_test 'get_arch picks correct MIPS endianness across all sources' test_get_arch_mips_endianness
     run_test 'get_openwrt_arch reads sources in priority order' test_get_openwrt_arch_sources
+    run_test 'init extra_env overrides detected firewall mode' test_init_extra_env_overrides_firewall_mode
+    run_test 'init extra_args overrides userspace socks5/http-proxy defaults' test_init_extra_args_overrides_userspace_defaults
+    run_test 'init userspace defaults persist when extra_args is empty' test_init_extra_args_userspace_defaults_remain_without_override
 }
