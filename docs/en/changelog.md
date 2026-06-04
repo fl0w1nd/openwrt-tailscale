@@ -2,6 +2,10 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.1.2 (2026-06-04)
+
+- Init script now logs each injected `extra_env` / `extra_args` entry (key name and full value) so users can confirm their tuning (e.g. `GOMIPS`, `GOMEMLIMIT`, `GODEBUG`) took effect in `/var/log/tailscale.log` and syslog (#14)
+
 ## v4.1.1 (2026-06-04)
 
 - Add UCI `list extra_env` and `list extra_args` to inject custom procd environment variables and `tailscaled` CLI arguments; entries are preserved across manager upgrades (#14)

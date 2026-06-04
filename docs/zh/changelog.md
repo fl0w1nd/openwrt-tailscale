@@ -2,6 +2,10 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.1.2 (2026-06-04)
+
+- init 脚本启动注入 `extra_env` / `extra_args` 时输出日志（键名与完整值），便于在 `/var/log/tailscale.log` 和 syslog 中确认自定义调优（如 `GOMIPS`、`GOMEMLIMIT`、`GODEBUG`）已生效 (#14)
+
 ## v4.1.1 (2026-06-04)
 
 - 新增 UCI `list extra_env` 与 `list extra_args`，用于注入自定义 procd 环境变量与 `tailscaled` 启动参数，并在管理脚本升级时保留（#14）
