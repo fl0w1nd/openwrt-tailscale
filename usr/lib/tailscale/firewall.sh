@@ -6,13 +6,16 @@
 #   log_info(), log_error(), log_warn()
 #   get_configured_net_mode(), get_effective_net_mode()
 #
-# No external variable dependencies — all functions are self-contained.
+# No required external variable dependencies — all functions are self-contained.
 
 # Detect firewall backend (fw3 or fw4)
 detect_firewall_backend() {
-    if [ -x /sbin/fw4 ]; then
+    local fw4_bin="${FW4_BIN:-/sbin/fw4}"
+    local fw3_bin="${FW3_BIN:-/sbin/fw3}"
+
+    if [ -x "$fw4_bin" ]; then
         echo "fw4"
-    elif [ -x /sbin/fw3 ]; then
+    elif [ -x "$fw3_bin" ]; then
         echo "fw3"
     elif command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then
         echo "fw4"
