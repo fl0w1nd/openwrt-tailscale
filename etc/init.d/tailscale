@@ -129,12 +129,14 @@ extra_args_has_flag() {
 append_extra_env() {
     local kv="$1"
     [ -n "$kv" ] || return 0
+    log_msg "info" "Injecting extra env: ${kv%%=*}=$kv"
     procd_append_param env "$kv"
 }
 
 append_extra_arg() {
     local arg="$1"
     [ -n "$arg" ] || return 0
+    log_msg "info" "Injecting extra arg: $arg"
     procd_append_param command "$arg"
 }
 
