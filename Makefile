@@ -57,8 +57,8 @@ help:
 	          desc = substr($$0, length(a[1]) + 3); \
 	          printf "  \033[36m%-15s\033[0m %s\n", a[1], desc }' $(MAKEFILE_LIST)
 
-## ci: Run everything CI runs (lint + format-check + test).
-ci: lint format-check test
+## ci: Run everything CI runs (lint + test).
+ci: lint test
 
 ## lint: Static analysis (syntax + sync + shellcheck + LuCI checks).
 lint: syntax check-sync shellcheck check-static

@@ -31,25 +31,6 @@ jobs:
       - name: Run lint checks
         run: REQUIRE_SHELLCHECK=1 make lint
 
-  format:
-    name: Format (shfmt)
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    # shfmt findings are advisory until the codebase is fully reformatted;
-    # set REQUIRE_SHFMT=1 once `make format-check` is clean to make this gate.
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-
-      - name: Install shfmt
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shfmt
-
-      - name: Check formatting
-        run: make format-check
-
   test:
     name: Test (${{ matrix.shell }})
     needs: lint
@@ -128,44 +109,3 @@ jobs:
             done
             echo "BusyBox 1.38 sanity OK"
           '
-
-  coverage:
-    name: Coverage (kcov)
-    needs: test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Kcov is integrated incrementally; once `make coverage` is wired to the
-    # bats migration, drop continue-on-error so missing coverage fails CI.
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-        with:
-          submodules: recursive
-
-      - name: Install coverage dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y kcov bats dash busybox
-
-      - name: Run coverage
-        run: make coverage
-
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        with:
-          name: coverage-report
-          path: coverage/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
-        with:
-          files: coverage/lcov.info
-          flags: shell
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

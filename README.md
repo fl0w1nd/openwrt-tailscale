@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/fl0w1nd/openwrt-tailscale/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fl0w1nd/openwrt-tailscale/actions/workflows/ci.yml)
 [![Build Small Tailscale](https://github.com/fl0w1nd/openwrt-tailscale/actions/workflows/build-release.yml/badge.svg)](https://github.com/fl0w1nd/openwrt-tailscale/actions/workflows/build-release.yml)
-[![codecov](https://codecov.io/gh/fl0w1nd/openwrt-tailscale/branch/main/graph/badge.svg)](https://codecov.io/gh/fl0w1nd/openwrt-tailscale)
 [![License](https://img.shields.io/github/license/fl0w1nd/openwrt-tailscale.svg)](LICENSE)
 
 One-command Tailscale deployment for any OpenWrt router — including devices too old or too small for official packages.
