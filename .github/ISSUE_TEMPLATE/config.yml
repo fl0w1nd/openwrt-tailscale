@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://fl0w1nd.github.io/openwrt-tailscale/
+    about: Read the project guides before opening an issue.
+  - name: Discussions
+    url: https://github.com/fl0w1nd/openwrt-tailscale/discussions
+    about: Ask questions, share setups, and discuss usage with the community.

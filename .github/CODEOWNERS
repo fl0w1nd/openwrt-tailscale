@@ -1,0 +1,13 @@
+# Default code owner for the entire repository.
+* @fl0w1nd
+
+# CI / build / release pipeline changes always require a sign-off.
+/.github/                       @fl0w1nd
+/Makefile                       @fl0w1nd
+/scripts/                       @fl0w1nd
+
+# Test infrastructure.
+/tests/                         @fl0w1nd
+
+# LuCI front-end.
+/luci-app-tailscale/            @fl0w1nd

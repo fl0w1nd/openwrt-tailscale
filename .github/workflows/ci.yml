@@ -5,14 +5,23 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
+    name: Lint
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Install lint dependencies
         run: |
@@ -22,43 +31,141 @@ jobs:
       - name: Run lint checks
         run: REQUIRE_SHELLCHECK=1 make lint
 
-  test:
+  format:
+    name: Format (shfmt)
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # shfmt findings are advisory until the codebase is fully reformatted;
+    # set REQUIRE_SHFMT=1 once `make format-check` is clean to make this gate.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install shfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shfmt
+
+      - name: Check formatting
+        run: make format-check
+
+  test:
+    name: Test (${{ matrix.shell }})
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shell: [busybox, dash]
+        shell: [busybox, dash, bash]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          submodules: recursive
 
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y busybox dash
+          sudo apt-get install -y busybox dash bats
 
       - name: Verify shell target
         run: |
           case "${{ matrix.shell }}" in
             busybox) busybox sh -c 'echo ok' ;;
-            dash) dash -c 'echo ok' ;;
+            dash)    dash -c 'echo ok' ;;
+            bash)    bash -c 'echo ok' ;;
           esac
 
       - name: Run shell test suite
-        run: TEST_SHELL=${{ matrix.shell }} make test
+        env:
+          # SHELL_UNDER_TEST drives `run_in_sh auto` inside bats e2e cases,
+          # i.e. the parts that exercise OpenWrt's POSIX ash compatibility.
+          # Function-level bats tests always run in bash (bats itself).
+          SHELL_UNDER_TEST: ${{ matrix.shell }}
+          # TEST_SHELL is kept for backwards compatibility with anything
+          # that still consults the old environment name.
+          TEST_SHELL: ${{ matrix.shell }}
+        run: make test
 
-  busybox-userspace-test:
+  busybox-userspace-sanity:
+    # BusyBox docker images intentionally ship without bash, so they cannot
+    # run bats. This job exists purely to assert that the awk/sed idioms used
+    # by `usr/lib/tailscale/download.sh` survive the older BusyBox userspace
+    # that some OpenWrt 21.02 / 22.03 routers still ship. Any change to the
+    # awk pipeline below must keep this job green.
+    name: BusyBox 1.38 awk/sed sanity
+    needs: lint
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-      - name: Run download tests with BusyBox userspace
+      - name: Exercise BusyBox awk gsub on JSON-array boundaries
         run: |
           docker run --rm -v "$PWD:/repo:ro" -w /repo busybox:1.38.0 sh -c '
+            set -e
             busybox | head -1
-            echo "abc},{def" | awk "{gsub(/[}],[[:space:]]*[{]/, \"}\\n{\"); print}"
-            TEST_MODULE=download sh tests/run.sh
+            # The pattern below mirrors the GitHub releases JSON splitter we
+            # use in download.sh. Confirm BusyBox awk handles it correctly.
+            out=$(echo "abc},{def" | awk "{gsub(/[}],[[:space:]]*[{]/, \"}\\n{\"); print}")
+            expected=$(printf "abc}\n{def")
+            [ "$out" = "$expected" ] || {
+              echo "BusyBox awk gsub regression detected" >&2
+              echo "got:"       >&2; printf "%s\n" "$out"      >&2
+              echo "expected:"  >&2; printf "%s\n" "$expected" >&2
+              exit 1
+            }
+            # POSIX sh syntax check across all managed scripts.
+            for f in tailscale-manager.sh \
+                     usr/lib/tailscale/*.sh \
+                     usr/bin/tailscale-update \
+                     etc/init.d/tailscale; do
+              sh -n "$f" || { echo "syntax error in $f"; exit 1; }
+            done
+            echo "BusyBox 1.38 sanity OK"
           '
+
+  coverage:
+    name: Coverage (kcov)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Kcov is integrated incrementally; once `make coverage` is wired to the
+    # bats migration, drop continue-on-error so missing coverage fails CI.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          submodules: recursive
+
+      - name: Install coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y kcov bats dash busybox
+
+      - name: Run coverage
+        run: make coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
+        with:
+          files: coverage/lcov.info
+          flags: shell
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
