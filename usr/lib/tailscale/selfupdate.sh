@@ -126,8 +126,10 @@ _reexec_into_new_manager() {
     [ -x "$bin" ] || return 1
 
     log_info "Re-executing ${bin} with the updated code..."
+    # shellcheck disable=SC2093
+    # exec only returns when it fails to replace the process; the lines
+    # below intentionally run as the failure-recovery path.
     TAILSCALE_MANAGER_REEXEC=1 exec "$bin" "$@"
-    # exec only returns when it fails to replace the process.
     log_warn "exec of ${bin} failed; continuing with the in-memory script"
     return 1
 }

@@ -334,10 +334,14 @@ download_tailscale_small() {
     mv "${extracted_dir}/tailscale.combined" "${target_dir}/tailscale.combined"
     chmod +x "${target_dir}/tailscale.combined"
 
-    cd "$target_dir"
-    ln -sf "tailscale.combined" "tailscale"
-    ln -sf "tailscale.combined" "tailscaled"
-    cd - >/dev/null
+    (
+        cd "$target_dir" || exit 1
+        ln -sf "tailscale.combined" "tailscale"
+        ln -sf "tailscale.combined" "tailscaled"
+    ) || {
+        log_error "Failed to enter ${target_dir} to create symlinks"
+        return 1
+    }
 
     echo "$version" > "${target_dir}/version"
     echo "small" > "${target_dir}/source"
