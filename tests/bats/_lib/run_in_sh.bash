@@ -11,7 +11,10 @@ _pick_shell() {
     for sh in "${candidates[@]}"; do
         [[ -z "${sh}" ]] && continue
         if [[ "${sh}" == "busybox" ]]; then
-            command -v busybox >/dev/null 2>&1 && echo "busybox" && return 0
+            # BusyBox dispatches by applet name, so the sh applet must be
+            # selected explicitly: `busybox /tmp/foo.sh` would treat the
+            # script path as an applet name and fail with 127.
+            command -v busybox >/dev/null 2>&1 && echo "busybox sh" && return 0
         else
             command -v "${sh}" >/dev/null 2>&1 && echo "${sh}" && return 0
         fi
