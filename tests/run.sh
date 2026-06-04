@@ -1,39 +1,20 @@
 #!/bin/sh
-# tests/run.sh — Test dispatcher
+# tests/run.sh — 兼容入口（已废弃）
 #
-# Sources helpers and per-module test files, then runs all (or selected) tests.
-# Usage:
-#   sh tests/run.sh                      # run all tests
-#   TEST_MODULE=version sh tests/run.sh  # run only version tests
-#   TEST_MODULE="version json" sh tests/run.sh  # run version + json tests
+# 此文件保留以兼容旧脚本引用。
+# 测试套件已完全迁移到 bats-core，请使用:
+#
+#   sh tests/run-bats.sh
+#
+# 或直接:
+#
+#   tests/bats/_deps/bats-core/bin/bats --recursive tests/bats/
+#   bats --recursive tests/bats/      (如果系统已安装 bats)
 
 set -eu
 
 TESTS_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
 
-. "$TESTS_DIR/helpers.sh"
+printf '[DEPRECATED] tests/run.sh is obsolete. Redirecting to run-bats.sh...\n' >&2
 
-AVAILABLE_MODULES="common version download firewall deploy selfupdate json rpcd"
-MODULES=$AVAILABLE_MODULES
-
-if [ -n "${TEST_MODULE:-}" ]; then
-    MODULES="$TEST_MODULE"
-fi
-
-for module in $MODULES; do
-    module_file="$TESTS_DIR/${module}.sh"
-    if [ ! -f "$module_file" ]; then
-        printf 'ERROR: module file not found: %s\n' "$module_file" >&2
-        exit 1
-    fi
-    # shellcheck source=/dev/null
-    . "$module_file"
-    runner="run_${module}_tests"
-    if ! command -v "$runner" >/dev/null 2>&1; then
-        printf 'ERROR: test runner not found: %s\n' "$runner" >&2
-        exit 1
-    fi
-    "$runner"
-done
-
-printf '1..%s\n' "$TEST_INDEX"
+exec sh "$TESTS_DIR/run-bats.sh" "$@"
