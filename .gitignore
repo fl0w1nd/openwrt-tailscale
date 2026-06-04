@@ -25,3 +25,7 @@ docs/node_modules/
 /.claude
 /local-docs
 scripts/build-small.sh
+
+# Coverage / test artifacts
+/coverage/
+*.lcov
