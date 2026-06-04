@@ -2,6 +2,10 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.1.0 (2026-06-03)
+
+- Minor version bump consolidating the v4.0.12–v4.0.15 patch series (MIPS big-endian detection, small-source checksum parsing on compact JSON, BusyBox awk compatibility, self-update auto re-exec); no code changes beyond the `VERSION` field
+
 ## v4.0.15 (2026-06-03)
 
 - After a successful self-update, automatically `exec` into the freshly-installed manager so the running session immediately uses the new code instead of the old in-memory copy (reported in issue #14: "answered Y to upgrade to v4.0.13 but the session stayed on v4.0.12, only a re-launch picked up the new version")
