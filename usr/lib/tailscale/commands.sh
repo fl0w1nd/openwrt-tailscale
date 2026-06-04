@@ -375,7 +375,9 @@ do_update() {
     if ! install_staged "$stage_dir" "$bin_dir"; then
         log_error "Failed to install staged files"
         rm -rf "$stage_dir"
-        [ -x "$INIT_SCRIPT" ] && "$INIT_SCRIPT" start 2>/dev/null || true
+        if [ -x "$INIT_SCRIPT" ]; then
+            "$INIT_SCRIPT" start 2>/dev/null || true
+        fi
         return 1
     fi
     rm -rf "$stage_dir"
