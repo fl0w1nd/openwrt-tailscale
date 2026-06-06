@@ -464,6 +464,7 @@ download_tailscale_small() {
         ln -sf "tailscale.combined" "tailscaled"
     ) || {
         log_error "Failed to enter ${target_dir} to create symlinks"
+        rm -rf "$tmp_dir"
         return 1
     }
 
