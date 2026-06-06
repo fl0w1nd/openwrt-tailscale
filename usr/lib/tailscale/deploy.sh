@@ -488,7 +488,9 @@ ${update_cron} ${CRON_SCRIPT} ${CRON_TAG_BINARY}"
     # Purge the defunct script auto-update helper left over from older installs.
     rm -f "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT" 2>/dev/null || true
 
-    [ -x /etc/init.d/cron ] && /etc/init.d/cron restart >/dev/null 2>&1
+    if [ -x /etc/init.d/cron ]; then
+        /etc/init.d/cron restart >/dev/null 2>&1 || true
+    fi
     log_info "Cron jobs reconciled from UCI configuration"
 }
 
