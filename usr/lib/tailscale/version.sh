@@ -237,8 +237,15 @@ version_lt() {
 # Get remote script version from the management bundle metadata
 get_remote_script_version() {
     local remote_version
-    local tmp_file="/tmp/.script-version-check.$$"
+    local tmp_dir
+    local tmp_file
     local timeout_secs=5
+
+    tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/tailscale-version.XXXXXX" 2>/dev/null) \
+        || tmp_dir=$(mktemp -d -t "tailscale-version.XXXXXX" 2>/dev/null) \
+        || return 1
+    chmod 700 "$tmp_dir" 2>/dev/null || true
+    tmp_file="${tmp_dir}/VERSION"
 
     (wget -qO- "$MGMT_VERSION_URL" 2>/dev/null | head -20 > "$tmp_file") &
     local pid=$!
@@ -250,7 +257,7 @@ get_remote_script_version() {
         if [ "$count" -ge "$timeout_secs" ]; then
             kill "$pid" 2>/dev/null
             wait "$pid" 2>/dev/null
-            rm -f "$tmp_file"
+            rm -rf "$tmp_dir"
             return 1
         fi
     done
@@ -258,8 +265,9 @@ get_remote_script_version() {
 
     if [ -f "$tmp_file" ]; then
         remote_version=$(sed -n '1p' "$tmp_file")
-        rm -f "$tmp_file"
     fi
+
+    rm -rf "$tmp_dir"
 
     if [ -z "$remote_version" ]; then
         return 1

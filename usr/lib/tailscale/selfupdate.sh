@@ -29,6 +29,53 @@ download_management_bundle_file() {
     return 0
 }
 
+create_management_temp_dir() {
+    if command -v create_tailscale_temp_dir >/dev/null 2>&1; then
+        create_tailscale_temp_dir "tailscale-mgmt"
+        return $?
+    fi
+
+    local base="${TMPDIR:-/tmp}"
+    local tmp_dir=""
+
+    tmp_dir=$(mktemp -d "${base%/}/tailscale-mgmt.XXXXXX" 2>/dev/null) \
+        || tmp_dir=$(mktemp -d -t "tailscale-mgmt.XXXXXX" 2>/dev/null) \
+        || {
+            log_error "Failed to create private temporary directory"
+            return 1
+        }
+
+    chmod 700 "$tmp_dir" 2>/dev/null || true
+    printf '%s\n' "$tmp_dir"
+}
+
+validate_management_tar_member_paths() {
+    if command -v validate_tar_member_paths >/dev/null 2>&1; then
+        validate_tar_member_paths "$@"
+        return $?
+    fi
+
+    local tarball="$1"
+    local list_file="$2"
+    local member
+
+    if ! tar tzf "$tarball" > "$list_file" 2>/dev/null; then
+        log_error "Failed to list archive contents"
+        return 1
+    fi
+
+    while IFS= read -r member; do
+        case "$member" in
+            ""|/*|../*|*/../*|*/..|..)
+                log_error "Archive contains unsafe path: ${member}"
+                return 1
+                ;;
+        esac
+    done < "$list_file"
+
+    return 0
+}
+
 verify_management_bundle_checksum() {
     local bundle_path="$1"
     local checksum_path="$2"
@@ -209,52 +256,62 @@ check_script_update() {
 
 # Perform script self-update via management bundle deploy
 do_self_update() {
-    local tmp_bundle="/tmp/tailscale-mgmt.tar.gz.$$"
-    local tmp_checksum="/tmp/tailscale-mgmt.tar.gz.sha256.$$"
-    local staging_dir="/tmp/tailscale-mgmt-staging.$$"
+    local tmp_dir
+    local tmp_bundle
+    local tmp_checksum
+    local staging_dir
     local bundle_version=""
+
+    tmp_dir=$(create_management_temp_dir) || return 1
+    tmp_bundle="${tmp_dir}/tailscale-mgmt.tar.gz"
+    tmp_checksum="${tmp_dir}/tailscale-mgmt.tar.gz.sha256"
+    staging_dir="${tmp_dir}/staging"
 
     echo ""
     log_info "Downloading management bundle..."
 
-    download_management_bundle_file "$MGMT_BUNDLE_URL" "$tmp_bundle" || return 1
+    download_management_bundle_file "$MGMT_BUNDLE_URL" "$tmp_bundle" || {
+        rm -rf "$tmp_dir"
+        return 1
+    }
     download_management_bundle_file "$MGMT_BUNDLE_SHA256_URL" "$tmp_checksum" || {
-        rm -f "$tmp_bundle"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     verify_management_bundle_checksum "$tmp_bundle" "$tmp_checksum" || {
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     mkdir -p "$staging_dir" || {
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         log_error "Failed to create management bundle staging directory"
         return 1
     }
 
+    if ! validate_management_tar_member_paths "$tmp_bundle" "${tmp_dir}/archive-members.list"; then
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
     if ! tar xzf "$tmp_bundle" -C "$staging_dir" 2>/dev/null; then
-        rm -rf "$staging_dir"
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         log_error "Failed to unpack management bundle"
         return 1
     fi
 
     bundle_version=$(validate_management_bundle "$staging_dir") || {
-        rm -rf "$staging_dir"
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     deploy_management_bundle "$staging_dir" "$bundle_version" || {
-        rm -rf "$staging_dir"
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         return 1
     }
 
-    rm -rf "$staging_dir"
-    rm -f "$tmp_bundle" "$tmp_checksum"
+    rm -rf "$tmp_dir"
 
     log_info "Script updated to v${bundle_version}"
     echo ""

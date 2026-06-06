@@ -73,14 +73,11 @@ export MANAGER_BIN_PATH COMMON_LIB_PATH COMMON_LIB_URL LIB_DIR INIT_SCRIPT CRON_
 
 wget() {
     if [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz.sha256'; then
-        sha256sum \"\${2%.sha256.*}.\${2##*.sha256.}\" 2>/dev/null | awk '{print \$1}' > \"\$2\" || true
-        # Fall back: compute on the .tar.gz temp
-        local tarball=\"/tmp/tailscale-mgmt.tar.gz.\$\$\"
-        sha256sum \"\$tarball\" 2>/dev/null | awk '{print \$1}' > \"\$2\" || true
+        cat '${TEST_DIR}/management-bundle.sha256' > \"\$2\"
         return 0
     elif [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz'; then
         tar czf \"\$2\" -C '${STAGING_ROOT}' .
-        sha256sum \"\$2\" | awk '{print \$1}' > \"\$2.sha256.tmp\"
+        sha256sum \"\$2\" | awk '{print \$1}' > '${TEST_DIR}/management-bundle.sha256'
         return 0
     fi
     echo \"unexpected wget invocation: \$*\" >&2

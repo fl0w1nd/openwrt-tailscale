@@ -144,9 +144,16 @@ download_repo_file() {
     local url="$1"
     local dest="$2"
     local mode="${3:-644}"
-    local tmp_file="${dest}.tmp.$$"
+    local dest_dir dest_name tmp_file
 
-    mkdir -p "$(dirname "$dest")"
+    dest_dir=$(dirname "$dest")
+    dest_name=$(basename "$dest")
+
+    mkdir -p "$dest_dir"
+    tmp_file=$(mktemp "${dest_dir}/.${dest_name}.XXXXXX" 2>/dev/null) || {
+        log_error "Failed to create temporary file for ${dest}"
+        return 1
+    }
 
     if ! wget -qO "$tmp_file" "$url" 2>/dev/null; then
         rm -f "$tmp_file"

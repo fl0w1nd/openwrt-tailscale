@@ -65,7 +65,7 @@ fi
     assert_success
 }
 
-@test "verify_checksum skips gracefully when no tools available" {
+@test "verify_checksum rejects missing checksum tools by default" {
     run_in_sh auto "
 set -eu
 export PATH='${STUB_BIN}:${PATH}'
@@ -75,6 +75,29 @@ TAILSCALE_MANAGER_SOURCE_ONLY=1
 LOG_FILE='${TEST_DIR}/tailscale-manager.log'
 
 compute_sha256() { return 1; }
+
+echo 'test data' > '${TEST_DIR}/testfile'
+if verify_checksum '${TEST_DIR}/testfile' 'anything' 2>/dev/null; then
+    echo 'missing checksum tools accepted'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "verify_checksum honors explicit emergency override" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+compute_sha256() { return 1; }
+
+TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
+export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
 
 echo 'test data' > '${TEST_DIR}/testfile'
 verify_checksum '${TEST_DIR}/testfile' 'anything' 2>/dev/null
@@ -184,6 +207,206 @@ if get_small_checksum '1.98.3' 'tailscale-small_1.98.3_mips64.tgz' 2>/dev/null; 
     echo 'missing arch should fail'
     exit 1
 fi
+"
+    assert_success
+}
+
+@test "download_tailscale_official requires checksum metadata by default" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+DOWNLOAD_BASE='https://example.test/stable'
+
+wget() {
+    case \"\$1\" in
+        -qO-) return 1 ;;
+        --help) return 0 ;;
+        *) echo \"download should not run: \$*\" >&2; return 1 ;;
+    esac
+}
+
+if download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null; then
+    echo 'download accepted missing checksum metadata'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "download_tailscale_official rejects checksum mismatch" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+DOWNLOAD_BASE='https://example.test/stable'
+
+archive_root='${TEST_DIR}/archive-root'
+mkdir -p \"\$archive_root/tailscale_1.2.3_amd64\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscale\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscaled\"
+
+wget() {
+    case \"\$1\" in
+        -qO-)
+            printf '%064d\n' 0
+            return 0
+            ;;
+        --help)
+            return 0
+            ;;
+        -q)
+            tar czf \"\$3\" -C \"\$archive_root\" tailscale_1.2.3_amd64
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+if download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null; then
+    echo 'download accepted mismatched checksum'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "download_tailscale_official allows explicit emergency checksum override" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+DOWNLOAD_BASE='https://example.test/stable'
+TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
+export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
+
+archive_root='${TEST_DIR}/archive-root'
+mkdir -p \"\$archive_root/tailscale_1.2.3_amd64\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscale\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscaled\"
+
+wget() {
+    case \"\$1\" in
+        -qO-) return 1 ;;
+        --help) return 0 ;;
+        -q)
+            tar czf \"\$3\" -C \"\$archive_root\" tailscale_1.2.3_amd64
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target'
+[ -f '${TEST_DIR}/target/tailscale' ] || { echo 'tailscale missing'; exit 1; }
+[ -f '${TEST_DIR}/target/tailscaled' ] || { echo 'tailscaled missing'; exit 1; }
+"
+    assert_success
+}
+
+@test "download_tailscale_official rejects path traversal archive members" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+DOWNLOAD_BASE='https://example.test/stable'
+TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
+export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
+
+wget() {
+    case \"\$1\" in
+        -qO-) return 1 ;;
+        --help) return 0 ;;
+        -q)
+            printf 'fake archive\n' > \"\$3\"
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+tar() {
+    case \"\$1\" in
+        tzf)
+            printf '../evil\n'
+            return 0
+            ;;
+        xzf)
+            echo 'unsafe archive reached extraction' >&2
+            return 1
+            ;;
+    esac
+    command tar \"\$@\"
+}
+
+if download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null; then
+    echo 'download accepted unsafe archive member'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "download_tailscale_official uses isolated temp paths for concurrent downloads" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+DOWNLOAD_BASE='https://example.test/stable'
+TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
+export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
+
+archive_root='${TEST_DIR}/archive-root'
+mkdir -p \"\$archive_root/tailscale_1.2.3_amd64\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscale\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscaled\"
+dest_log='${TEST_DIR}/download-dests.log'
+
+wget() {
+    case \"\$1\" in
+        -qO-) return 1 ;;
+        --help) return 0 ;;
+        -q)
+            printf '%s\n' \"\$3\" >> \"\$dest_log\"
+            sleep 1
+            tar czf \"\$3\" -C \"\$archive_root\" tailscale_1.2.3_amd64
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target-a' &
+pid_a=\$!
+download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target-b' &
+pid_b=\$!
+wait \"\$pid_a\"
+wait \"\$pid_b\"
+
+[ -f '${TEST_DIR}/target-a/tailscale' ] || { echo 'target-a missing'; exit 1; }
+[ -f '${TEST_DIR}/target-b/tailscale' ] || { echo 'target-b missing'; exit 1; }
+
+count=\$(sort -u \"\$dest_log\" | wc -l | tr -d ' ')
+[ \"\$count\" = '2' ] || { echo 'download temp paths collided'; cat \"\$dest_log\"; exit 1; }
 "
     assert_success
 }

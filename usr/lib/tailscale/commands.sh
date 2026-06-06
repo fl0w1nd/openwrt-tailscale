@@ -466,8 +466,9 @@ do_update() {
         esac
     fi
 
-    # Stage: download new version to a temp directory
-    local stage_dir="/tmp/tailscale_staged_$$"
+    # Stage: download new version to a private temp directory
+    local stage_dir
+    stage_dir=$(create_tailscale_temp_dir "tailscale-staged") || return 1
     log_info "Downloading v${latest_version} to staging area..."
     stage_tailscale "$latest_version" "$arch" "$stage_dir" || {
         log_error "Download failed"
