@@ -2,6 +2,13 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.2.0 (2026-06-07)
+
+- 新增 `tailscale-manager --version`（`-v`）直接查看版本；`help` 与 `--version` 等只读命令不再联网检查更新 (#26)
+- LuCI 现在能识别手动安装在 `/opt/tailscale` 等位置的 Tailscale，不再只认本脚本安装的版本 (#26)
+- 托管文件同步失败时给出可操作的提示（如何重试、检查磁盘与网络），不再只是一句模糊告警 (#26)
+- 未知命令直接报错退出，不再先联网检查更新（此前任意未知输入都会触发更新检查，容易让人误以为命令有效）(#26)
+
 ## v4.1.3 (2026-06-04)
 
 - 修复 `extra_env` 日志中键名重复打印的问题（如 `GOMIPS=GOMIPS=softfloat` 应为 `GOMIPS=softfloat`）；实际 procd 注入无误，仅日志显示受影响 (#14)

@@ -2,6 +2,13 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.2.0 (2026-06-07)
+
+- Add `tailscale-manager --version` (`-v`) to print the version; read-only commands like `help` and `--version` no longer make an online update check (#26)
+- LuCI now recognises a Tailscale binary installed manually (e.g. under `/opt/tailscale`), not just installs done by this script (#26)
+- Managed-file sync failures now show an actionable hint (how to retry, check disk space and network) instead of a vague warning (#26)
+- Unknown commands now fail fast instead of first running an online update check (previously any unrecognised input triggered the update check, which was misleading) (#26)
+
 ## v4.1.3 (2026-06-04)
 
 - Fix `extra_env` log line printing key name twice (e.g. `GOMIPS=GOMIPS=softfloat` instead of `GOMIPS=softfloat`); actual procd injection was correct, only the log output was affected (#14)
