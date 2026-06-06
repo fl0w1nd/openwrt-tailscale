@@ -122,7 +122,7 @@ _reexec_into_new_manager() {
 check_script_update() {
     local non_interactive=0
     case " ${*:-} " in
-        *" --non-interactive "*) non_interactive=1 ;;
+        *" --yes "*) non_interactive=1 ;;
     esac
 
     if [ "$non_interactive" -ne 1 ]; then

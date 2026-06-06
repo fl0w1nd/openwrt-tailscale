@@ -2,17 +2,19 @@
 
 管理器仅对 Tailscale 二进制文件提供定时自动更新；管理脚本和 LuCI 界面**只能手动更新**，不会自动升级。
 
-## 二进制自动更新
+## Tailscale 二进制自动更新
 
-启用后，每日定时任务会检查并安装新版本。
+启用后，每日定时任务会检查并安装新版本。该机制只作用于 **Tailscale 二进制**，不会影响管理器本身。
 
 ### 启用 / 禁用
 
 ```sh
-tailscale-manager auto-update on      # 启用
-tailscale-manager auto-update off     # 禁用
-tailscale-manager auto-update status  # 查看状态
+tailscale-manager auto-update enable   # 启用
+tailscale-manager auto-update disable  # 禁用
+tailscale-manager auto-update status   # 查看状态
 ```
+
+（仍兼容旧写法 `on` / `off` / `1` / `0`。）
 
 ### 工作原理
 

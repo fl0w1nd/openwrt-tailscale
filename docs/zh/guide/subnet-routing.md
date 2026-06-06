@@ -7,7 +7,7 @@
 安装过程中会提示是否配置子网路由。也可以之后运行：
 
 ```sh
-tailscale-manager setup-firewall
+tailscale-manager setup-subnet-routing
 ```
 
 这将：
@@ -55,4 +55,4 @@ tailscale up --advertise-exit-node
 
 ## 用户空间模式
 
-在 [用户空间模式](/zh/guide/userspace-mode) 下，不会创建 `tailscale0` 接口，而是通过 SOCKS5 和 HTTP 代理监听来提供连接。不需要执行 `setup-firewall` 命令。
+在 [用户空间模式](/zh/guide/userspace-mode) 下，不会创建 `tailscale0` 接口，而是通过 SOCKS5 和 HTTP 代理监听来提供连接。不需要执行 `setup-subnet-routing` 命令。

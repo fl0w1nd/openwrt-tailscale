@@ -62,7 +62,7 @@ tailscale set --advertise-routes=192.168.1.0/24
 ```
 
 ::: warning 限制
-- **不会**创建 `tailscale0` 接口 — 不需要执行 `setup-firewall`。
+- **不会**创建 `tailscale0` 接口 — 不需要执行 `setup-subnet-routing`。
 - 支持 TCP、UDP 和 ICMP（ping），但并非所有 IP 协议。
 - 性能通常低于内核 TUN 模式。
 :::

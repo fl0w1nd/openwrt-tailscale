@@ -66,7 +66,7 @@ tailscale-manager install
 **Solution**: Set up subnet routing:
 
 ```sh
-tailscale-manager setup-firewall
+tailscale-manager setup-subnet-routing
 tailscale set --advertise-routes=192.168.1.0/24
 ```
 

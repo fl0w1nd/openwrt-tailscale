@@ -7,7 +7,7 @@ Subnet routing lets you access your local network from other Tailscale devices.
 During installation, you'll be prompted to configure subnet routing. You can also run it later:
 
 ```sh
-tailscale-manager setup-firewall
+tailscale-manager setup-subnet-routing
 ```
 
 This will:
@@ -55,4 +55,4 @@ Then approve the exit node in the Admin Console.
 
 ## Userspace Mode
 
-In [userspace mode](/en/guide/userspace-mode), the `tailscale0` interface is not created. Instead, Tailscale provides SOCKS5 and HTTP proxy listeners. The `setup-firewall` command is not needed.
+In [userspace mode](/en/guide/userspace-mode), the `tailscale0` interface is not created. Instead, Tailscale provides SOCKS5 and HTTP proxy listeners. The `setup-subnet-routing` command is not needed.

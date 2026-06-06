@@ -49,7 +49,7 @@ MSCRIPT
 output=\$(printf '{\"source\":\"small\",\"storage\":\"ram\",\"auto_update\":\"1\"}' | MANAGER_BIN='${MANAGER}' TASK_DIR='${TASK_DIR}' LIB_DIR='${REPO_ROOT}/usr/lib/tailscale' sh '${BRIDGE}' call do_install)
 printf '%s' \"\$output\" | grep -Fq '\"started\":true' || { echo 'missing started: '\$output; exit 1; }
 sleep 1
-grep -Fq 'install-quiet --source small --storage ram --auto-update 1' '${TEST_DIR}/manager-call' || {
+grep -Fq 'install --yes --source small --storage ram --auto-update 1' '${TEST_DIR}/manager-call' || {
     echo 'wrong manager call'
     cat '${TEST_DIR}/manager-call'
     exit 1
@@ -173,7 +173,7 @@ task=\$(printf '%s' \"\$start\" | sed -n 's/.*\"task\":\"\([^\"]*\)\".*/\1/p')
 sleep 1
 status=\$(printf '{\"task\":\"%s\"}' \"\$task\" | MANAGER_BIN='${MANAGER}' TASK_DIR='${TASK_DIR}' LIB_DIR='${LIB_DIR_TEST}' sh '${BRIDGE}' call get_task_status)
 printf '%s' \"\$status\" | grep -Fq '\"done\":true' || { echo 'missing done'; exit 1; }
-grep -Fq 'self-update --non-interactive' '${TEST_DIR}/manager-call' || {
+grep -Fq 'self-update --yes' '${TEST_DIR}/manager-call' || {
     echo 'wrong manager call'
     cat '${TEST_DIR}/manager-call'
     exit 1

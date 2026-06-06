@@ -2,17 +2,19 @@
 
 The manager auto-updates the Tailscale binary on a schedule. The management script and LuCI interface are **manual-only** and never upgrade themselves.
 
-## Binary Auto-Update
+## Tailscale Binary Auto-Update
 
-When enabled, a daily cron job checks for and installs new Tailscale releases.
+When enabled, a daily cron job checks for and installs new Tailscale releases. This only affects the **Tailscale binary**, never the manager itself.
 
 ### Enable / Disable
 
 ```sh
-tailscale-manager auto-update on      # Enable
-tailscale-manager auto-update off     # Disable
-tailscale-manager auto-update status  # Check status
+tailscale-manager auto-update enable   # Enable
+tailscale-manager auto-update disable  # Disable
+tailscale-manager auto-update status   # Check status
 ```
+
+(The older `on` / `off` / `1` / `0` values are still accepted.)
 
 ### How It Works
 

@@ -85,7 +85,7 @@ wget() {
 
 setup_cron() { :; }
 
-do_self_update --non-interactive >/dev/null 2>&1 || {
+do_self_update --yes >/dev/null 2>&1 || {
     echo 'self-update failed'
     exit 1
 }
@@ -127,7 +127,7 @@ wget() {
     return 1
 }
 
-if do_self_update --non-interactive >/dev/null 2>&1; then
+if do_self_update --yes >/dev/null 2>&1; then
     echo 'self-update accepted checksum mismatch'
     exit 1
 fi
@@ -193,7 +193,7 @@ tar() {
     command tar \"\$@\"
 }
 
-if do_self_update --non-interactive >/dev/null 2>&1; then
+if do_self_update --yes >/dev/null 2>&1; then
     echo 'self-update accepted unsafe archive member'
     exit 1
 fi

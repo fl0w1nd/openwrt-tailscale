@@ -14,7 +14,7 @@ This removes:
 - UCI configuration (`/etc/config/tailscale`)
 - Module libraries (`/usr/lib/tailscale/`)
 - LuCI interface files (if installed)
-- Network interface and firewall zone (if configured via `setup-firewall`)
+- Network interface and firewall zone (if configured via `setup-subnet-routing`)
 
 ## Preserved Files
 

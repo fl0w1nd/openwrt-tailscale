@@ -399,7 +399,7 @@ do_install() {
             *)
                 echo ""
                 echo "Skipped. You can configure later with:"
-                echo "  tailscale-manager setup-firewall"
+                echo "  tailscale-manager setup-subnet-routing"
                 echo ""
                 ;;
         esac
@@ -417,14 +417,14 @@ do_install() {
     echo "Useful commands:"
     echo "  tailscale status       - Check connection status"
     echo "  tailscale up --help    - See all options"
-    echo "  tailscale-manager setup-firewall - Configure subnet routing"
+    echo "  tailscale-manager setup-subnet-routing - Configure subnet routing"
     echo ""
 }
 
 do_update() {
-    local auto_mode="${1:-}"
+    local non_interactive="${1:-}"
 
-    log_info "Checking for updates..."
+    log_info "Checking for Tailscale updates..."
 
     [ -r /lib/functions.sh ] && . /lib/functions.sh
     config_load tailscale
@@ -457,7 +457,7 @@ do_update() {
         return 0
     fi
 
-    if [ "$auto_mode" != "--auto" ]; then
+    if [ "$non_interactive" != "--yes" ]; then
         printf 'Update to v%s? [y/N]: ' "$latest_version"
         read -r answer
         case "$answer" in

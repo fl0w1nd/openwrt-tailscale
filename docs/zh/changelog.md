@@ -2,6 +2,13 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.4.0 (2026-06-07)
+
+- 明确区分「更新 **Tailscale 二进制**」（`update`、`auto-update`）与「更新 **管理器本身**」（`self-update`）；`help` 现按作用对象分组，两者不再混淆
+- 规范命令命名（破坏性变更）：`install-quiet` → `install --yes`、`setup-firewall` → `setup-subnet-routing`、`list-versions` → `list-small-versions`
+- 非交互参数统一为 `--yes`（`update --yes`、`self-update --yes`）；`auto-update` 推荐使用 `enable`/`disable`/`status`（仍兼容旧的 `on`/`off`/`1`/`0`）
+- UCI 配置保持不变，仅重命名了上述 CLI 命令
+
 ## v4.3.0 (2026-06-07)
 
 - 大幅简化自更新：`self-update` 现在一步重装整个管理层（脚本、库、LuCI 界面），并保留 UCI 配置、节点状态和已装二进制；重复执行总是安全，也能修复损坏文件

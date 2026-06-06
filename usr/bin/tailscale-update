@@ -115,7 +115,7 @@ fi
 
 log_msg "Update available: v${CURRENT_VERSION} -> v${LATEST_VERSION} (source: ${DOWNLOAD_SOURCE})"
 
-if "$TAILSCALE_MANAGER_BIN" update --auto; then
+if "$TAILSCALE_MANAGER_BIN" update --yes; then
     log_msg "Update successful"
 else
     log_msg "Update failed"

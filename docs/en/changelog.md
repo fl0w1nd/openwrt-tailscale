@@ -2,6 +2,13 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.4.0 (2026-06-07)
+
+- Clearer separation between updating the **Tailscale binary** (`update`, `auto-update`) and updating **the manager itself** (`self-update`); `help` is now grouped by target so the two can no longer be confused
+- Standardised command names (breaking): `install-quiet` → `install --yes`, `setup-firewall` → `setup-subnet-routing`, `list-versions` → `list-small-versions`
+- Non-interactive flags are now uniformly `--yes` (`update --yes`, `self-update --yes`), and `auto-update` prefers `enable`/`disable`/`status` (the old `on`/`off`/`1`/`0` still work)
+- UCI settings are unchanged; only the CLI verbs above were renamed
+
 ## v4.3.0 (2026-06-07)
 
 - Greatly simplified self-update: `self-update` now reinstalls the whole management layer (scripts, libraries, LuCI app) in one step while preserving your UCI config, node state, and installed binary; re-running is always safe and also repairs corrupted files

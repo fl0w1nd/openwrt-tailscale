@@ -283,7 +283,7 @@ call)
             input=$(read_input)
             limit=$(json_get_int_param "$input" limit 2>/dev/null || true)
             [ -n "$limit" ] || limit=20
-            versions=$("$MANAGER_BIN" list-versions "$limit" 2>/dev/null || true)
+            versions=$("$MANAGER_BIN" list-small-versions "$limit" 2>/dev/null || true)
             printf '{"versions":'
             printf '%s\n' "$versions" | json_array_from_lines
             printf '}'
@@ -313,7 +313,7 @@ call)
             source=$(json_get_param "$input" source)
             storage=$(json_get_param "$input" storage)
             auto_update=$(json_get_param "$input" auto_update)
-            set -- "$MANAGER_BIN" install-quiet
+            set -- "$MANAGER_BIN" install --yes
             [ -n "$source" ] && set -- "$@" --source "$source"
             [ -n "$storage" ] && set -- "$@" --storage "$storage"
             [ -n "$auto_update" ] && set -- "$@" --auto-update "$auto_update"
@@ -328,7 +328,7 @@ call)
             start_background_task install-version "$@"
             ;;
         do_update)
-            start_background_task update "$MANAGER_BIN" update --auto
+            start_background_task update "$MANAGER_BIN" update --yes
             ;;
         do_uninstall)
             stdout=$("$MANAGER_BIN" uninstall --yes 2>&1)
@@ -354,7 +354,7 @@ call)
             print_code_stdout "$code" "$stdout"
             ;;
         upgrade_scripts)
-            start_background_task upgrade-scripts "$MANAGER_BIN" self-update --non-interactive
+            start_background_task upgrade-scripts "$MANAGER_BIN" self-update --yes
             ;;
         get_logs)
             manager_log=""
