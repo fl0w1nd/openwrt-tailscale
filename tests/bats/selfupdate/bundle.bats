@@ -154,7 +154,17 @@ export MGMT_BUNDLE_URL MGMT_BUNDLE_SHA256_URL
 archive_root='${TEST_DIR}/mgmt-traversal-root'
 mkdir -p \"\$archive_root/safe\"
 printf 'unsafe\n' > \"\$archive_root/evil\"
-(cd \"\$archive_root/safe\" && tar czf '${TEST_DIR}/mgmt-traversal.tgz' ../evil)
+python3 - '${TEST_DIR}/mgmt-traversal.tgz' <<'PY'
+import io
+import sys
+import tarfile
+
+data = b'unsafe\n'
+info = tarfile.TarInfo('../evil')
+info.size = len(data)
+with tarfile.open(sys.argv[1], 'w:gz') as tar:
+    tar.addfile(info, io.BytesIO(data))
+PY
 sha256sum '${TEST_DIR}/mgmt-traversal.tgz' | awk '{print \$1}' > '${TEST_DIR}/mgmt-traversal.sha256'
 extraction_marker='${TEST_DIR}/mgmt-extraction-called'
 

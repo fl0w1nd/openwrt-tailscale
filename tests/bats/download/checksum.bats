@@ -330,7 +330,17 @@ export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
 archive_root='${TEST_DIR}/traversal-root'
 mkdir -p \"\$archive_root/safe\"
 printf 'unsafe\n' > \"\$archive_root/evil\"
-(cd \"\$archive_root/safe\" && tar czf '${TEST_DIR}/traversal.tgz' ../evil)
+python3 - '${TEST_DIR}/traversal.tgz' <<'PY'
+import io
+import sys
+import tarfile
+
+data = b'unsafe\n'
+info = tarfile.TarInfo('../evil')
+info.size = len(data)
+with tarfile.open(sys.argv[1], 'w:gz') as tar:
+    tar.addfile(info, io.BytesIO(data))
+PY
 extraction_marker='${TEST_DIR}/extraction-called'
 
 wget() {
@@ -487,7 +497,17 @@ export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
 archive_root='${TEST_DIR}/small-traversal-root'
 mkdir -p \"\$archive_root/safe\"
 printf 'unsafe\n' > \"\$archive_root/evil\"
-(cd \"\$archive_root/safe\" && tar czf '${TEST_DIR}/small-traversal.tgz' ../evil)
+python3 - '${TEST_DIR}/small-traversal.tgz' <<'PY'
+import io
+import sys
+import tarfile
+
+data = b'unsafe\n'
+info = tarfile.TarInfo('../evil')
+info.size = len(data)
+with tarfile.open(sys.argv[1], 'w:gz') as tar:
+    tar.addfile(info, io.BytesIO(data))
+PY
 extraction_marker='${TEST_DIR}/small-extraction-called'
 
 get_small_checksum() {
