@@ -29,6 +29,18 @@ tailscale-manager [命令] [选项]
 | `uninstall [--yes]` | 卸载 Tailscale 及相关文件（`--yes` 跳过确认） |
 | `status` | 显示当前安装和服务状态 |
 
+### 诊断与排查
+
+| 命令 | 说明 |
+|------|------|
+| `logs [n]` | 一次性查看管理器、服务、系统三类日志的最近 n 行（默认 200） |
+| `diagnostics` | 输出完整排查报告（版本、平台、安装/运行状态、依赖检查、UCI 配置与最近日志），便于直接粘贴到 issue（别名：`doctor`） |
+
+```sh
+tailscale-manager diagnostics        # 提交 issue 前先运行这条
+tailscale-manager logs 500           # 查看最近 500 行日志
+```
+
 ### 安装变体
 
 | 命令 | 说明 |

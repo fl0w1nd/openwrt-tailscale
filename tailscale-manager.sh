@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.4.0"
+VERSION="4.5.0"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -72,7 +72,10 @@ STATE_DIR="/etc/tailscale"
 CONFIG_FILE="/etc/config/tailscale"
 INIT_SCRIPT="/etc/init.d/tailscale"
 CRON_SCRIPT="/usr/bin/tailscale-update"
-LOG_FILE="/var/log/tailscale-manager.log"
+# LOG_FILE can be overridden via env var, e.g. to keep the manager log on
+# persistent storage (the default /var/log is usually tmpfs and is wiped on
+# reboot, which makes after-the-fact troubleshooting harder).
+LOG_FILE="${LOG_FILE:-/var/log/tailscale-manager.log}"
 MANAGER_BIN_PATH="${TAILSCALE_MANAGER_BIN_PATH:-/usr/bin/tailscale-manager}"
 
 # Project repository raw base URL
@@ -430,6 +433,7 @@ _ensure_libraries() {
         # shellcheck source=/dev/null
         . "$LIB_DIR/$_lib"
     done
+    log_info "Bootstrapped runtime libraries into ${LIB_DIR}"
 }
 
 # ============================================================================
@@ -769,7 +773,7 @@ main() {
     # any unrecognised argument fell through to check_script_update first, which
     # made bogus commands look like they "did something".
     case "${1:-}" in
-        install|update|rollback|uninstall|status|download-only|install-version|list-small-versions|list-official-versions|setup-subnet-routing|self-update|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
+        install|update|rollback|uninstall|status|logs|diagnostics|doctor|download-only|install-version|list-small-versions|list-official-versions|setup-subnet-routing|self-update|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
         *)
             echo "Unknown command: $1"
             echo "Run '$0 help' for usage"
@@ -793,6 +797,16 @@ main() {
     # explicit action (`self-update`, the interactive-menu reminder, or the
     # LuCI button). Unrelated commands stay fully offline.
     unset TAILSCALE_MANAGER_REEXEC
+
+    # Record state-changing invocations to the manager log so a later
+    # `diagnostics`/`logs` dump shows which commands ran in what order. This is
+    # file-only (no console/syslog noise) and skips read-only/JSON commands so
+    # frequent LuCI polling never floods the log.
+    case "${1:-}" in
+        install|update|rollback|uninstall|install-version|download-only|setup-subnet-routing|self-update|auto-update|net-mode)
+            log_file "INFO" "Command invoked: $0 $*"
+            ;;
+    esac
 
     case "${1:-}" in
         install)
@@ -820,6 +834,12 @@ main() {
             ;;
         status)
             do_status
+            ;;
+        logs)
+            do_logs "$2"
+            ;;
+        diagnostics|doctor)
+            do_diagnostics "$2"
             ;;
         download-only)
             do_download_only
@@ -955,6 +975,11 @@ main() {
             echo "  net-mode <auto|tun|userspace|status>"
             echo "                               Configure Tailscale networking mode"
             echo "  uninstall [--yes]            Remove Tailscale"
+            echo ""
+            echo "Diagnostics & troubleshooting:"
+            echo "  logs [n]                     Show recent manager/service/system logs (default ${TS_LOG_DEFAULT_LINES:-200} lines)"
+            echo "  diagnostics                  Print a full troubleshooting report to paste into a bug report"
+            echo "                               (alias: doctor)"
             echo ""
             echo "Manager command (manages this tool itself, NOT the Tailscale binary):"
             echo "  self-update [--yes]          Reinstall this manager (scripts + LuCI) to the latest version"

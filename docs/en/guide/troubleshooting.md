@@ -1,12 +1,38 @@
 # Troubleshooting
 
+## One-shot diagnostics (recommended)
+
+When troubleshooting anything — or before opening an issue — run:
+
+```sh
+tailscale-manager diagnostics
+```
+
+It collects the versions, device/system info, install and runtime state, dependency checks, UCI config, and recent log excerpts in a single block you can paste straight into a [GitHub Issue](https://github.com/fl0w1nd/openwrt-tailscale/issues) (`doctor` is an alias).
+
+If you only want the logs:
+
+```sh
+tailscale-manager logs        # manager, service, and system logs at once (last 200 lines)
+tailscale-manager logs 500    # custom line count
+```
+
 ## Log Files
 
 | Log | Location | Content |
 |-----|----------|---------|
-| Manager log | `/var/log/tailscale-manager.log` | Install, update, and script operations |
+| Manager log | `/var/log/tailscale-manager.log` | Install, update, uninstall, rollback, and script operations |
 | Service log | `/var/log/tailscale.log` | Tailscale daemon output |
-| System log | `logread \| grep tailscale` | procd service events |
+| Auto-update log | `/var/log/tailscale-update.log` | Scheduled Tailscale binary updates (cron) |
+| System log | `logread -e tailscale` | procd service events |
+
+::: tip Logs live under `/var/log` (usually tmpfs) and are wiped on reboot.
+To keep the manager log across reboots, set the `LOG_FILE` environment variable to a persistent path, e.g.:
+
+```sh
+LOG_FILE=/etc/tailscale/manager.log tailscale-manager status
+```
+:::
 
 ## Common Issues
 
@@ -75,4 +101,5 @@ Then approve the route in the [Tailscale Admin Console](https://login.tailscale.
 ## Getting Help
 
 - [GitHub Issues](https://github.com/fl0w1nd/openwrt-tailscale/issues) — Report bugs or request features
-- Check `tailscale-manager status` for a quick diagnostic overview
+- Before filing an issue, attach the full output of `tailscale-manager diagnostics`
+- Run `tailscale-manager status` for a quick install/runtime overview

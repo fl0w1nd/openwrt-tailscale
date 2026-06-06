@@ -581,9 +581,12 @@ do_rollback() {
         *) echo "Rollback cancelled."; return 0 ;;
     esac
 
+    log_info "Rolling back Tailscale from v${current_version} to v${rollback_ver} (source: ${rollback_source})"
     if cmd_install_version "$rollback_ver" --source "$rollback_source"; then
         rm -f "$rollback_file"
+        log_info "Rollback to v${rollback_ver} complete"
     else
+        log_error "Rollback to v${rollback_ver} failed"
         return 1
     fi
 }
@@ -680,6 +683,8 @@ do_uninstall() {
     if [ "$cleanup_failed" = "1" ]; then
         log_warn "Some managed directories were skipped because they failed safety checks"
     fi
+
+    log_info "Tailscale uninstall finished (state file preserved at ${STATE_FILE})"
 
     echo ""
     echo "============================================="
@@ -789,6 +794,242 @@ do_status() {
         /usr/bin/tailscale status 2>/dev/null || echo "  (not connected or not running)"
     fi
     echo ""
+}
+
+# ============================================================================
+# Logs & Diagnostics
+# ============================================================================
+
+# Default number of lines shown by `logs` and bundled in `diagnostics`.
+# Matches the amount the bug report template asks contributors to paste.
+TS_LOG_DEFAULT_LINES=200
+
+# Print the tail of a single log file under a labelled header.
+_print_log_section() {
+    local label="$1"
+    local file="$2"
+    local lines="$3"
+
+    echo "=== ${label} (${file}) ==="
+    if [ -f "$file" ]; then
+        tail -n "$lines" "$file" 2>/dev/null || echo "(failed to read ${file})"
+    else
+        echo "(not found)"
+    fi
+    echo ""
+}
+
+# Print recent system log entries mentioning tailscale via logread.
+_print_logread_section() {
+    local lines="$1"
+
+    echo "=== System log (logread, tailscale) ==="
+    if command -v logread >/dev/null 2>&1; then
+        if logread -e tailscale >/dev/null 2>&1; then
+            logread -e tailscale 2>/dev/null | tail -n "$lines"
+        else
+            logread 2>/dev/null | grep -i tailscale | tail -n "$lines" || true
+        fi
+    else
+        echo "(logread not available)"
+    fi
+    echo ""
+}
+
+# `logs [n]` — show the last n lines of every Tailscale log source at once.
+# Bundles the three files plus logread so users no longer have to remember the
+# individual paths/commands listed in the issue template.
+do_logs() {
+    local lines="${1:-$TS_LOG_DEFAULT_LINES}"
+    case "$lines" in
+        '' | *[!0-9]*) lines="$TS_LOG_DEFAULT_LINES" ;;
+    esac
+
+    echo ""
+    echo "============================================="
+    echo "  Tailscale Logs (last ${lines} lines)"
+    echo "============================================="
+    echo ""
+    _print_log_section "Manager log" "$LOG_FILE" "$lines"
+    _print_log_section "Service log" "/var/log/tailscale.log" "$lines"
+    _print_log_section "Auto-update log" "/var/log/tailscale-update.log" "$lines"
+    _print_logread_section "$lines"
+}
+
+# Best-effort device model string for diagnostics output.
+_diag_device_model() {
+    if [ -r /tmp/sysinfo/model ]; then
+        cat /tmp/sysinfo/model 2>/dev/null || echo "unknown"
+    elif [ -r /proc/device-tree/model ]; then
+        tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo "unknown"
+    else
+        echo "unknown"
+    fi
+}
+
+# Report whether a command is present, and what it is needed for when missing.
+_diag_check_cmd() {
+    local name="$1"
+    local purpose="$2"
+    if command -v "$name" >/dev/null 2>&1; then
+        echo "  ${name}: ok ($(command -v "$name"))"
+    else
+        echo "  ${name}: MISSING (needed for ${purpose})"
+    fi
+}
+
+# `diagnostics` (alias `doctor`) — one-shot troubleshooting report.
+# Collects everything the bug report template asks for (versions, platform,
+# install/runtime state, dependency checks, UCI config) plus recent log
+# excerpts, so a user can paste a single block into a GitHub issue.
+do_diagnostics() {
+    local log_lines="${1:-100}"
+    case "$log_lines" in
+        '' | *[!0-9]*) log_lines=100 ;;
+    esac
+
+    local now arch raw_arch
+    now=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) || now="unknown"
+    raw_arch=$(uname -m 2>/dev/null) || raw_arch="unknown"
+    arch=$(get_arch 2>/dev/null) || arch="unsupported"
+
+    echo "============================================="
+    echo "  Tailscale Manager Diagnostics"
+    echo "============================================="
+    echo "Generated: ${now}"
+    echo "Copy everything below into your GitHub issue."
+    echo ""
+
+    echo "[Manager]"
+    echo "  Version:        ${VERSION}"
+    echo "  Path:           ${MANAGER_BIN_PATH}"
+    echo "  TAILSCALE_SOURCE env: ${TAILSCALE_SOURCE:-unset}"
+    echo ""
+
+    echo "[System]"
+    if [ -r /etc/openwrt_release ]; then
+        sed -n 's/^\(DISTRIB_[A-Z_]*\)=/  \1=/p' /etc/openwrt_release 2>/dev/null || true
+    else
+        echo "  /etc/openwrt_release: not found"
+    fi
+    echo "  Device model:   $(_diag_device_model)"
+    echo "  Kernel:         $(uname -sr 2>/dev/null || echo unknown)"
+    echo "  Machine:        ${raw_arch}"
+    echo "  Detected arch:  ${arch}"
+    echo ""
+
+    local bin_dir="" installed_ver="not installed" source_type="unknown" storage_mode=""
+    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
+        . /lib/functions.sh
+        config_load tailscale 2>/dev/null || true
+        config_get bin_dir settings bin_dir ""
+        config_get storage_mode settings storage_mode ""
+    fi
+    [ -n "$bin_dir" ] || bin_dir="$PERSISTENT_DIR"
+    installed_ver=$(get_installed_version "$bin_dir")
+    if [ "$installed_ver" = "not installed" ] && [ -f "${RAM_DIR}/version" ]; then
+        bin_dir="$RAM_DIR"
+        storage_mode="${storage_mode:-ram}"
+        installed_ver=$(get_installed_version "$bin_dir")
+    fi
+    if [ -f "${bin_dir}/source" ]; then
+        source_type=$(cat "${bin_dir}/source" 2>/dev/null || echo unknown)
+    elif [ -f "${bin_dir}/tailscale.combined" ]; then
+        source_type="small"
+    fi
+
+    echo "[Tailscale]"
+    echo "  Installed version: ${installed_ver}"
+    echo "  Source:            ${source_type}"
+    echo "  Storage mode:      ${storage_mode:-unknown}"
+    echo "  Binary dir:        ${bin_dir}"
+    if command -v tailscale >/dev/null 2>&1; then
+        echo "  tailscale binary:  $(tailscale version 2>/dev/null | head -n1 || echo unknown)"
+    fi
+    echo ""
+
+    echo "[Service]"
+    echo "  Configured net mode: $(get_configured_net_mode)"
+    if is_tailscaled_running; then
+        local pid
+        pid=$(get_tailscaled_pid 2>/dev/null || true)
+        if [ -n "$pid" ]; then
+            echo "  tailscaled:          running (PID ${pid})"
+        else
+            echo "  tailscaled:          running"
+        fi
+        if is_tailscaled_userspace; then
+            echo "  Active mode:         userspace"
+        else
+            echo "  Active mode:         tun"
+        fi
+    else
+        echo "  tailscaled:          not running"
+    fi
+    local au
+    au=$(get_auto_update_config)
+    if [ "$au" = "1" ]; then
+        if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
+            echo "  Auto-update:         enabled (cron active)"
+        else
+            echo "  Auto-update:         enabled (cron missing)"
+        fi
+    else
+        echo "  Auto-update:         disabled"
+    fi
+    if type detect_firewall_backend >/dev/null 2>&1; then
+        echo "  Firewall backend:    $(detect_firewall_backend 2>/dev/null || echo unknown)"
+    fi
+    echo ""
+
+    echo "[Dependencies]"
+    _diag_check_cmd wget "downloading binaries"
+    if command -v wget >/dev/null 2>&1; then
+        if wget -q -T 5 --spider "$TAILSCALE_OFFICIAL_BASE_URL" 2>/dev/null; then
+            echo "  HTTPS reachability: ok (${TAILSCALE_OFFICIAL_BASE_URL})"
+        else
+            echo "  HTTPS reachability: FAILED (check SSL libs / network)"
+        fi
+    fi
+    if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+        echo "  ca-bundle:          present"
+    else
+        echo "  ca-bundle:          MISSING"
+    fi
+    if kernel_tun_available; then
+        echo "  TUN device:         available (/dev/net/tun)"
+    else
+        echo "  TUN device:         unavailable (userspace fallback)"
+    fi
+    _diag_check_cmd iptables "firewall rules"
+    _diag_check_cmd jsonfilter "LuCI JSON status"
+    _diag_check_cmd uci "UCI configuration"
+    echo ""
+
+    echo "[Tailscale connection]"
+    if is_tailscaled_running && command -v tailscale >/dev/null 2>&1; then
+        tailscale status 2>&1 | head -n 40 || echo "  (status unavailable)"
+    else
+        echo "  (tailscaled not running)"
+    fi
+    echo ""
+
+    echo "[UCI config: tailscale]"
+    if command -v uci >/dev/null 2>&1; then
+        uci -q show tailscale 2>/dev/null || echo "  (no tailscale UCI config)"
+    else
+        echo "  (uci not available)"
+    fi
+    echo ""
+
+    _print_log_section "Manager log" "$LOG_FILE" "$log_lines"
+    _print_log_section "Service log" "/var/log/tailscale.log" "$log_lines"
+    _print_log_section "Auto-update log" "/var/log/tailscale-update.log" "$log_lines"
+    _print_logread_section "$log_lines"
+
+    echo "============================================="
+    echo "  End of diagnostics"
+    echo "============================================="
 }
 
 do_install_version() {
@@ -976,6 +1217,7 @@ do_download_only() {
     local version
     version=$(get_latest_version "$arch") || return 1
 
+    log_info "Download-only: fetching Tailscale v${version} (source=${DOWNLOAD_SOURCE}, arch=${arch}) into ${bin_dir}"
     download_tailscale "$version" "$arch" "$bin_dir"
 }
 
