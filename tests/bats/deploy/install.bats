@@ -184,6 +184,10 @@ done
 @test "install-quiet rejects invalid option values" {
     run_in_sh auto "$(_install_stubs)
 
+if cmd_install --source --storage >/dev/null 2>&1; then
+    echo 'cmd_install should reject option-like source value'
+    exit 1
+fi
 if cmd_install --source mirror >/dev/null 2>&1; then
     echo 'cmd_install should reject invalid source'
     exit 1

@@ -61,6 +61,12 @@ require_option_value() {
         log_error "Option ${option} requires a value"
         return 1
     fi
+    case "$value" in
+        --*)
+            log_error "Option ${option} value looks like another option: ${value}"
+            return 1
+            ;;
+    esac
 }
 
 validate_download_source() {
