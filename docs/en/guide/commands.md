@@ -65,8 +65,7 @@ tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 
 | Command | Description |
 |---------|-------------|
-| `self-update` | Update the manager script to the latest version |
-| `sync-scripts` | Sync all runtime scripts with the latest version |
+| `self-update` | Reinstall the management layer (manager script, libraries, and LuCI app) to the latest version in one step |
 | `auto-update [on\|off\|status]` | Manage binary auto-update cron job |
 
 ### Other

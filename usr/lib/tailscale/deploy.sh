@@ -13,7 +13,7 @@
 #   LUCI_ACL_URL, LUCI_ACL_DEST,
 #   CONFIG_TEMPLATE_URL, CONFIG_FILE,
 #   REPO_BASE_URL, LIB_DIR
-#   VERSION, MANAGED_SYNC_VERSION_FILE
+#   VERSION
 #   MODULE_LIBS (optional; defaults to the standard module set)
 #
 # Required functions:
@@ -223,40 +223,8 @@ luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json|${LUCI_ACL_
 
     setup_cron || return 1
 
-    VERSION="$bundle_version" mark_managed_sync_version || return 1
     log_info "Installed management bundle for v${bundle_version}"
     return 0
-}
-
-get_managed_sync_version() {
-    [ -f "$MANAGED_SYNC_VERSION_FILE" ] || return 1
-    sed -n '1p' "$MANAGED_SYNC_VERSION_FILE"
-}
-
-managed_sync_is_current() {
-    local synced_version=""
-
-    synced_version=$(get_managed_sync_version 2>/dev/null) || return 1
-    [ -n "$synced_version" ] || return 1
-    [ "$synced_version" = "$VERSION" ]
-}
-
-mark_managed_sync_version() {
-    local sync_dir sync_name tmp_file
-
-    sync_dir=$(dirname "$MANAGED_SYNC_VERSION_FILE")
-    sync_name=$(basename "$MANAGED_SYNC_VERSION_FILE")
-
-    mkdir -p "$sync_dir" || return 1
-    tmp_file=$(mktemp "${sync_dir}/.${sync_name}.XXXXXX" 2>/dev/null) || return 1
-    printf '%s\n' "$VERSION" > "$tmp_file" || {
-        rm -f "$tmp_file"
-        return 1
-    }
-    mv -f "$tmp_file" "$MANAGED_SYNC_VERSION_FILE" || {
-        rm -f "$tmp_file"
-        return 1
-    }
 }
 
 # Install all runtime scripts (common lib, module libs, init script)
@@ -389,22 +357,6 @@ ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
     fi
     rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
     log_info "Installed LuCI app files"
-}
-
-# Sync all managed scripts (runtime + update + LuCI)
-sync_managed_scripts() {
-    local luci_rc=0
-
-    install_runtime_scripts || return 1
-    install_update_script || return 1
-    install_luci_app || luci_rc=1
-
-    setup_cron || return 1
-
-    [ "$luci_rc" -eq 0 ] || return "$luci_rc"
-    mark_managed_sync_version || return 1
-
-    return 0
 }
 
 # Reconcile cron jobs from UCI configuration

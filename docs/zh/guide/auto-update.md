@@ -21,26 +21,21 @@ tailscale-manager auto-update status  # 查看状态
 3. 发现新版本则自动下载安装
 4. 更新后自动重启 Tailscale 服务
 
-## 脚本自更新
+## 管理层自更新
 
-管理脚本可自更新到 GitHub 上的最新版本：
+`self-update` 会从 GitHub 上的版本化快照一步重装整个管理层：管理脚本、模块库、init/cron 脚本以及 LuCI 界面。你的设置（UCI 配置）、Tailscale 状态以及已安装的二进制都不会被改动。
 
 ```sh
 tailscale-manager self-update
 ```
 
-此命令会检查远程版本，如有更新则自动更新本地脚本。
+它会先检查远程版本：有新版本则整体重装并 re-exec 切换到新代码；已是最新则什么都不做。由于管理文件本身无状态、且始终作为一致的整体下载，重复执行总是安全的（顺便也能修复缺失或损坏的运行时文件），因此不再需要单独的“同步脚本”步骤。
 
-## 同步脚本
+## 可更新提醒
 
-同步所有运行时脚本（init 脚本、更新脚本、模块库）到最新版本：
+管理层不会静默自更新。可更新提醒只出现在两个只读入口：
 
-```sh
-tailscale-manager sync-scripts
-```
+- 交互式菜单（不带参数运行 `tailscale-manager`）顶部会显示提示，并提供“更新管理脚本”选项。
+- LuCI 的**维护（Maintenance）**页面有“检查更新”按钮。
 
-适用于手动更新后或修复损坏的运行时文件。
-
-## 启动时更新检查
-
-每次运行 `tailscale-manager` 时（除 `self-update`、`sync-scripts` 和 `install-quiet` 外），会自动检查是否有新版本可用并提示通知。
+普通子命令（`status`、`update` 等）保持完全离线，不会触发任何联网检查。

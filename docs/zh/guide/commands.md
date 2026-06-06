@@ -65,8 +65,7 @@ tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 
 | 命令 | 说明 |
 |------|------|
-| `self-update` | 更新管理脚本到最新版本 |
-| `sync-scripts` | 同步所有运行时脚本到最新版本 |
+| `self-update` | 一步重装整个管理层（管理脚本、库文件、LuCI 界面）到最新版本 |
 | `auto-update [on\|off\|status]` | 管理二进制自动更新定时任务 |
 
 ### 其他

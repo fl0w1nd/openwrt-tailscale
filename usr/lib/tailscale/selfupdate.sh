@@ -9,7 +9,7 @@
 #   log_info(), log_error(), log_warn()
 #   create_tailscale_temp_dir(), validate_tar_member_paths() (from download.sh)
 #   version_lt() (from version.sh)
-#   deploy_management_bundle(), managed_sync_is_current() (from deploy.sh)
+#   deploy_management_bundle() (from deploy.sh)
 
 download_management_bundle_file() {
     local url="$1"
@@ -67,26 +67,15 @@ verify_management_bundle_checksum() {
 validate_management_bundle() {
     local staging_dir="$1"
     local bundle_version=""
-    local required_files="
-tailscale-manager.sh
-usr/lib/tailscale/common.sh
-usr/lib/tailscale/version.sh
-usr/lib/tailscale/deploy.sh
-usr/lib/tailscale/selfupdate.sh
-usr/lib/tailscale/jsonutil.sh
-usr/bin/tailscale-update
-etc/init.d/tailscale
-luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale
-luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js
-"
-    local file
 
-    for file in $required_files; do
-        [ -f "${staging_dir}/${file}" ] || {
-            log_error "Management bundle missing required file: ${file}"
-            return 1
-        }
-    done
+    # The entry script is the one file the deploy step cannot work without and
+    # the source of the version stamp. deploy_management_bundle() already fails
+    # per-file if any other mapped artifact is missing, so there is no separate
+    # required-files checklist to keep in sync here.
+    [ -f "${staging_dir}/tailscale-manager.sh" ] || {
+        log_error "Management bundle missing tailscale-manager.sh"
+        return 1
+    }
 
     bundle_version=$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' "${staging_dir}/tailscale-manager.sh" | head -1)
     [ -n "$bundle_version" ] || {
@@ -95,17 +84,6 @@ luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js
     }
 
     printf '%s\n' "$bundle_version"
-    return 0
-}
-
-sync_current_managed_files() {
-    if managed_sync_is_current; then
-        return 10
-    fi
-
-    log_info "Managed files are out of sync for v${VERSION}, syncing..."
-    sync_managed_scripts || return 1
-    log_info "Managed files synced for v${VERSION}"
     return 0
 }
 
@@ -195,18 +173,9 @@ check_script_update() {
         esac
     fi
 
-    if sync_current_managed_files; then
-        return 0
-    fi
-
-    case "$?" in
-        10) return 10 ;;
-        *)
-            echo "[WARN] Could not sync managed files for v${VERSION} (LuCI app and helper libraries may be outdated)."
-            echo "[WARN] Retry with 'tailscale-manager sync-scripts'. If it keeps failing, check free disk space and network access to GitHub."
-            return 20
-            ;;
-    esac
+    # Already on the latest version. A self-update reinstalls the whole
+    # management layer in one shot, so there is nothing to reconcile here.
+    return 10
 }
 
 # Perform script self-update via management bundle deploy

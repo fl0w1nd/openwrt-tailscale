@@ -2,6 +2,13 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.3.0 (2026-06-07)
+
+- Greatly simplified self-update: `self-update` now reinstalls the whole management layer (scripts, libraries, LuCI app) in one step while preserving your UCI config, node state, and installed binary; re-running is always safe and also repairs corrupted files
+- Removed the redundant `sync-scripts` command and the internal "managed-file sync / version reconciliation" logic, eliminating the recurring sync warning
+- Plain commands no longer make a network update check every run; the update reminder now appears only in the interactive menu and the LuCI maintenance page, and the menu gained an "Update Management Scripts" entry
+- Binary auto-update (cron) is unchanged
+
 ## v4.2.0 (2026-06-07)
 
 - Add `tailscale-manager --version` (`-v`) to print the version; read-only commands like `help` and `--version` no longer make an online update check (#26)

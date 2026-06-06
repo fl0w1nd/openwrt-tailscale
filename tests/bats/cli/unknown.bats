@@ -33,3 +33,19 @@ exit 1"
         *"Checking for script updates"*) echo "unknown command must not run the update check"; false ;;
     esac
 }
+
+@test "main rejects the removed sync-scripts command" {
+    bin_stub wget "#!/bin/sh
+touch '${TEST_DIR}/wget-called'
+exit 1"
+
+    run env PATH="${STUB_BIN}:${PATH}" \
+        LIB_DIR="${REPO_ROOT}/usr/lib/tailscale" \
+        LOG_FILE="${TEST_DIR}/tailscale-manager.log" \
+        sh "${REPO_ROOT}/tailscale-manager.sh" sync-scripts </dev/null
+
+    assert_failure
+    assert_output --partial "Unknown command: sync-scripts"
+
+    [ ! -f "${TEST_DIR}/wget-called" ] || { echo "removed command must not access the network"; false; }
+}

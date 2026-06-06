@@ -35,7 +35,7 @@ LuCI 应用分为四个标签页：
 
 ## 安装
 
-运行 `tailscale-manager install` 或 `tailscale-manager sync-scripts` 时会自动安装 LuCI 界面。需要：
+运行 `tailscale-manager install` 时会自动安装 LuCI 界面（`tailscale-manager self-update` 会一并更新它）。需要：
 
 - LuCI（大多数 OpenWrt 固件已包含）
 - rpcd（用于 RPC 通信）

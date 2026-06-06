@@ -68,8 +68,7 @@ LUCI_VIEW_DIR='${TEST_DIR}/root/www/luci-static/resources/view/tailscale'
 LUCI_RPC_DEST='${TEST_DIR}/root/usr/libexec/rpcd/luci-tailscale'
 LUCI_MENU_DEST='${TEST_DIR}/root/usr/share/luci/menu.d/luci-app-tailscale.json'
 LUCI_ACL_DEST='${TEST_DIR}/root/usr/share/rpcd/acl.d/luci-app-tailscale.json'
-MANAGED_SYNC_VERSION_FILE='${TEST_DIR}/root/usr/lib/tailscale/.managed-version'
-export MANAGER_BIN_PATH COMMON_LIB_PATH COMMON_LIB_URL LIB_DIR INIT_SCRIPT CRON_SCRIPT LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST MANAGED_SYNC_VERSION_FILE
+export MANAGER_BIN_PATH COMMON_LIB_PATH COMMON_LIB_URL LIB_DIR INIT_SCRIPT CRON_SCRIPT LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST
 
 wget() {
     if [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz.sha256'; then

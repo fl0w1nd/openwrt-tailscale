@@ -32,7 +32,6 @@
 					"do_update",
 					"do_uninstall",
 					"setup_firewall",
-					"sync_scripts",
 					"reconcile_cron",
 					"upgrade_scripts",
 					"clear_log"
