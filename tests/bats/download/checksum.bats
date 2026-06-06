@@ -327,12 +327,18 @@ DOWNLOAD_BASE='https://example.test/stable'
 TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
 export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
 
+archive_root='${TEST_DIR}/traversal-root'
+mkdir -p \"\$archive_root/safe\"
+printf 'unsafe\n' > \"\$archive_root/evil\"
+(cd \"\$archive_root/safe\" && tar czf '${TEST_DIR}/traversal.tgz' ../evil)
+extraction_marker='${TEST_DIR}/extraction-called'
+
 wget() {
     case \"\$1\" in
         -qO-) return 1 ;;
         --help) return 0 ;;
         -q)
-            printf 'fake archive\n' > \"\$3\"
+            cp '${TEST_DIR}/traversal.tgz' \"\$3\"
             return 0
             ;;
     esac
@@ -342,12 +348,8 @@ wget() {
 
 tar() {
     case \"\$1\" in
-        tzf)
-            printf '../evil\n'
-            return 0
-            ;;
         xzf)
-            echo 'unsafe archive reached extraction' >&2
+            printf 'called\n' > \"\$extraction_marker\"
             return 1
             ;;
     esac
@@ -358,6 +360,170 @@ if download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null;
     echo 'download accepted unsafe archive member'
     exit 1
 fi
+
+[ ! -f \"\$extraction_marker\" ] || { echo 'unsafe archive reached extraction'; exit 1; }
+"
+    assert_success
+}
+
+@test "validate_tar_member_paths rejects unsafe symlink targets" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+archive_root='${TEST_DIR}/symlink-root'
+mkdir -p \"\$archive_root/tailscale_1.2.3_amd64\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscale\"
+ln -s /etc/shadow \"\$archive_root/tailscale_1.2.3_amd64/tailscaled\"
+tar czf '${TEST_DIR}/symlink-target.tgz' -C \"\$archive_root\" tailscale_1.2.3_amd64
+
+if validate_tar_member_paths '${TEST_DIR}/symlink-target.tgz' '${TEST_DIR}/members.list' 2>/dev/null; then
+    echo 'unsafe symlink target accepted'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "download_tailscale_official emergency override still rejects checksum mismatch" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+DOWNLOAD_BASE='https://example.test/stable'
+TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
+export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
+
+archive_root='${TEST_DIR}/archive-root'
+mkdir -p \"\$archive_root/tailscale_1.2.3_amd64\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscale\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale_1.2.3_amd64/tailscaled\"
+
+wget() {
+    case \"\$1\" in
+        -qO-)
+            printf '%064d\n' 0
+            return 0
+            ;;
+        --help)
+            return 0
+            ;;
+        -q)
+            tar czf \"\$3\" -C \"\$archive_root\" tailscale_1.2.3_amd64
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+if download_tailscale_official '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null; then
+    echo 'override accepted mismatched checksum'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "download_tailscale_small rejects checksum mismatch" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+SMALL_DOWNLOAD_BASE='https://example.test/releases/download'
+
+get_small_checksum() {
+    printf '%064d\n' 0
+}
+
+archive_root='${TEST_DIR}/small-root'
+mkdir -p \"\$archive_root/tailscale-small_1.2.3_amd64\"
+printf '#!/bin/sh\n' > \"\$archive_root/tailscale-small_1.2.3_amd64/tailscale.combined\"
+
+wget() {
+    case \"\$1\" in
+        --help)
+            return 0
+            ;;
+        -q)
+            tar czf \"\$3\" -C \"\$archive_root\" tailscale-small_1.2.3_amd64
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+if download_tailscale_small '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null; then
+    echo 'small download accepted mismatched checksum'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "download_tailscale_small rejects path traversal archive members before extraction" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+SMALL_DOWNLOAD_BASE='https://example.test/releases/download'
+TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD=1
+export TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD
+
+archive_root='${TEST_DIR}/small-traversal-root'
+mkdir -p \"\$archive_root/safe\"
+printf 'unsafe\n' > \"\$archive_root/evil\"
+(cd \"\$archive_root/safe\" && tar czf '${TEST_DIR}/small-traversal.tgz' ../evil)
+extraction_marker='${TEST_DIR}/small-extraction-called'
+
+get_small_checksum() {
+    return 1
+}
+
+wget() {
+    case \"\$1\" in
+        --help)
+            return 0
+            ;;
+        -q)
+            cp '${TEST_DIR}/small-traversal.tgz' \"\$3\"
+            return 0
+            ;;
+    esac
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+tar() {
+    case \"\$1\" in
+        xzf)
+            printf 'called\n' > \"\$extraction_marker\"
+            return 1
+            ;;
+    esac
+    command tar \"\$@\"
+}
+
+if download_tailscale_small '1.2.3' 'amd64' '${TEST_DIR}/target' 2>/dev/null; then
+    echo 'small download accepted unsafe archive member'
+    exit 1
+fi
+
+[ ! -f \"\$extraction_marker\" ] || { echo 'unsafe small archive reached extraction'; exit 1; }
 "
     assert_success
 }

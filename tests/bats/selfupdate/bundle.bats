@@ -98,3 +98,99 @@ do_self_update --non-interactive >/dev/null 2>&1 || {
 " < /dev/null
     assert_success
 }
+
+@test "do_self_update: rejects checksum mismatch" {
+    run_in_sh auto "
+set -eu
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+export LIB_DIR TAILSCALE_MANAGER_SOURCE_ONLY
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+MGMT_BUNDLE_URL='https://example.test/mgmt/latest/tailscale-mgmt.tar.gz'
+MGMT_BUNDLE_SHA256_URL='https://example.test/mgmt/latest/tailscale-mgmt.tar.gz.sha256'
+export MGMT_BUNDLE_URL MGMT_BUNDLE_SHA256_URL
+
+deploy_management_bundle() {
+    printf 'called\n' > '${TEST_DIR}/deploy-called'
+}
+
+wget() {
+    if [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz.sha256'; then
+        printf '%064d\n' 0 > \"\$2\"
+        return 0
+    elif [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz'; then
+        printf 'bundle\n' > \"\$2\"
+        return 0
+    fi
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+if do_self_update --non-interactive >/dev/null 2>&1; then
+    echo 'self-update accepted checksum mismatch'
+    exit 1
+fi
+
+[ ! -f '${TEST_DIR}/deploy-called' ] || { echo 'deploy should not run'; exit 1; }
+"
+    assert_success
+}
+
+@test "do_self_update: rejects path traversal archive members before extraction" {
+    run_in_sh auto "
+set -eu
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+export LIB_DIR TAILSCALE_MANAGER_SOURCE_ONLY
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+MGMT_BUNDLE_URL='https://example.test/mgmt/latest/tailscale-mgmt.tar.gz'
+MGMT_BUNDLE_SHA256_URL='https://example.test/mgmt/latest/tailscale-mgmt.tar.gz.sha256'
+export MGMT_BUNDLE_URL MGMT_BUNDLE_SHA256_URL
+
+archive_root='${TEST_DIR}/mgmt-traversal-root'
+mkdir -p \"\$archive_root/safe\"
+printf 'unsafe\n' > \"\$archive_root/evil\"
+(cd \"\$archive_root/safe\" && tar czf '${TEST_DIR}/mgmt-traversal.tgz' ../evil)
+sha256sum '${TEST_DIR}/mgmt-traversal.tgz' | awk '{print \$1}' > '${TEST_DIR}/mgmt-traversal.sha256'
+extraction_marker='${TEST_DIR}/mgmt-extraction-called'
+
+deploy_management_bundle() {
+    printf 'called\n' > '${TEST_DIR}/deploy-called'
+}
+
+wget() {
+    if [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz.sha256'; then
+        cat '${TEST_DIR}/mgmt-traversal.sha256' > \"\$2\"
+        return 0
+    elif [ \"\$1\" = '-qO' ] && printf '%s' \"\$2\" | grep -q 'tar.gz'; then
+        cp '${TEST_DIR}/mgmt-traversal.tgz' \"\$2\"
+        return 0
+    fi
+    echo \"unexpected wget invocation: \$*\" >&2
+    return 1
+}
+
+tar() {
+    case \"\$1\" in
+        xzf)
+            printf 'called\n' > \"\$extraction_marker\"
+            return 1
+            ;;
+    esac
+    command tar \"\$@\"
+}
+
+if do_self_update --non-interactive >/dev/null 2>&1; then
+    echo 'self-update accepted unsafe archive member'
+    exit 1
+fi
+
+[ ! -f \"\$extraction_marker\" ] || { echo 'unsafe management bundle reached extraction'; exit 1; }
+[ ! -f '${TEST_DIR}/deploy-called' ] || { echo 'deploy should not run'; exit 1; }
+"
+    assert_success
+}
