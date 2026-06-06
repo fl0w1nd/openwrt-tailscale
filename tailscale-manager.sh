@@ -764,6 +764,20 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")"
     local reexeced="${TAILSCALE_MANAGER_REEXEC:-0}"
 
+    # Reject unknown commands before any network or filesystem work, so a typo
+    # (or a non-existent command such as "update-script") never triggers
+    # dependency bootstrap or a self-update check as a side effect. Previously
+    # any unrecognised argument fell through to check_script_update first, which
+    # made bogus commands look like they "did something".
+    case "${1:-}" in
+        install|update|rollback|uninstall|status|download-only|install-quiet|install-version|list-versions|list-official-versions|setup-firewall|self-update|sync-scripts|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
+        *)
+            echo "Unknown command: $1"
+            echo "Run '$0 help' for usage"
+            exit 1
+            ;;
+    esac
+
     # Bootstrap: ensure module libraries are available for commands that need them.
     # Informational commands (help/version) stay offline and need no libraries.
     case "${1:-}" in
