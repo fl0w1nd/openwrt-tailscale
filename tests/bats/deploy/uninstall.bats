@@ -51,11 +51,15 @@ LOG_FILE='${TEST_DIR}/tailscale-manager.log'
 
 PERSISTENT_DIR='${TEST_DIR}/root/opt/tailscale'
 RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+MANAGED_PERSISTENT_DIR='${TEST_DIR}/root/opt/tailscale'
+MANAGED_RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
 INIT_SCRIPT='${TEST_DIR}/root/etc/init.d/tailscale'
 CRON_SCRIPT='${TEST_DIR}/root/usr/bin/tailscale-update'
 LIB_DIR='${LIB_DIR_TARGET}'
+MANAGED_LIB_DIR='${LIB_DIR_TARGET}'
 CONFIG_FILE='${TEST_DIR}/root/etc/config/tailscale'
 STATE_FILE='${TEST_DIR}/root/etc/config/tailscaled.state'
+MANAGED_LUCI_VIEW_DIR='${LUCI_VIEW_DIR}'
 
 remove_cron() { return 0; }
 remove_symlinks() { return 0; }
@@ -68,6 +72,151 @@ do_uninstall --yes >/dev/null
 [ ! -e '${LUCI_MENU_DEST}' ]
 [ ! -e '${LUCI_ACL_DEST}' ]
 [ ! -e '${LIB_DIR_TARGET}' ]
+"
+    assert_success
+}
+
+@test "do_uninstall preserves unrelated files in custom managed directories" {
+    local PERSISTENT_DIR_TARGET="${TEST_DIR}/custom/persistent"
+    local LUCI_VIEW_DIR="${TEST_DIR}/custom/view/tailscale"
+    local LIB_DIR_TARGET="${TEST_DIR}/custom/lib/tailscale"
+
+    mkdir -p "${PERSISTENT_DIR_TARGET}" "${LUCI_VIEW_DIR}" "${LIB_DIR_TARGET}" \
+             "${TEST_DIR}/root/tmp/tailscale" "$(dirname "${TEST_DIR}/root/etc/init.d/tailscale")" \
+             "$(dirname "${TEST_DIR}/root/usr/bin/tailscale-update")" \
+             "$(dirname "${TEST_DIR}/root/etc/config/tailscale")"
+
+    printf 'managed\n' > "${PERSISTENT_DIR_TARGET}/tailscale"
+    printf 'keep\n'    > "${PERSISTENT_DIR_TARGET}/keep.txt"
+    printf 'managed\n' > "${LUCI_VIEW_DIR}/config.js"
+    printf 'keep\n'    > "${LUCI_VIEW_DIR}/keep.txt"
+    printf 'managed\n' > "${LIB_DIR_TARGET}/common.sh"
+    printf 'keep\n'    > "${LIB_DIR_TARGET}/keep.txt"
+    printf 'init\n'    > "${TEST_DIR}/root/etc/init.d/tailscale"
+    printf 'cron\n'    > "${TEST_DIR}/root/usr/bin/tailscale-update"
+    cat > "${TEST_DIR}/root/etc/config/tailscale" <<EOF
+config tailscale 'settings'
+EOF
+
+    run_in_sh auto "
+set -eu
+
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+PERSISTENT_DIR='${PERSISTENT_DIR_TARGET}'
+RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+MANAGED_RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+INIT_SCRIPT='${TEST_DIR}/root/etc/init.d/tailscale'
+CRON_SCRIPT='${TEST_DIR}/root/usr/bin/tailscale-update'
+LIB_DIR='${LIB_DIR_TARGET}'
+LUCI_VIEW_DIR='${LUCI_VIEW_DIR}'
+LUCI_RPC_DEST='${TEST_DIR}/root/usr/libexec/rpcd/luci-tailscale'
+LUCI_MENU_DEST='${TEST_DIR}/root/usr/share/luci/menu.d/luci-app-tailscale.json'
+LUCI_ACL_DEST='${TEST_DIR}/root/usr/share/rpcd/acl.d/luci-app-tailscale.json'
+CONFIG_FILE='${TEST_DIR}/root/etc/config/tailscale'
+STATE_FILE='${TEST_DIR}/root/etc/config/tailscaled.state'
+
+remove_cron() { return 0; }
+remove_symlinks() { return 0; }
+remove_subnet_routing_config() { return 0; }
+
+do_uninstall --yes >/dev/null
+
+[ ! -e '${PERSISTENT_DIR_TARGET}/tailscale' ]
+[ -f '${PERSISTENT_DIR_TARGET}/keep.txt' ]
+[ ! -e '${LUCI_VIEW_DIR}/config.js' ]
+[ -f '${LUCI_VIEW_DIR}/keep.txt' ]
+[ ! -e '${LIB_DIR_TARGET}/common.sh' ]
+[ -f '${LIB_DIR_TARGET}/keep.txt' ]
+"
+    assert_success
+}
+
+@test "do_uninstall continues cleanup when LIB_DIR fails safety checks" {
+    mkdir -p "${TEST_DIR}/root/opt/tailscale" "${TEST_DIR}/root/tmp/tailscale" \
+             "$(dirname "${TEST_DIR}/root/etc/init.d/tailscale")" \
+             "$(dirname "${TEST_DIR}/root/usr/bin/tailscale-update")" \
+             "$(dirname "${TEST_DIR}/root/etc/config/tailscale")" \
+             "${TEST_DIR}/root/www/luci-static/resources/view/tailscale"
+    printf 'init\n' > "${TEST_DIR}/root/etc/init.d/tailscale"
+    printf 'cron\n' > "${TEST_DIR}/root/usr/bin/tailscale-update"
+    printf 'config\n' > "${TEST_DIR}/root/etc/config/tailscale"
+
+    run_in_sh auto "
+set -eu
+
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+PERSISTENT_DIR='${TEST_DIR}/root/opt/tailscale'
+RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+MANAGED_PERSISTENT_DIR='${TEST_DIR}/root/opt/tailscale'
+MANAGED_RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+INIT_SCRIPT='${TEST_DIR}/root/etc/init.d/tailscale'
+CRON_SCRIPT='${TEST_DIR}/root/usr/bin/tailscale-update'
+LIB_DIR='/usr'
+LUCI_VIEW_DIR='${TEST_DIR}/root/www/luci-static/resources/view/tailscale'
+MANAGED_LUCI_VIEW_DIR='${TEST_DIR}/root/www/luci-static/resources/view/tailscale'
+CONFIG_FILE='${TEST_DIR}/root/etc/config/tailscale'
+STATE_FILE='${TEST_DIR}/root/etc/config/tailscaled.state'
+
+remove_cron() { return 0; }
+remove_symlinks() { return 0; }
+remove_subnet_routing_config() { return 0; }
+
+do_uninstall --yes >/dev/null
+
+[ ! -e '${TEST_DIR}/root/etc/init.d/tailscale' ]
+[ ! -e '${TEST_DIR}/root/usr/bin/tailscale-update' ]
+[ ! -e '${TEST_DIR}/root/etc/config/tailscale' ]
+"
+    assert_success
+}
+
+@test "do_uninstall continues cleanup when LUCI_VIEW_DIR fails safety checks" {
+    mkdir -p "${TEST_DIR}/root/opt/tailscale" "${TEST_DIR}/root/tmp/tailscale" \
+             "$(dirname "${TEST_DIR}/root/etc/init.d/tailscale")" \
+             "$(dirname "${TEST_DIR}/root/usr/bin/tailscale-update")" \
+             "$(dirname "${TEST_DIR}/root/etc/config/tailscale")" \
+             "${TEST_DIR}/root/usr/lib/tailscale"
+    printf 'init\n' > "${TEST_DIR}/root/etc/init.d/tailscale"
+    printf 'cron\n' > "${TEST_DIR}/root/usr/bin/tailscale-update"
+    printf 'config\n' > "${TEST_DIR}/root/etc/config/tailscale"
+
+    run_in_sh auto "
+set -eu
+
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+PERSISTENT_DIR='${TEST_DIR}/root/opt/tailscale'
+RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+MANAGED_PERSISTENT_DIR='${TEST_DIR}/root/opt/tailscale'
+MANAGED_RAM_DIR='${TEST_DIR}/root/tmp/tailscale'
+INIT_SCRIPT='${TEST_DIR}/root/etc/init.d/tailscale'
+CRON_SCRIPT='${TEST_DIR}/root/usr/bin/tailscale-update'
+LIB_DIR='${TEST_DIR}/root/usr/lib/tailscale'
+MANAGED_LIB_DIR='${TEST_DIR}/root/usr/lib/tailscale'
+LUCI_VIEW_DIR='/www'
+CONFIG_FILE='${TEST_DIR}/root/etc/config/tailscale'
+STATE_FILE='${TEST_DIR}/root/etc/config/tailscaled.state'
+
+remove_cron() { return 0; }
+remove_symlinks() { return 0; }
+remove_subnet_routing_config() { return 0; }
+
+do_uninstall --yes >/dev/null
+
+[ ! -e '${TEST_DIR}/root/etc/init.d/tailscale' ]
+[ ! -e '${TEST_DIR}/root/usr/bin/tailscale-update' ]
+[ ! -e '${TEST_DIR}/root/etc/config/tailscale' ]
 "
     assert_success
 }

@@ -354,19 +354,89 @@ download_tailscale_small() {
 }
 
 # Create /usr/bin symlinks pointing to the binary directory
+_user_bin_path() {
+    printf '%s/%s' "${USER_BIN_DIR:-/usr/bin}" "$1"
+}
+
+_is_managed_bin_link() {
+    local link="$1"
+    local target="$2"
+    local current_target=""
+
+    [ -L "$link" ] || return 1
+    current_target=$(readlink "$link" 2>/dev/null) || return 1
+    [ "$current_target" = "$target" ]
+}
+
+_ensure_bin_link_slot() {
+    local link="$1"
+    shift
+    local target
+
+    if [ ! -e "$link" ] && [ ! -L "$link" ]; then
+        return 0
+    fi
+
+    for target in "$@"; do
+        [ -n "$target" ] || continue
+        if _is_managed_bin_link "$link" "$target"; then
+            return 0
+        fi
+    done
+
+    log_error "Refusing to overwrite non-managed command: ${link}"
+    return 1
+}
+
 create_symlinks() {
     local bin_dir="$1"
+    local tailscale_link tailscaled_link
 
-    rm -f /usr/bin/tailscale /usr/bin/tailscaled
+    tailscale_link=$(_user_bin_path tailscale)
+    tailscaled_link=$(_user_bin_path tailscaled)
 
-    ln -sf "${bin_dir}/tailscale" /usr/bin/tailscale
-    ln -sf "${bin_dir}/tailscaled" /usr/bin/tailscaled
+    _ensure_bin_link_slot "$tailscale_link" \
+        "${bin_dir}/tailscale" \
+        "${PERSISTENT_DIR:-/opt/tailscale}/tailscale" \
+        "${RAM_DIR:-/tmp/tailscale}/tailscale" || return 1
+    _ensure_bin_link_slot "$tailscaled_link" \
+        "${bin_dir}/tailscaled" \
+        "${PERSISTENT_DIR:-/opt/tailscale}/tailscaled" \
+        "${RAM_DIR:-/tmp/tailscale}/tailscaled" || return 1
 
-    log_info "Created symlinks in /usr/bin/"
+    rm -f "$tailscale_link" "$tailscaled_link"
+    ln -sf "${bin_dir}/tailscale" "$tailscale_link"
+    ln -sf "${bin_dir}/tailscaled" "$tailscaled_link"
+
+    log_info "Created symlinks in ${USER_BIN_DIR:-/usr/bin}/"
 }
 
 # Remove /usr/bin symlinks
 remove_symlinks() {
-    rm -f /usr/bin/tailscale /usr/bin/tailscaled
-    log_info "Removed symlinks from /usr/bin/"
+    local tailscale_link tailscaled_link dir removed=0
+
+    tailscale_link=$(_user_bin_path tailscale)
+    tailscaled_link=$(_user_bin_path tailscaled)
+
+    if [ "$#" -eq 0 ]; then
+        set -- "${PERSISTENT_DIR:-/opt/tailscale}" "${RAM_DIR:-/tmp/tailscale}"
+    fi
+
+    for dir in "$@"; do
+        [ -n "$dir" ] || continue
+        if _is_managed_bin_link "$tailscale_link" "${dir}/tailscale"; then
+            rm -f "$tailscale_link"
+            removed=1
+        fi
+        if _is_managed_bin_link "$tailscaled_link" "${dir}/tailscaled"; then
+            rm -f "$tailscaled_link"
+            removed=1
+        fi
+    done
+
+    if [ "$removed" = "1" ]; then
+        log_info "Removed managed symlinks from ${USER_BIN_DIR:-/usr/bin}/"
+    else
+        log_info "No managed symlinks found in ${USER_BIN_DIR:-/usr/bin}/"
+    fi
 }

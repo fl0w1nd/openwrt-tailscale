@@ -191,3 +191,54 @@ install_staged \"\$stage\" \"\$target\"
 "
     assert_success
 }
+
+@test "create_symlinks refuses to overwrite non-managed commands" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+USER_BIN_DIR='${TEST_DIR}/usr-bin'
+bin_dir='${TEST_DIR}/managed-bin'
+mkdir -p \"\$USER_BIN_DIR\" \"\$bin_dir\"
+printf 'existing command\n' > \"\$USER_BIN_DIR/tailscale\"
+
+if create_symlinks \"\$bin_dir\" 2>/dev/null; then
+    echo 'create_symlinks should have refused existing command'
+    exit 1
+fi
+
+[ -f \"\$USER_BIN_DIR/tailscale\" ] || { echo 'existing command removed'; exit 1; }
+[ \"\$(cat \"\$USER_BIN_DIR/tailscale\")\" = 'existing command' ] || { echo 'existing command changed'; exit 1; }
+[ ! -e \"\$USER_BIN_DIR/tailscaled\" ] || { echo 'tailscaled link created after failure'; exit 1; }
+"
+    assert_success
+}
+
+@test "remove_symlinks only removes links for managed bin directories" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+USER_BIN_DIR='${TEST_DIR}/usr-bin'
+managed='${TEST_DIR}/managed-bin'
+other='${TEST_DIR}/other-bin'
+mkdir -p \"\$USER_BIN_DIR\" \"\$managed\" \"\$other\"
+ln -s \"\$managed/tailscale\" \"\$USER_BIN_DIR/tailscale\"
+ln -s \"\$other/tailscaled\" \"\$USER_BIN_DIR/tailscaled\"
+
+remove_symlinks \"\$managed\"
+
+[ ! -e \"\$USER_BIN_DIR/tailscale\" ] && [ ! -L \"\$USER_BIN_DIR/tailscale\" ] || { echo 'managed tailscale link remained'; exit 1; }
+[ -L \"\$USER_BIN_DIR/tailscaled\" ] || { echo 'other tailscaled link removed'; exit 1; }
+[ \"\$(readlink \"\$USER_BIN_DIR/tailscaled\")\" = \"\$other/tailscaled\" ] || { echo 'other link target changed'; exit 1; }
+"
+    assert_success
+}

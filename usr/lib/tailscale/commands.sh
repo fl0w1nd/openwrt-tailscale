@@ -35,7 +35,7 @@ require_absolute_path() {
 
     case "$normalized" in
         /|/bin|/sbin|/usr|/usr/bin|/usr/sbin|/usr/lib|/usr/local|/lib|/lib64|\
-/etc|/dev|/proc|/sys|/root|/boot|/var|/tmp|/mnt|/opt|/home)
+/etc|/dev|/proc|/sys|/root|/boot|/var|/tmp|/mnt|/opt|/home|/www)
             log_error "${label} '${path}' is a reserved system directory; pick a sub-path like ${normalized%/}/tailscale"
             return 1
             ;;
@@ -51,6 +51,74 @@ require_persistent_dir() {
 require_configured_persistent_bin_dir() {
     local bin_dir="$1"
     require_absolute_path "$bin_dir" "Configured bin_dir"
+}
+
+safe_rm_tree() {
+    local path="$1"
+    local label="$2"
+    shift 2
+
+    local allowed=""
+    local normalized="$path"
+
+    require_absolute_path "$path" "$label" || return 1
+    case "$normalized" in
+        */) normalized="${normalized%/}" ;;
+    esac
+
+    for allowed in "$@"; do
+        [ -n "$allowed" ] || continue
+        case "$normalized" in
+            "$allowed")
+                rm -rf "$normalized"
+                return 0
+                ;;
+        esac
+    done
+
+    log_error "Refusing to remove unmanaged ${label}: ${path}"
+    return 1
+}
+
+safe_rm_managed_bin_dir_files() {
+    local bin_dir="$1"
+
+    require_absolute_path "$bin_dir" "Configured bin_dir" || return 1
+    rm -f "${bin_dir}/tailscale" \
+          "${bin_dir}/tailscaled" \
+          "${bin_dir}/tailscale.combined" \
+          "${bin_dir}/version" \
+          "${bin_dir}/source" \
+          "${bin_dir}/.rollback_version" 2>/dev/null || true
+    rmdir "$bin_dir" 2>/dev/null || true
+}
+
+safe_rm_managed_lib_dir_files() {
+    local lib_dir="$1"
+
+    require_absolute_path "$lib_dir" "LIB_DIR" || return 1
+    rm -f "${lib_dir}/common.sh" \
+          "${lib_dir}/jsonutil.sh" \
+          "${lib_dir}/version.sh" \
+          "${lib_dir}/download.sh" \
+          "${lib_dir}/firewall.sh" \
+          "${lib_dir}/deploy.sh" \
+          "${lib_dir}/selfupdate.sh" \
+          "${lib_dir}/commands.sh" \
+          "${lib_dir}/menu.sh" \
+          "${lib_dir}/json.sh" 2>/dev/null || true
+    rmdir "$lib_dir" 2>/dev/null || true
+}
+
+safe_rm_managed_luci_view_files() {
+    local view_dir="$1"
+
+    require_absolute_path "$view_dir" "LUCI_VIEW_DIR" || return 1
+    rm -f "${view_dir}/config.js" \
+          "${view_dir}/status.js" \
+          "${view_dir}/maintenance.js" \
+          "${view_dir}/log.js" 2>/dev/null || true
+    rmdir "$view_dir" 2>/dev/null || true
 }
 
 # Shared post-install flow: deploy managed files, configure cron, enable and
@@ -469,6 +537,7 @@ do_rollback() {
 
 do_uninstall() {
     local force="${1:-}"
+    local cleanup_failed=0
 
     if [ "$force" != "--yes" ]; then
         echo ""
@@ -502,7 +571,6 @@ do_uninstall() {
     fi
 
     remove_cron
-    remove_symlinks
 
     require_persistent_dir || return 1
 
@@ -513,32 +581,36 @@ do_uninstall() {
         config_get uci_bin_dir settings bin_dir ""
     fi
 
-    rm -rf "$PERSISTENT_DIR"
-    rm -rf "$RAM_DIR"
+    remove_symlinks "$PERSISTENT_DIR" "$RAM_DIR" "$uci_bin_dir"
+
+    if [ "$PERSISTENT_DIR" = "${MANAGED_PERSISTENT_DIR:-/opt/tailscale}" ]; then
+        safe_rm_tree "$PERSISTENT_DIR" "PERSISTENT_DIR" "${MANAGED_PERSISTENT_DIR:-/opt/tailscale}" || cleanup_failed=1
+    else
+        safe_rm_managed_bin_dir_files "$PERSISTENT_DIR" || cleanup_failed=1
+    fi
+    safe_rm_tree "$RAM_DIR" "RAM_DIR" "${MANAGED_RAM_DIR:-/tmp/tailscale}" || cleanup_failed=1
     # For a user-configured bin_dir (which may point at an external mount),
     # only remove the specific files this script installs, then try rmdir.
     # This avoids rm -rf wiping unrelated content if bin_dir was misconfigured.
     if [ -n "$uci_bin_dir" ] && [ "$uci_bin_dir" != "$PERSISTENT_DIR" ] && [ "$uci_bin_dir" != "$RAM_DIR" ]; then
-        case "$uci_bin_dir" in
-            /*)
-                rm -f "${uci_bin_dir}/tailscale" \
-                      "${uci_bin_dir}/tailscaled" \
-                      "${uci_bin_dir}/tailscale.combined" \
-                      "${uci_bin_dir}/version" \
-                      "${uci_bin_dir}/source" \
-                      "${uci_bin_dir}/.rollback_version" 2>/dev/null || true
-                rmdir "$uci_bin_dir" 2>/dev/null || true
-                ;;
-        esac
+        safe_rm_managed_bin_dir_files "$uci_bin_dir" || cleanup_failed=1
     fi
 
     rm -f "$INIT_SCRIPT"
     rm -f "$CRON_SCRIPT"
     rm -f /usr/bin/tailscale-script-update
-    rm -rf "$LIB_DIR"
+    if [ "$LIB_DIR" = "${MANAGED_LIB_DIR:-/usr/lib/tailscale}" ]; then
+        safe_rm_tree "$LIB_DIR" "LIB_DIR" "${MANAGED_LIB_DIR:-/usr/lib/tailscale}" || cleanup_failed=1
+    else
+        safe_rm_managed_lib_dir_files "$LIB_DIR" || cleanup_failed=1
+    fi
     rm -f /usr/bin/tailscale_update_check
 
-    rm -rf "$LUCI_VIEW_DIR"
+    if [ "$LUCI_VIEW_DIR" = "${MANAGED_LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}" ]; then
+        safe_rm_tree "$LUCI_VIEW_DIR" "LUCI_VIEW_DIR" "${MANAGED_LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}" || cleanup_failed=1
+    else
+        safe_rm_managed_luci_view_files "$LUCI_VIEW_DIR" || cleanup_failed=1
+    fi
     rm -f "$LUCI_RPC_DEST"
     rm -f "$LUCI_MENU_DEST"
     rm -f "$LUCI_ACL_DEST"
@@ -551,6 +623,10 @@ do_uninstall() {
     rm -f "$CONFIG_FILE"
 
     remove_subnet_routing_config
+
+    if [ "$cleanup_failed" = "1" ]; then
+        log_warn "Some managed directories were skipped because they failed safety checks"
+    fi
 
     echo ""
     echo "============================================="
