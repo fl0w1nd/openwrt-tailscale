@@ -53,6 +53,52 @@ require_configured_persistent_bin_dir() {
     require_absolute_path "$bin_dir" "Configured bin_dir"
 }
 
+require_option_value() {
+    local option="$1"
+    local value="${2:-}"
+
+    if [ -z "$value" ]; then
+        log_error "Option ${option} requires a value"
+        return 1
+    fi
+}
+
+validate_download_source() {
+    local source="$1"
+
+    case "$source" in
+        official|small) ;;
+        *)
+            log_error "Invalid download source: ${source}. Expected official or small"
+            return 1
+            ;;
+    esac
+}
+
+validate_storage_mode() {
+    local storage="$1"
+
+    case "$storage" in
+        persistent|ram) ;;
+        *)
+            log_error "Invalid storage mode: ${storage}. Expected persistent or ram"
+            return 1
+            ;;
+    esac
+}
+
+validate_auto_update_flag() {
+    local value="$1"
+
+    case "$value" in
+        0|1) ;;
+        *)
+            log_error "Invalid auto-update value: ${value}. Expected 0 or 1"
+            return 1
+            ;;
+    esac
+}
+
 safe_rm_tree() {
     local path="$1"
     local label="$2"
@@ -931,10 +977,26 @@ cmd_install() {
 
     while [ $# -gt 0 ]; do
         case "$1" in
-            --source) opt_source="$2"; shift 2 ;;
-            --storage) opt_storage="$2"; shift 2 ;;
-            --auto-update) opt_auto_update="$2"; shift 2 ;;
-            --bin-dir) opt_bin_dir="$2"; shift 2 ;;
+            --source)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_source="$2"
+                shift 2
+                ;;
+            --storage)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_storage="$2"
+                shift 2
+                ;;
+            --auto-update)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_auto_update="$2"
+                shift 2
+                ;;
+            --bin-dir)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_bin_dir="$2"
+                shift 2
+                ;;
             *) log_error "Unknown option: $1"; return 1 ;;
         esac
     done
@@ -945,6 +1007,10 @@ cmd_install() {
     local persistent_bin_dir="$PERSISTENT_DIR"
     local bin_dir="$PERSISTENT_DIR"
 
+    validate_download_source "$download_source" || return 1
+    validate_storage_mode "$storage_mode" || return 1
+    validate_auto_update_flag "$auto_update" || return 1
+
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
         . /lib/functions.sh
         config_load tailscale 2>/dev/null || true
@@ -953,6 +1019,10 @@ cmd_install() {
         [ -z "$opt_auto_update" ] && config_get auto_update settings auto_update "$auto_update"
         [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
     fi
+
+    validate_download_source "$download_source" || return 1
+    validate_storage_mode "$storage_mode" || return 1
+    validate_auto_update_flag "$auto_update" || return 1
 
     if [ -n "$opt_bin_dir" ]; then
         require_absolute_path "$opt_bin_dir" "--bin-dir" || return 1
@@ -1007,14 +1077,22 @@ cmd_install() {
 }
 
 cmd_install_version() {
-    local target_version="$1"
+    local target_version="${1:-}"
     shift || true
     local opt_source="" opt_bin_dir=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
-            --source) opt_source="$2"; shift 2 ;;
-            --bin-dir) opt_bin_dir="$2"; shift 2 ;;
+            --source)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_source="$2"
+                shift 2
+                ;;
+            --bin-dir)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_bin_dir="$2"
+                shift 2
+                ;;
             *) log_error "Unknown option: $1"; return 1 ;;
         esac
     done
@@ -1037,6 +1115,8 @@ cmd_install_version() {
     local bin_dir="$PERSISTENT_DIR"
     local auto_update="0"
 
+    validate_download_source "$download_source" || return 1
+
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
         . /lib/functions.sh
         config_load tailscale 2>/dev/null || true
@@ -1045,6 +1125,10 @@ cmd_install_version() {
         [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
         config_get auto_update settings auto_update "$auto_update"
     fi
+
+    validate_download_source "$download_source" || return 1
+    validate_storage_mode "$storage_mode" || return 1
+    validate_auto_update_flag "$auto_update" || return 1
 
     if [ -n "$opt_bin_dir" ]; then
         require_absolute_path "$opt_bin_dir" "--bin-dir" || return 1

@@ -192,6 +192,47 @@ install_staged \"\$stage\" \"\$target\"
     assert_success
 }
 
+@test "install_staged restores old official layout when deploy fails" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+stage='${TEST_DIR}/stage'
+target='${TEST_DIR}/target'
+mkdir -p \"\$stage\" \"\$target\"
+echo 'new-tailscaled' > \"\$stage/tailscaled\"
+echo 'new-tailscale' > \"\$stage/tailscale\"
+echo '2.0.0' > \"\$stage/version\"
+echo 'official' > \"\$stage/source\"
+echo 'old-tailscaled' > \"\$target/tailscaled\"
+echo 'old-tailscale' > \"\$target/tailscale\"
+echo '1.0.0' > \"\$target/version\"
+echo 'small' > \"\$target/source\"
+
+mv() {
+    case \"\$2\" in
+        \"\$target/tailscale\") return 1 ;;
+    esac
+    command mv \"\$@\"
+}
+
+if install_staged \"\$stage\" \"\$target\" 2>/dev/null; then
+    echo 'install_staged should have failed'
+    exit 1
+fi
+
+[ \"\$(cat \"\$target/tailscaled\")\" = 'old-tailscaled' ] || { echo 'old tailscaled not restored'; exit 1; }
+[ \"\$(cat \"\$target/tailscale\")\" = 'old-tailscale' ] || { echo 'old tailscale not restored'; exit 1; }
+[ \"\$(cat \"\$target/version\")\" = '1.0.0' ] || { echo 'old version not restored'; exit 1; }
+[ \"\$(cat \"\$target/source\")\" = 'small' ] || { echo 'old source not restored'; exit 1; }
+"
+    assert_success
+}
+
 @test "create_symlinks refuses to overwrite non-managed commands" {
     run_in_sh auto "
 set -eu

@@ -180,28 +180,84 @@ verify_staged_binary() {
 install_staged() {
     local stage_dir="$1"
     local target_dir="$2"
+    local suffix=".$$"
+    local managed_files="tailscale tailscaled tailscale.combined version source"
+    local name cleanup_name deploy_failed=0
 
     mkdir -p "$target_dir"
 
     if [ -f "${stage_dir}/tailscale.combined" ]; then
-        rm -f "${target_dir}/tailscale" "${target_dir}/tailscaled" || return 1
-        mv "${stage_dir}/tailscale.combined" "${target_dir}/tailscale.combined" || return 1
-        chmod +x "${target_dir}/tailscale.combined" || return 1
+        mv "${stage_dir}/tailscale.combined" "${target_dir}/.tailscale.combined.new${suffix}" || return 1
+        chmod +x "${target_dir}/.tailscale.combined.new${suffix}" || {
+            rm -f "${target_dir}/.tailscale.combined.new${suffix}"
+            return 1
+        }
+    else
+        mv "${stage_dir}/tailscaled" "${target_dir}/.tailscaled.new${suffix}" || return 1
+        mv "${stage_dir}/tailscale" "${target_dir}/.tailscale.new${suffix}" || {
+            rm -f "${target_dir}/.tailscaled.new${suffix}"
+            return 1
+        }
+        chmod +x "${target_dir}/.tailscaled.new${suffix}" "${target_dir}/.tailscale.new${suffix}" || {
+            rm -f "${target_dir}/.tailscaled.new${suffix}" "${target_dir}/.tailscale.new${suffix}"
+            return 1
+        }
+    fi
+
+    [ ! -f "${stage_dir}/version" ] || mv "${stage_dir}/version" "${target_dir}/.version.new${suffix}" || {
+        for name in $managed_files; do rm -f "${target_dir}/.${name}.new${suffix}"; done
+        return 1
+    }
+    [ ! -f "${stage_dir}/source" ] || mv "${stage_dir}/source" "${target_dir}/.source.new${suffix}" || {
+        for name in $managed_files; do rm -f "${target_dir}/.${name}.new${suffix}"; done
+        return 1
+    }
+
+    for name in $managed_files; do
+        rm -f "${target_dir}/.${name}.bak${suffix}"
+        if [ -e "${target_dir}/${name}" ] || [ -L "${target_dir}/${name}" ]; then
+            mv -f "${target_dir}/${name}" "${target_dir}/.${name}.bak${suffix}" || {
+                log_error "Failed to back up ${target_dir}/${name}"
+                for cleanup_name in $managed_files; do
+                    rm -f "${target_dir}/.${cleanup_name}.new${suffix}"
+                    if [ -e "${target_dir}/.${cleanup_name}.bak${suffix}" ] || [ -L "${target_dir}/.${cleanup_name}.bak${suffix}" ]; then
+                        mv -f "${target_dir}/.${cleanup_name}.bak${suffix}" "${target_dir}/${cleanup_name}" 2>/dev/null || true
+                    fi
+                done
+                return 1
+            }
+        fi
+    done
+
+    if [ -f "${target_dir}/.tailscale.combined.new${suffix}" ]; then
+        mv "${target_dir}/.tailscale.combined.new${suffix}" "${target_dir}/tailscale.combined" || deploy_failed=1
         (
             cd "$target_dir" || exit 1
             ln -sf "tailscale.combined" "tailscale" || exit 1
             ln -sf "tailscale.combined" "tailscaled" || exit 1
-        ) || return 1
+        ) || deploy_failed=1
     else
-        rm -f "${target_dir}/tailscale.combined" || return 1
-        mv "${stage_dir}/tailscaled" "${target_dir}/tailscaled" || return 1
-        mv "${stage_dir}/tailscale" "${target_dir}/tailscale" || return 1
-        chmod +x "${target_dir}/tailscaled" "${target_dir}/tailscale" || return 1
+        mv "${target_dir}/.tailscaled.new${suffix}" "${target_dir}/tailscaled" || deploy_failed=1
+        mv "${target_dir}/.tailscale.new${suffix}" "${target_dir}/tailscale" || deploy_failed=1
     fi
 
-    # Carry over version and source metadata
-    [ ! -f "${stage_dir}/version" ] || mv "${stage_dir}/version" "${target_dir}/version" || return 1
-    [ ! -f "${stage_dir}/source" ] || mv "${stage_dir}/source" "${target_dir}/source" || return 1
+    [ ! -f "${target_dir}/.version.new${suffix}" ] || mv "${target_dir}/.version.new${suffix}" "${target_dir}/version" || deploy_failed=1
+    [ ! -f "${target_dir}/.source.new${suffix}" ] || mv "${target_dir}/.source.new${suffix}" "${target_dir}/source" || deploy_failed=1
+
+    if [ "$deploy_failed" = "1" ]; then
+        log_error "Failed to install staged files, restoring previous binaries"
+        for name in $managed_files; do
+            rm -f "${target_dir}/${name}" "${target_dir}/.${name}.new${suffix}"
+            if [ -e "${target_dir}/.${name}.bak${suffix}" ] || [ -L "${target_dir}/.${name}.bak${suffix}" ]; then
+                mv -f "${target_dir}/.${name}.bak${suffix}" "${target_dir}/${name}" 2>/dev/null || true
+            fi
+        done
+        return 1
+    fi
+
+    for name in $managed_files; do
+        rm -f "${target_dir}/.${name}.bak${suffix}" "${target_dir}/.${name}.new${suffix}"
+    done
 }
 
 # Download official Tailscale binaries from pkgs.tailscale.com

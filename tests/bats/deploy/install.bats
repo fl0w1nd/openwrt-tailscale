@@ -167,6 +167,39 @@ done
     assert_success
 }
 
+@test "install-quiet rejects missing option values" {
+    run_in_sh auto "$(_install_stubs)
+
+for args in '--source' '--storage' '--auto-update' '--bin-dir'; do
+    # shellcheck disable=SC2086
+    if cmd_install \$args >/dev/null 2>&1; then
+        echo 'cmd_install should reject missing option value'
+        exit 1
+    fi
+done
+"
+    assert_success
+}
+
+@test "install-quiet rejects invalid option values" {
+    run_in_sh auto "$(_install_stubs)
+
+if cmd_install --source mirror >/dev/null 2>&1; then
+    echo 'cmd_install should reject invalid source'
+    exit 1
+fi
+if cmd_install --storage flash >/dev/null 2>&1; then
+    echo 'cmd_install should reject invalid storage'
+    exit 1
+fi
+if cmd_install --auto-update yes >/dev/null 2>&1; then
+    echo 'cmd_install should reject invalid auto-update value'
+    exit 1
+fi
+"
+    assert_success
+}
+
 @test "install-quiet rejects unsafe PERSISTENT_DIR env" {
     run_in_sh auto "$(_install_stubs)
 PERSISTENT_DIR='/'
@@ -215,6 +248,25 @@ fi
 grep -Fq 'init stop' \"\$INIT_CALLS_LOG\"
 grep -Fq 'init enable' \"\$INIT_CALLS_LOG\"
 grep -Fq 'init start' \"\$INIT_CALLS_LOG\"
+"
+    assert_success
+}
+
+@test "install-version rejects missing and invalid option values" {
+    run_in_sh auto "$(_install_stubs)
+
+if cmd_install_version 1.77.0 --source >/dev/null 2>&1; then
+    echo 'cmd_install_version should reject missing source value'
+    exit 1
+fi
+if cmd_install_version 1.77.0 --bin-dir >/dev/null 2>&1; then
+    echo 'cmd_install_version should reject missing bin-dir value'
+    exit 1
+fi
+if cmd_install_version 1.77.0 --source mirror >/dev/null 2>&1; then
+    echo 'cmd_install_version should reject invalid source'
+    exit 1
+fi
 "
     assert_success
 }
