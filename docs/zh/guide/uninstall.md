@@ -14,7 +14,7 @@ tailscale-manager uninstall
 - UCI 配置（`/etc/config/tailscale`）
 - 模块库（`/usr/lib/tailscale/`）
 - LuCI 界面文件（如已安装）
-- 网络接口和防火墙区域（如通过 `setup-firewall` 配置）
+- 网络接口和防火墙区域（如通过 `setup-subnet-routing` 配置）
 
 ## 保留的文件
 

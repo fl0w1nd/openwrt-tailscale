@@ -61,10 +61,10 @@ export MANAGER_BIN_PATH
 get_remote_script_version() { echo '9.9.9'; }
 do_self_update() { return 0; }
 
-( check_script_update --non-interactive ) >/dev/null 2>&1
+( check_script_update --yes ) >/dev/null 2>&1
 
 [ -f '${TEST_DIR}/reexec.log' ] || { echo 'stub manager was not invoked'; exit 1; }
-grep -q '^argv: \[--non-interactive\]$' '${TEST_DIR}/reexec.log' || {
+grep -q '^argv: \[--yes\]$' '${TEST_DIR}/reexec.log' || {
     echo 'argv not preserved across re-exec'
     cat '${TEST_DIR}/reexec.log'
     exit 1
@@ -104,9 +104,9 @@ export MANAGER_BIN_PATH
 get_remote_script_version() { echo '9.9.9'; }
 do_self_update() { return 0; }
 
-( main self-update --non-interactive ) >/dev/null 2>&1
+( main self-update --yes ) >/dev/null 2>&1
 
-grep -q '^argv: \[self-update\] \[--non-interactive\]$' '${TEST_DIR}/main-reexec.log' || {
+grep -q '^argv: \[self-update\] \[--yes\]$' '${TEST_DIR}/main-reexec.log' || {
     echo 'self-update argv mismatch across re-exec'
     cat '${TEST_DIR}/main-reexec.log'
     exit 1
@@ -127,7 +127,7 @@ LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
 TAILSCALE_MANAGER_REEXEC=1
 export LIB_DIR TAILSCALE_MANAGER_REEXEC
 
-sh '${REPO_ROOT}/tailscale-manager.sh' self-update --non-interactive > '${TEST_DIR}/reexeced.out' 2>&1 || {
+sh '${REPO_ROOT}/tailscale-manager.sh' self-update --yes > '${TEST_DIR}/reexeced.out' 2>&1 || {
     cat '${TEST_DIR}/reexeced.out'
     exit 1
 }
@@ -160,7 +160,7 @@ get_remote_script_version() { echo '9.9.9'; }
 do_self_update() { return 0; }
 
 rc=0
-check_script_update --non-interactive >/dev/null 2>&1 || rc=\$?
+check_script_update --yes >/dev/null 2>&1 || rc=\$?
 [ \"\$rc\" -eq 0 ] || { echo \"expected rc=0, got \$rc\"; exit 1; }
 " < /dev/null
     assert_success
@@ -181,7 +181,7 @@ get_remote_script_version() { echo '9.9.9'; }
 do_self_update() { return 0; }
 
 rc=0
-check_script_update --non-interactive >/dev/null 2>&1 || rc=\$?
+check_script_update --yes >/dev/null 2>&1 || rc=\$?
 [ \"\$rc\" -eq 0 ] || { echo \"expected rc=0, got \$rc\"; exit 1; }
 " < /dev/null
     assert_success

@@ -62,7 +62,7 @@ tailscale set --advertise-routes=192.168.1.0/24
 ```
 
 ::: warning Limitations
-- The `tailscale0` interface is **not** created — `setup-firewall` is not needed.
+- The `tailscale0` interface is **not** created — `setup-subnet-routing` is not needed.
 - Supports TCP, UDP, and ICMP (ping), but not all IP protocols.
 - Performance is typically lower than kernel TUN mode.
 :::

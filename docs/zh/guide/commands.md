@@ -12,38 +12,46 @@ tailscale-manager [命令] [选项]
 
 ## 命令列表
 
-### 核心命令
+::: tip 两种互相独立的「更新」
+- `update` / `auto-update` 作用于 **Tailscale 二进制**（本工具安装的 VPN 程序）。
+- `self-update` 作用于 **管理器本身**（管理脚本与 LuCI 界面）。
+
+两者完全独立：更新 Tailscale 不会动管理器，`self-update` 也不会动 Tailscale。
+:::
+
+### 核心命令（Tailscale 二进制）
 
 | 命令 | 说明 |
 |------|------|
 | `install` | 交互式安装 Tailscale |
-| `update` | 更新 Tailscale 到最新版本 |
-| `uninstall` | 卸载 Tailscale 及相关文件 |
+| `update [--yes]` | 更新 **Tailscale 二进制** 到最新版本（`--yes` 跳过确认） |
+| `rollback` | 将 **Tailscale 二进制** 回滚到上一个版本 |
+| `uninstall [--yes]` | 卸载 Tailscale 及相关文件（`--yes` 跳过确认） |
 | `status` | 显示当前安装和服务状态 |
 
 ### 安装变体
 
 | 命令 | 说明 |
 |------|------|
-| `install-quiet` | 非交互式安装（适用于脚本自动化） |
+| `install --yes` | 非交互式安装（适用于 LuCI/脚本自动化） |
 | `install-version <版本>` | 安装指定版本 |
 | `download-only` | 仅下载二进制文件，不安装 |
 
 #### 安装选项
 
-`install-quiet` 与 `install-version` 均支持以下参数：
+`install --yes` 与 `install-version` 均支持以下参数：
 
 | 参数 | 可选值 | 说明 |
 |------|--------|------|
 | `--source` | `official` / `small` | 下载源 |
-| `--storage` | `persistent` / `ram` | 存储模式（仅 `install-quiet`） |
-| `--auto-update` | `0` / `1` | 启用每日自动更新定时任务（仅 `install-quiet`） |
+| `--storage` | `persistent` / `ram` | 存储模式（仅 `install --yes`） |
+| `--auto-update` | `0` / `1` | 启用每日 Tailscale 自动更新定时任务（仅 `install --yes`） |
 | `--bin-dir` | 绝对路径 | 持久化模式下的自定义二进制目录（详见[存储模式](/zh/guide/storage-modes#自定义二进制目录)） |
 
 示例：
 
 ```sh
-tailscale-manager install-quiet --source small --bin-dir /mnt/sda1/tailscale
+tailscale-manager install --yes --source small --bin-dir /mnt/sda1/tailscale
 tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 ```
 
@@ -51,28 +59,36 @@ tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 
 | 命令 | 说明 |
 |------|------|
-| `list-versions [n]` | 列出可用的 Small 版本（默认：10） |
+| `list-small-versions [n]` | 列出可用的 Small 版本（默认：10） |
 | `list-official-versions [n]` | 列出可用的 Official 版本（默认：20） |
 
 ### 网络配置
 
 | 命令 | 说明 |
 |------|------|
-| `setup-firewall` | 配置 tailscale0 接口和防火墙区域 |
+| `setup-subnet-routing` | 配置 tailscale0 接口和防火墙区域 |
 | `net-mode [auto\|tun\|userspace\|status]` | 获取或设置网络模式 |
 
-### 脚本管理
+### Tailscale 自动更新
 
 | 命令 | 说明 |
 |------|------|
-| `self-update` | 一步重装整个管理层（管理脚本、库文件、LuCI 界面）到最新版本 |
-| `auto-update [on\|off\|status]` | 管理二进制自动更新定时任务 |
+| `auto-update [enable\|disable\|status]` | 管理 **Tailscale 二进制** 的每日自动更新定时任务 |
+
+（仍兼容旧写法 `on`/`off`/`1`/`0`，等价于 `enable`/`disable`。）
+
+### 管理器自更新
+
+| 命令 | 说明 |
+|------|------|
+| `self-update [--yes]` | 一步重装 **管理器本身**（管理脚本、库文件、LuCI 界面）到最新版本，**不会** 改动 Tailscale 二进制 |
 
 ### 其他
 
 | 命令 | 说明 |
 |------|------|
 | `help` | 显示帮助信息 |
+| `--version`、`-v` | 打印管理器版本并退出 |
 
 ## 服务命令
 

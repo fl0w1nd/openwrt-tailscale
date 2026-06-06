@@ -274,7 +274,7 @@ do_setup_subnet_routing() {
             ;;
         *)
             echo "Skipped firewall zone creation."
-            echo "If subnet routing doesn't work, run: tailscale-manager setup-firewall"
+            echo "If subnet routing doesn't work, run: tailscale-manager setup-subnet-routing"
             ;;
     esac
 

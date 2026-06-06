@@ -109,7 +109,7 @@ fi
     assert_success
 }
 
-@test "install-quiet deploys LuCI app files" {
+@test "install --yes deploys LuCI app files" {
     run_in_sh auto "$(_install_stubs)
 
 cmd_install --source official --storage ram --auto-update 1 >/dev/null
@@ -125,7 +125,7 @@ grep -Fq 'init start' \"\$INIT_CALLS_LOG\"
     assert_success
 }
 
-@test "install-quiet honors --bin-dir flag for persistent mode" {
+@test "install --yes honors --bin-dir flag for persistent mode" {
     local custom_dir="${TEST_DIR}/root/mnt/sda1/tailscale"
 
     run_in_sh auto "$(_install_stubs)
@@ -143,7 +143,7 @@ grep -Fq \"uci persistent \$custom_dir official 0\" \"\$CALLS\" || {
     assert_success
 }
 
-@test "install-quiet rejects relative --bin-dir" {
+@test "install --yes rejects relative --bin-dir" {
     run_in_sh auto "$(_install_stubs)
 
 if cmd_install --bin-dir relative/path >/dev/null 2>&1; then
@@ -154,7 +154,7 @@ fi
     assert_success
 }
 
-@test "install-quiet rejects reserved system --bin-dir" {
+@test "install --yes rejects reserved system --bin-dir" {
     run_in_sh auto "$(_install_stubs)
 
 for bad in / /etc /usr /usr/bin; do
@@ -167,7 +167,7 @@ done
     assert_success
 }
 
-@test "install-quiet rejects missing option values" {
+@test "install --yes rejects missing option values" {
     run_in_sh auto "$(_install_stubs)
 
 for args in '--source' '--storage' '--auto-update' '--bin-dir'; do
@@ -181,7 +181,7 @@ done
     assert_success
 }
 
-@test "install-quiet rejects invalid option values" {
+@test "install --yes rejects invalid option values" {
     run_in_sh auto "$(_install_stubs)
 
 if cmd_install --source --storage >/dev/null 2>&1; then
@@ -204,7 +204,7 @@ fi
     assert_success
 }
 
-@test "install-quiet rejects unsafe PERSISTENT_DIR env" {
+@test "install --yes rejects unsafe PERSISTENT_DIR env" {
     run_in_sh auto "$(_install_stubs)
 PERSISTENT_DIR='/'
 
@@ -216,7 +216,7 @@ fi
     assert_success
 }
 
-@test "install-quiet rejects unsafe configured bin_dir from uci" {
+@test "install --yes rejects unsafe configured bin_dir from uci" {
     run_in_sh auto "$(_install_stubs)
 
 if require_configured_persistent_bin_dir /usr >/dev/null 2>&1; then

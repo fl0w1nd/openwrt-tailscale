@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.3.0"
+VERSION="4.4.0"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -769,7 +769,7 @@ main() {
     # any unrecognised argument fell through to check_script_update first, which
     # made bogus commands look like they "did something".
     case "${1:-}" in
-        install|update|rollback|uninstall|status|download-only|install-quiet|install-version|list-versions|list-official-versions|setup-firewall|self-update|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
+        install|update|rollback|uninstall|status|download-only|install-version|list-small-versions|list-official-versions|setup-subnet-routing|self-update|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
         *)
             echo "Unknown command: $1"
             echo "Run '$0 help' for usage"
@@ -796,7 +796,18 @@ main() {
 
     case "${1:-}" in
         install)
-            do_install
+            # Bare `install` runs the interactive flow. Any arguments switch to
+            # the non-interactive path (for LuCI/automation); a leading --yes/-y
+            # is accepted and stripped so it matches the rest of the CLI.
+            shift
+            if [ "$#" -eq 0 ]; then
+                do_install
+            else
+                case "${1:-}" in
+                    --yes|-y) shift ;;
+                esac
+                cmd_install "$@"
+            fi
             ;;
         update)
             do_update "$2"
@@ -813,21 +824,17 @@ main() {
         download-only)
             do_download_only
             ;;
-        install-quiet)
-            shift
-            cmd_install "$@"
-            ;;
         install-version)
             shift
             cmd_install_version "$@"
             ;;
-        list-versions)
+        list-small-versions)
             list_small_versions "${2:-10}"
             ;;
         list-official-versions)
             list_official_versions "${2:-20}"
             ;;
-        setup-firewall)
+        setup-subnet-routing)
             do_setup_subnet_routing
             ;;
         self-update)
@@ -849,11 +856,14 @@ main() {
             esac
             ;;
         auto-update)
+            # Scheduled automatic updates of the Tailscale binary (cron).
+            # Canonical values are enable|disable|status; on/off/1/0 stay
+            # accepted for backward compatibility. The UCI value remains 0/1.
             case "${2:-status}" in
-                on|enable|1)
+                enable|on|1)
                     configure_auto_update "1"
                     ;;
-                off|disable|0)
+                disable|off|0)
                     configure_auto_update "0"
                     ;;
                 reconcile)
@@ -861,7 +871,7 @@ main() {
                     ;;
                 status|"")
                     echo ""
-                    echo "Auto-update status:"
+                    echo "Tailscale auto-update status:"
                     if [ "$(get_auto_update_config)" = "1" ]; then
                         if crontab -l 2>/dev/null | grep -Fq "$CRON_SCRIPT"; then
                             echo "  Enabled (cron active)"
@@ -874,7 +884,7 @@ main() {
                     echo ""
                     ;;
                 *)
-                    echo "Usage: $0 auto-update [on|off|status]"
+                    echo "Usage: $0 auto-update [enable|disable|status]"
                     exit 1
                     ;;
             esac
@@ -929,23 +939,32 @@ main() {
             echo ""
             echo "Usage: $0 [command]"
             echo ""
-            echo "Commands:"
-            echo "  install          Install Tailscale (interactive)"
-            echo "  install-quiet    Install Tailscale (non-interactive, for LuCI/automation)"
-            echo "  install-version  Install specific version (non-interactive)"
-            echo "  update           Update to latest version"
-            echo "  rollback         Roll back to previous version"
-            echo "  uninstall        Remove Tailscale (use --yes to skip confirmation)"
-            echo "  status           Show current status"
-            echo "  list-versions    List available small binary versions"
-            echo "  list-official-versions List available official package versions"
-            echo "  setup-firewall   Configure network interface and firewall for subnet routing"
-            echo "  download-only    Download binaries only (for RAM mode)"
-            echo "  self-update      Reinstall the management layer (scripts + LuCI) to the latest version"
-            echo "  auto-update      Configure auto-update (on/off/status)"
-            echo "  net-mode         Configure networking mode (auto/tun/userspace/status)"
-            echo "  help             Show this help"
-            echo "  --version        Print the manager version and exit"
+            echo "Tailscale commands (manage the Tailscale binary this tool installs):"
+            echo "  install                      Install Tailscale (interactive)"
+            echo "  install --yes [options]      Install Tailscale (non-interactive, for LuCI/automation)"
+            echo "  install-version <ver>        Install a specific Tailscale version (non-interactive)"
+            echo "  update [--yes]               Update the Tailscale binary to the latest version"
+            echo "  rollback                     Roll back the Tailscale binary to the previous version"
+            echo "  auto-update <enable|disable|status>"
+            echo "                               Schedule automatic Tailscale binary updates (cron)"
+            echo "  status                       Show Tailscale install and runtime status"
+            echo "  list-small-versions [n]      List available small (compressed) Tailscale versions"
+            echo "  list-official-versions [n]   List available official Tailscale versions"
+            echo "  download-only                Download Tailscale binaries only (for RAM mode)"
+            echo "  setup-subnet-routing         Configure interface/firewall for subnet routing"
+            echo "  net-mode <auto|tun|userspace|status>"
+            echo "                               Configure Tailscale networking mode"
+            echo "  uninstall [--yes]            Remove Tailscale"
+            echo ""
+            echo "Manager command (manages this tool itself, NOT the Tailscale binary):"
+            echo "  self-update [--yes]          Reinstall this manager (scripts + LuCI) to the latest version"
+            echo ""
+            echo "Other:"
+            echo "  help                         Show this help"
+            echo "  -v, --version                Print the manager version and exit"
+            echo ""
+            echo "Note: 'update'/'auto-update' act on the Tailscale binary; 'self-update'"
+            echo "      acts on this manager. They are independent of each other."
             echo ""
             echo "Environment variables:"
             echo "  TAILSCALE_SOURCE=official|small"

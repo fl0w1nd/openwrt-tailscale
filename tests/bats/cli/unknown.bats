@@ -49,3 +49,21 @@ exit 1"
 
     [ ! -f "${TEST_DIR}/wget-called" ] || { echo "removed command must not access the network"; false; }
 }
+
+@test "main rejects renamed-away commands (hard rename)" {
+    bin_stub wget "#!/bin/sh
+touch '${TEST_DIR}/wget-called'
+exit 1"
+
+    for old in install-quiet list-versions setup-firewall; do
+        run env PATH="${STUB_BIN}:${PATH}" \
+            LIB_DIR="${REPO_ROOT}/usr/lib/tailscale" \
+            LOG_FILE="${TEST_DIR}/tailscale-manager.log" \
+            sh "${REPO_ROOT}/tailscale-manager.sh" "$old" </dev/null
+
+        assert_failure
+        assert_output --partial "Unknown command: $old"
+    done
+
+    [ ! -f "${TEST_DIR}/wget-called" ] || { echo "renamed-away command must not access the network"; false; }
+}
