@@ -32,10 +32,24 @@ checksum_emergency_override_enabled() {
     esac
 }
 
+is_safe_tar_path() {
+    local path="$1"
+
+    case "$path" in
+        ""|/*|../*|*/../*|*/..|..)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
 validate_tar_member_paths() {
     local tarball="$1"
     local list_file="$2"
-    local member
+    local verbose_file="${list_file}.verbose"
+    local member line target
 
     if ! tar tzf "$tarball" > "$list_file" 2>/dev/null; then
         log_error "Failed to list archive contents"
@@ -43,13 +57,43 @@ validate_tar_member_paths() {
     fi
 
     while IFS= read -r member; do
-        case "$member" in
-            ""|/*|../*|*/../*|*/..|..)
-                log_error "Archive contains unsafe path: ${member}"
+        if ! is_safe_tar_path "$member"; then
+            log_error "Archive contains unsafe path: ${member}"
+            return 1
+        fi
+    done < "$list_file"
+
+    if ! tar tvzf "$tarball" > "$verbose_file" 2>/dev/null; then
+        log_error "Failed to list archive details"
+        return 1
+    fi
+
+    while IFS= read -r line; do
+        case "$line" in
+            l*" -> "*)
+                target=${line##* -> }
+                if ! is_safe_tar_path "$target"; then
+                    log_error "Archive contains unsafe link target: ${target}"
+                    return 1
+                fi
+                ;;
+            l*)
+                log_error "Failed to parse archive symlink target"
+                return 1
+                ;;
+            h*" link to "*)
+                target=${line##* link to }
+                if ! is_safe_tar_path "$target"; then
+                    log_error "Archive contains unsafe link target: ${target}"
+                    return 1
+                fi
+                ;;
+            h*)
+                log_error "Failed to parse archive hardlink target"
                 return 1
                 ;;
         esac
-    done < "$list_file"
+    done < "$verbose_file"
 
     return 0
 }
