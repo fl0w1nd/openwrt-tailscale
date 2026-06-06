@@ -7,6 +7,7 @@
 #
 # Required functions:
 #   log_info(), log_error(), log_warn()
+#   create_tailscale_temp_dir(), validate_tar_member_paths() (from download.sh)
 #   version_lt() (from version.sh)
 #   deploy_management_bundle(), managed_sync_is_current() (from deploy.sh)
 
@@ -25,53 +26,6 @@ download_management_bundle_file() {
         log_error "Downloaded bundle file is empty: ${url}"
         return 1
     }
-
-    return 0
-}
-
-create_management_temp_dir() {
-    if command -v create_tailscale_temp_dir >/dev/null 2>&1; then
-        create_tailscale_temp_dir "tailscale-mgmt"
-        return $?
-    fi
-
-    local base="${TMPDIR:-/tmp}"
-    local tmp_dir=""
-
-    tmp_dir=$(mktemp -d "${base%/}/tailscale-mgmt.XXXXXX" 2>/dev/null) \
-        || tmp_dir=$(mktemp -d -t "tailscale-mgmt.XXXXXX" 2>/dev/null) \
-        || {
-            log_error "Failed to create private temporary directory"
-            return 1
-        }
-
-    chmod 700 "$tmp_dir" 2>/dev/null || true
-    printf '%s\n' "$tmp_dir"
-}
-
-validate_management_tar_member_paths() {
-    if command -v validate_tar_member_paths >/dev/null 2>&1; then
-        validate_tar_member_paths "$@"
-        return $?
-    fi
-
-    local tarball="$1"
-    local list_file="$2"
-    local member
-
-    if ! tar tzf "$tarball" > "$list_file" 2>/dev/null; then
-        log_error "Failed to list archive contents"
-        return 1
-    fi
-
-    while IFS= read -r member; do
-        case "$member" in
-            ""|/*|../*|*/../*|*/..|..)
-                log_error "Archive contains unsafe path: ${member}"
-                return 1
-                ;;
-        esac
-    done < "$list_file"
 
     return 0
 }
@@ -262,7 +216,7 @@ do_self_update() {
     local staging_dir
     local bundle_version=""
 
-    tmp_dir=$(create_management_temp_dir) || return 1
+    tmp_dir=$(create_tailscale_temp_dir "tailscale-mgmt") || return 1
     tmp_bundle="${tmp_dir}/tailscale-mgmt.tar.gz"
     tmp_checksum="${tmp_dir}/tailscale-mgmt.tar.gz.sha256"
     staging_dir="${tmp_dir}/staging"
@@ -290,7 +244,7 @@ do_self_update() {
         return 1
     }
 
-    if ! validate_management_tar_member_paths "$tmp_bundle" "${tmp_dir}/archive-members.list"; then
+    if ! validate_tar_member_paths "$tmp_bundle" "${tmp_dir}/archive-members.list"; then
         rm -rf "$tmp_dir"
         return 1
     fi
