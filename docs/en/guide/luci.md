@@ -35,7 +35,7 @@ The LuCI app is organized into four tabs:
 
 ## Installation
 
-The LuCI interface is automatically installed when you run `tailscale-manager install` or `tailscale-manager sync-scripts`. It requires:
+The LuCI interface is automatically installed when you run `tailscale-manager install` (and refreshed by `tailscale-manager self-update`). It requires:
 
 - LuCI (included in most OpenWrt firmware)
 - rpcd (for RPC communication)

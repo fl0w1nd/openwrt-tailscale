@@ -21,26 +21,21 @@ tailscale-manager auto-update status  # Check status
 3. If a newer version is found, it downloads and installs it
 4. The Tailscale service is restarted after update
 
-## Script Self-Update
+## Management-Layer Self-Update
 
-The manager script can update itself to the latest version from GitHub:
+`self-update` reinstalls the whole management layer in one step from the versioned snapshot on GitHub: the manager script, the library modules, the init/cron scripts, and the LuCI app. Your settings (UCI config), the Tailscale state, and the installed binary are left untouched.
 
 ```sh
 tailscale-manager self-update
 ```
 
-This checks the remote version and updates the local script if a newer version is available.
+It checks the remote version first. If a newer version is available it reinstalls everything and re-executes into the new code; if you are already on the latest version it does nothing. Because the management files are stateless and always fetched as one consistent set, a re-run is always safe (it also repairs missing or corrupted runtime files), so there is no separate "sync scripts" step.
 
-## Sync Scripts
+## Update Reminder
 
-To synchronize all runtime scripts (init script, update script, library modules) with the latest versions:
+The management layer never upgrades itself silently. You are reminded that an update is available in two read-only places:
 
-```sh
-tailscale-manager sync-scripts
-```
+- The interactive menu (`tailscale-manager` with no arguments) shows a notice at the top and offers an "Update Management Scripts" entry.
+- The LuCI **Maintenance** page has a "Check for Updates" button.
 
-This is useful after a manual update or to fix corrupted runtime files.
-
-## Update Check on Startup
-
-Every time `tailscale-manager` is run (except for `self-update`, `sync-scripts`, and `install-quiet`), it automatically checks if a newer version is available and notifies you.
+Plain subcommands (`status`, `update`, etc.) stay fully offline and never trigger a network check.

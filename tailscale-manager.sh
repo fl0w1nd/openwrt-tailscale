@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.2.0"
+VERSION="4.3.0"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -104,7 +104,6 @@ LUCI_ACL_DEST="${LUCI_ACL_DEST:-/usr/share/rpcd/acl.d/luci-app-tailscale.json}"
 
 # Module library directory (overridable for testing)
 LIB_DIR="${LIB_DIR:-/usr/lib/tailscale}"
-MANAGED_SYNC_VERSION_FILE="${MANAGED_SYNC_VERSION_FILE:-${LIB_DIR}/.managed-version}"
 
 # Module libraries sourced from $LIB_DIR
 MODULE_LIBS="jsonutil.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh"
@@ -770,7 +769,7 @@ main() {
     # any unrecognised argument fell through to check_script_update first, which
     # made bogus commands look like they "did something".
     case "${1:-}" in
-        install|update|rollback|uninstall|status|download-only|install-quiet|install-version|list-versions|list-official-versions|setup-firewall|self-update|sync-scripts|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
+        install|update|rollback|uninstall|status|download-only|install-quiet|install-version|list-versions|list-official-versions|setup-firewall|self-update|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
         *)
             echo "Unknown command: $1"
             echo "Run '$0 help' for usage"
@@ -790,17 +789,9 @@ main() {
             ;;
     esac
 
-    # Check for script updates (only if selfupdate module is loaded).
-    # Skip the network round-trip when we were just re-execed by an update
-    # that completed in the previous process; the new VERSION matches the
-    # latest by definition, so re-checking would just waste a request.
-    if [ "$reexeced" != "1" ] \
-        && type check_script_update >/dev/null 2>&1; then
-        case "${1:-}" in
-            -h|--help|help|-v|--version|self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
-            *) check_script_update "$@" || true ;;
-        esac
-    fi
+    # No implicit update check here: updating the management layer is an
+    # explicit action (`self-update`, the interactive-menu reminder, or the
+    # LuCI button). Unrelated commands stay fully offline.
     unset TAILSCALE_MANAGER_REEXEC
 
     case "${1:-}" in
@@ -856,9 +847,6 @@ main() {
                     exit 1
                     ;;
             esac
-            ;;
-        sync-scripts)
-            sync_managed_scripts
             ;;
         auto-update)
             case "${2:-status}" in
@@ -953,8 +941,7 @@ main() {
             echo "  list-official-versions List available official package versions"
             echo "  setup-firewall   Configure network interface and firewall for subnet routing"
             echo "  download-only    Download binaries only (for RAM mode)"
-            echo "  self-update      Update this script to latest version"
-            echo "  sync-scripts     Download and install managed auxiliary files"
+            echo "  self-update      Reinstall the management layer (scripts + LuCI) to the latest version"
             echo "  auto-update      Configure auto-update (on/off/status)"
             echo "  net-mode         Configure networking mode (auto/tun/userspace/status)"
             echo "  help             Show this help"

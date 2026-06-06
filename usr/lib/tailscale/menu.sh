@@ -3,11 +3,18 @@
 # Sourced by tailscale-manager entry script.
 
 show_menu() {
+    local update_hint="${1:-}"
+
     clear
     echo ""
     echo "============================================="
     echo "  OpenWRT Tailscale Manager v${VERSION}"
     echo "============================================="
+    if [ -n "$update_hint" ]; then
+        echo ""
+        echo "  * Management update available: v${update_hint}"
+        echo "    Choose 11 to reinstall the management layer."
+    fi
     echo ""
     echo "  1) Install Tailscale"
     echo "  2) Update Tailscale"
@@ -19,10 +26,45 @@ show_menu() {
     echo "  8) Install Specific Version (Downgrade)"
     echo "  9) Auto-Update Settings"
     echo " 10) Networking Mode Settings"
+    echo " 11) Update Management Scripts"
     echo ""
     echo "  0) Exit"
     echo ""
     printf "Enter choice: "
+}
+
+# Read-only check for a newer management-layer version. Prints the remote
+# version when an update is available, nothing otherwise. Never mutates files.
+check_management_update_available() {
+    type get_remote_script_version >/dev/null 2>&1 || return 1
+    type version_lt >/dev/null 2>&1 || return 1
+
+    local remote=""
+    remote=$(get_remote_script_version 2>/dev/null) || return 1
+    [ -n "$remote" ] || return 1
+
+    if version_lt "$VERSION" "$remote"; then
+        printf '%s' "$remote"
+        return 0
+    fi
+    return 1
+}
+
+# Explicit management-layer reinstall driven from the interactive menu.
+do_update_scripts() {
+    if ! type check_script_update >/dev/null 2>&1; then
+        echo "Self-update is unavailable (selfupdate module not loaded)."
+        return 1
+    fi
+
+    local rc=0
+    check_script_update || rc=$?
+    case "$rc" in
+        0) ;;
+        10) echo "Already up to date (v${VERSION})." ;;
+        30) ;;
+        *) echo "Update check failed. Check network access to GitHub." ;;
+    esac
 }
 
 do_view_logs() {
@@ -133,8 +175,12 @@ do_net_mode_settings() {
 }
 
 interactive_menu() {
+    local update_hint=""
+    # One read-only remote check per session; never blocks unrelated commands.
+    update_hint=$(check_management_update_available) || update_hint=""
+
     while true; do
-        show_menu
+        show_menu "$update_hint"
         read -r choice
 
         case "$choice" in
@@ -148,6 +194,7 @@ interactive_menu() {
             8) do_install_version; printf "Press Enter to continue..."; read -r _ ;;
             9) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
             10) do_net_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
+            11) do_update_scripts; update_hint=""; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac

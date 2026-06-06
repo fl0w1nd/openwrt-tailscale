@@ -247,7 +247,6 @@ list)
     "do_update": {},
     "do_uninstall": {},
     "setup_firewall": {},
-    "sync_scripts": {},
     "reconcile_cron": {},
     "upgrade_scripts": {},
     "get_logs": {},
@@ -346,11 +345,6 @@ call)
                 /etc/init.d/firewall reload >/dev/null 2>&1 || { echo "Failed to reload firewall"; exit 1; }
                 echo done
             ) 2>&1
-            code=$?
-            print_code_stdout "$code" "$stdout"
-            ;;
-        sync_scripts)
-            stdout=$("$MANAGER_BIN" sync-scripts 2>&1)
             code=$?
             print_code_stdout "$code" "$stdout"
             ;;

@@ -55,7 +55,7 @@ tests/
     ├── download/            # SHA256 checksum, staged binary, update/rollback flows, tailscale-update script
     ├── firewall/            # detect_firewall_backend, interface/zone/forwarding, remove_subnet_routing_config
     ├── json/                # json_escape, json_array_from_lines, cmd_json_status/install_info/peers
-    ├── deploy/              # sync_managed_scripts, install flows, LuCI deploy/rollback, uninstall, uci config
+    ├── deploy/              # install flows, runtime/bootstrap libs, LuCI deploy/rollback, uninstall, uci config
     ├── selfupdate/          # check_script_update, do_self_update bundle, re-exec behaviour
     └── rpcd/                # rpcd exec bridge: list, dispatch, parameter validation
 ```
