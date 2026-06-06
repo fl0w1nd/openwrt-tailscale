@@ -92,7 +92,7 @@ _extract_peers_jsonfilter() {
 
     _tmp=$(mktemp -d "${TMPDIR:-/tmp}/ts-peers.XXXXXX" 2>/dev/null) \
         || _tmp=$(mktemp -d -t "ts-peers.XXXXXX" 2>/dev/null) \
-        || return 0
+        || return 1
     chmod 700 "$_tmp" 2>/dev/null || true
     _objects="$_tmp/objects"
 
