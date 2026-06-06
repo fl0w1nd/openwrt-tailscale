@@ -38,6 +38,7 @@ Then follow the interactive prompts.
 - **Userspace fallback** — works even without kernel TUN support
 - **RAM mode** — run entirely from `/tmp` for devices with minimal flash storage
 - **LuCI management UI** — status monitoring, service control, version management, and log viewer
+- **One-command diagnostics** — `tailscale-manager diagnostics` gathers everything a bug report needs in a single paste-ready block
 
 ## Documentation
 

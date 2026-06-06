@@ -100,12 +100,17 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Relevant logs
+      label: Relevant logs / diagnostics
       description: |
-        Useful sources:
+        The fastest way to give us everything we need is one command:
+
+        - `tailscale-manager diagnostics` — full report (versions, platform, install/runtime state, dependency checks, and recent logs). Paste the whole output.
+
+        Or, if you only need the raw logs:
+
+        - `tailscale-manager logs` — last 200 lines of the manager, service, and system logs at once
         - `logread -e tailscale | tail -200`
         - `tail -200 /var/log/tailscale-manager.log`
-        - `tailscale-manager status`
       render: shell
     validations:
       required: false

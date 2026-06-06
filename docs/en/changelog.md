@@ -2,6 +2,15 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.5.0 (2026-06-07)
+
+- Added `tailscale-manager diagnostics` (alias `doctor`): a one-shot troubleshooting report (versions, device/system info, install & runtime state, dependency and HTTPS-reachability checks, UCI config, recent logs) that mirrors the bug report template fields and can be pasted straight into an issue
+- Added `tailscale-manager logs [n]`: view the last n lines of the manager / service / auto-update / system (`logread`) logs at once (default 200) — no more remembering individual paths
+- The interactive menu gained a "Collect Diagnostics" entry that also saves the report to `/tmp/tailscale-diagnostics.txt`
+- Better log coverage: rollback, uninstall, RAM-mode download (`download-only`), and library bootstrap now log their key steps; state-changing commands (install/update/uninstall/…) leave an invocation breadcrumb in the manager log
+- `LOG_FILE` is now overridable via the environment so the manager log can live on persistent storage instead of `/var/log` (tmpfs), which is wiped on reboot
+- The issue template and troubleshooting docs now point to the `diagnostics` / `logs` commands
+
 ## v4.4.0 (2026-06-07)
 
 - Clearer separation between updating the **Tailscale binary** (`update`, `auto-update`) and updating **the manager itself** (`self-update`); `help` is now grouped by target so the two can no longer be confused

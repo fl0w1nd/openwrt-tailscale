@@ -29,6 +29,18 @@ They are completely independent: updating Tailscale never touches the manager, a
 | `uninstall [--yes]` | Remove Tailscale and all related files (`--yes` skips the prompt) |
 | `status` | Show current installation and service status |
 
+### Diagnostics & Troubleshooting
+
+| Command | Description |
+|---------|-------------|
+| `logs [n]` | Show the last n lines of the manager, service, and system logs at once (default 200) |
+| `diagnostics` | Print a full troubleshooting report (versions, platform, install/runtime state, dependency checks, UCI config, and recent logs) ready to paste into an issue (alias: `doctor`) |
+
+```sh
+tailscale-manager diagnostics        # run this before opening an issue
+tailscale-manager logs 500           # show the last 500 log lines
+```
+
 ### Installation Variants
 
 | Command | Description |

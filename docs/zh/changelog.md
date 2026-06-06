@@ -2,6 +2,15 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.5.0 (2026-06-07)
+
+- 新增 `tailscale-manager diagnostics`（别名 `doctor`）：一键生成完整排查报告（版本、设备/系统信息、安装与运行状态、依赖与 HTTPS 连通性检查、UCI 配置、最近日志），与 issue 模板字段一一对应，提交 issue 时可直接粘贴
+- 新增 `tailscale-manager logs [n]`：一次性查看管理器 / 服务 / 自动更新 / 系统（`logread`）日志的最近 n 行（默认 200），不必再逐个记忆路径
+- 交互菜单新增「Collect Diagnostics」，并把诊断报告同时保存到 `/tmp/tailscale-diagnostics.txt`
+- 完善日志覆盖：回滚、卸载、内存模式下载（download-only）、库文件引导等关键节点补齐日志；状态变更类命令（install/update/uninstall/…）在管理器日志中留下调用记录
+- `LOG_FILE` 现支持环境变量覆盖，可把管理器日志放到持久化目录，避免 `/var/log`（tmpfs）重启清空导致排查无据
+- issue 模板与故障排查文档改为推荐 `diagnostics` / `logs` 命令
+
 ## v4.4.0 (2026-06-07)
 
 - 明确区分「更新 **Tailscale 二进制**」（`update`、`auto-update`）与「更新 **管理器本身**」（`self-update`）；`help` 现按作用对象分组，两者不再混淆

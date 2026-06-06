@@ -13,7 +13,7 @@ show_menu() {
     if [ -n "$update_hint" ]; then
         echo ""
         echo "  * Management update available: v${update_hint}"
-        echo "    Choose 11 to reinstall the management layer."
+        echo "    Choose 12 to reinstall the management layer."
     fi
     echo ""
     echo "  1) Install Tailscale"
@@ -22,11 +22,12 @@ show_menu() {
     echo "  4) Restart Tailscale"
     echo "  5) Check Status"
     echo "  6) View Logs"
-    echo "  7) Setup Subnet Routing"
-    echo "  8) Install Specific Version (Downgrade)"
-    echo "  9) Auto-Update Settings"
-    echo " 10) Networking Mode Settings"
-    echo " 11) Update Management Scripts"
+    echo "  7) Collect Diagnostics"
+    echo "  8) Setup Subnet Routing"
+    echo "  9) Install Specific Version (Downgrade)"
+    echo " 10) Auto-Update Settings"
+    echo " 11) Networking Mode Settings"
+    echo " 12) Update Management Scripts"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -68,22 +69,19 @@ do_update_scripts() {
 }
 
 do_view_logs() {
-    echo ""
-    echo "=== Manager Log (${LOG_FILE}) ==="
-    if [ -f "$LOG_FILE" ]; then
-        tail -50 "$LOG_FILE"
-    else
-        echo "(no logs yet)"
-    fi
+    # Reuse the shared `logs` renderer (commands.sh) so the menu and CLI stay
+    # in sync. A shorter tail keeps the interactive view readable.
+    do_logs 50
+    printf "Press Enter to continue..."
+    read -r _
+}
 
+do_collect_diagnostics() {
+    local out="/tmp/tailscale-diagnostics.txt"
+    do_diagnostics | tee "$out"
     echo ""
-    echo "=== Service Log (/var/log/tailscale.log) ==="
-    if [ -f /var/log/tailscale.log ]; then
-        tail -50 /var/log/tailscale.log
-    else
-        echo "(no logs yet)"
-    fi
-
+    echo "Saved a copy to: ${out}"
+    echo "Share it in a GitHub issue with: cat ${out}"
     echo ""
     printf "Press Enter to continue..."
     read -r _
@@ -190,11 +188,12 @@ interactive_menu() {
             4) do_restart; printf "Press Enter to continue..."; read -r _ ;;
             5) do_status; printf "Press Enter to continue..."; read -r _ ;;
             6) do_view_logs ;;
-            7) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
-            8) do_install_version; printf "Press Enter to continue..."; read -r _ ;;
-            9) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
-            10) do_net_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
-            11) do_update_scripts; update_hint=""; printf "Press Enter to continue..."; read -r _ ;;
+            7) do_collect_diagnostics ;;
+            8) do_setup_subnet_routing; printf "Press Enter to continue..."; read -r _ ;;
+            9) do_install_version; printf "Press Enter to continue..."; read -r _ ;;
+            10) do_auto_update_settings; printf "Press Enter to continue..."; read -r _ ;;
+            11) do_net_mode_settings; printf "Press Enter to continue..."; read -r _ ;;
+            12) do_update_scripts; update_hint=""; printf "Press Enter to continue..."; read -r _ ;;
             0) echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac
