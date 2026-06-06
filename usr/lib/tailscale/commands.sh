@@ -1007,6 +1007,7 @@ cmd_install() {
     local persistent_bin_dir="$PERSISTENT_DIR"
     local bin_dir="$PERSISTENT_DIR"
 
+    # Validate CLI options (or defaults) before loading UCI config
     validate_download_source "$download_source" || return 1
     validate_storage_mode "$storage_mode" || return 1
     validate_auto_update_flag "$auto_update" || return 1
@@ -1020,6 +1021,7 @@ cmd_install() {
         [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
     fi
 
+    # Re-validate after UCI config may have overridden values
     validate_download_source "$download_source" || return 1
     validate_storage_mode "$storage_mode" || return 1
     validate_auto_update_flag "$auto_update" || return 1
@@ -1115,6 +1117,7 @@ cmd_install_version() {
     local bin_dir="$PERSISTENT_DIR"
     local auto_update="0"
 
+    # Validate CLI option (or default) before loading UCI config
     validate_download_source "$download_source" || return 1
 
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
@@ -1126,6 +1129,7 @@ cmd_install_version() {
         config_get auto_update settings auto_update "$auto_update"
     fi
 
+    # Re-validate after UCI config may have overridden values
     validate_download_source "$download_source" || return 1
     validate_storage_mode "$storage_mode" || return 1
     validate_auto_update_flag "$auto_update" || return 1
