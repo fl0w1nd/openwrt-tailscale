@@ -3,7 +3,7 @@
 # LuCI RPC bridge for Tailscale management via rpcd exec plugin.
 
 MANAGER_BIN="${MANAGER_BIN:-/usr/bin/tailscale-manager}"
-TASK_DIR="${TASK_DIR:-/tmp/tailscale-rpc-tasks}"
+TASK_DIR="${TASK_DIR:-/var/run/tailscale-rpc-tasks}"
 LIB_DIR="${LIB_DIR:-/usr/lib/tailscale}"
 
 # shellcheck source=/dev/null
@@ -99,41 +99,107 @@ task_path() {
     printf '%s/%s' "$TASK_DIR" "$1"
 }
 
+ensure_task_dir() {
+    [ ! -L "$TASK_DIR" ] || return 1
+    mkdir -p "$TASK_DIR" || return 1
+    if [ "$(id -u 2>/dev/null)" = "0" ]; then
+        chown root:root "$TASK_DIR" 2>/dev/null || true
+    fi
+    chmod 700 "$TASK_DIR" 2>/dev/null || return 1
+}
+
+task_prefix_is_valid() {
+    case "$1" in
+        install|install-version|update|upgrade-scripts) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+task_id_is_valid() {
+    local task="$1"
+
+    case "$task" in
+        ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+            return 1
+            ;;
+        install.|install-|install-version.|install-version-|update.|update-|upgrade-scripts.|upgrade-scripts-)
+            return 1
+            ;;
+        install.*|install-*|install-version.*|install-version-*|update.*|update-*|upgrade-scripts.*|upgrade-scripts-*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 new_task_id() {
     local prefix="$1"
-    local now rand
+    local old_umask tmp task
 
-    now=$(date +%s 2>/dev/null || printf '0')
-    rand=$$
-    printf '%s-%s-%s' "$prefix" "$now" "$rand"
+    task_prefix_is_valid "$prefix" || return 1
+    ensure_task_dir || return 1
+
+    old_umask=$(umask)
+    umask 077
+    tmp=$(mktemp "${TASK_DIR}/${prefix}.XXXXXX" 2>/dev/null) || {
+        umask "$old_umask"
+        return 1
+    }
+    umask "$old_umask"
+
+    task="${tmp##*/}"
+    rm -f "$tmp"
+    printf '%s' "$task"
+}
+
+print_task_error() {
+    local message="$1"
+    printf '{"done":true,"code":-1,"stdout":"%s"}' "$(json_escape "$message")"
 }
 
 start_background_task() {
     local task_prefix="$1"
     shift
 
-    local task base pid_file status_file log_file
-    task=$(new_task_id "$task_prefix")
+    local task base pid_file status_file log_file old_umask
+    task=$(new_task_id "$task_prefix") || {
+        print_code_stdout -1 "Failed to create task state"
+        return 0
+    }
     base=$(task_path "$task")
     pid_file="${base}.pid"
     status_file="${base}.status"
     log_file="${base}.log"
 
-    mkdir -p "$TASK_DIR"
-
+    old_umask=$(umask)
+    umask 077
     (
+        exec 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-
         "$@" >"$log_file" 2>&1
         printf '%s' "$?" >"$status_file"
         rm -f "$pid_file"
-    ) &
+    ) >/dev/null 2>&1 </dev/null &
 
     printf '%s' "$!" >"$pid_file"
+    umask "$old_umask"
     printf '{"code":0,"started":true,"task":"%s","stdout":"Task started"}' "$task"
 }
 
 print_task_status() {
     local task="$1"
     local base pid_file status_file log_file pid code stdout
+    task_id_is_valid "$task" || {
+        print_task_error "Unknown task"
+        return 0
+    }
+
+    ensure_task_dir || {
+        print_task_error "Task state directory unavailable"
+        return 0
+    }
+
     base=$(task_path "$task")
     pid_file="${base}.pid"
     status_file="${base}.status"
@@ -141,6 +207,9 @@ print_task_status() {
 
     if [ -f "$status_file" ]; then
         code=$(cat "$status_file" 2>/dev/null)
+        case "$code" in
+            ''|*[!0-9]*) code=1 ;;
+        esac
         stdout=$(cat "$log_file" 2>/dev/null)
         printf '{"done":true,"code":%s,"stdout":"%s"}' "${code:-1}" "$(json_escape "$stdout")"
         rm -f "$pid_file" "$status_file" "$log_file"
@@ -156,7 +225,7 @@ print_task_status() {
         rm -f "$pid_file"
     fi
 
-    printf '{"done":false}'
+    print_task_error "Task state lost"
 }
 
 case "$1" in
@@ -179,6 +248,7 @@ list)
     "do_uninstall": {},
     "setup_firewall": {},
     "sync_scripts": {},
+    "reconcile_cron": {},
     "upgrade_scripts": {},
     "get_logs": {},
     "clear_log": { "log_type": "" }
@@ -208,10 +278,6 @@ call)
         get_task_status)
             input=$(read_input)
             task=$(json_get_param "$input" task)
-            case "$task" in
-                install-*|install-version-*|update-*|upgrade-scripts-*) ;;
-                *) printf '{"done":true,"code":-1,"stdout":"Unknown task"}' ; exit 0 ;;
-            esac
             print_task_status "$task"
             ;;
         list_versions)
@@ -285,6 +351,11 @@ call)
             ;;
         sync_scripts)
             stdout=$("$MANAGER_BIN" sync-scripts 2>&1)
+            code=$?
+            print_code_stdout "$code" "$stdout"
+            ;;
+        reconcile_cron)
+            stdout=$("$MANAGER_BIN" auto-update reconcile 2>&1)
             code=$?
             print_code_stdout "$code" "$stdout"
             ;;

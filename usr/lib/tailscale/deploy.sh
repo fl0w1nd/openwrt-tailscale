@@ -409,20 +409,68 @@ sync_managed_scripts() {
 
 # Reconcile cron jobs from UCI configuration
 # Removes all managed entries and re-adds only enabled ones
+validate_cron_expression() {
+    local expr="$1"
+    local field
+    local field_count restore_glob=1
+
+    [ -n "$expr" ] || return 1
+    if printf '%s' "$expr" | grep '[[:cntrl:]]' >/dev/null 2>&1; then
+        return 1
+    fi
+
+    case "$-" in
+        *f*) restore_glob=0 ;;
+    esac
+    set -f
+    # shellcheck disable=SC2086
+    set -- $expr
+    field_count="$#"
+    [ "$restore_glob" = "0" ] || set +f
+
+    [ "$field_count" -eq 5 ] || return 1
+
+    for field in "$@"; do
+        case "$field" in
+            ''|*[!0123456789*/,-]*)
+                return 1
+                ;;
+        esac
+    done
+
+    return 0
+}
+
 setup_cron() {
     local auto_update="" update_cron=""
 
-    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
-        . /lib/functions.sh
+    if [ -f "$CONFIG_FILE" ]; then
+        if ! type config_load >/dev/null 2>&1; then
+            [ -r /lib/functions.sh ] && . /lib/functions.sh
+        fi
+    fi
+
+    if type config_load >/dev/null 2>&1 && type config_get >/dev/null 2>&1; then
         config_load tailscale
         config_get auto_update settings auto_update "0"
         config_get update_cron settings update_cron "30 3 * * *"
     fi
 
+    if [ "$auto_update" = "1" ]; then
+        if ! validate_cron_expression "$update_cron"; then
+            log_error "Invalid update_cron expression: ${update_cron}"
+            return 1
+        fi
+    fi
+
     # Remove all managed entries first, including legacy script auto-update
     # entries from older installs (the feature is no longer supported).
     local existing
-    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT") || true
+    existing=$(crontab -l 2>/dev/null \
+        | grep -Fv "$CRON_TAG_BINARY" \
+        | grep -Fv "$CRON_TAG_SCRIPT" \
+        | grep -Fv "$CRON_SCRIPT" \
+        | grep -Fv "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT") || true
 
     local new_cron="$existing"
 
@@ -432,19 +480,31 @@ ${update_cron} ${CRON_SCRIPT} ${CRON_TAG_BINARY}"
     fi
 
     # Remove trailing/leading blank lines and apply
-    printf '%s\n' "$new_cron" | grep -v '^$' | crontab - 2>/dev/null || true
+    if ! printf '%s\n' "$new_cron" | grep -v '^$' | crontab - 2>/dev/null; then
+        log_error "Failed to update crontab"
+        return 1
+    fi
 
     # Purge the defunct script auto-update helper left over from older installs.
     rm -f "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT" 2>/dev/null || true
 
-    [ -x /etc/init.d/cron ] && /etc/init.d/cron restart >/dev/null 2>&1
+    if [ -x /etc/init.d/cron ]; then
+        /etc/init.d/cron restart >/dev/null 2>&1 || true
+    fi
     log_info "Cron jobs reconciled from UCI configuration"
 }
 
 # Remove all managed cron jobs
 remove_cron() {
     local existing
-    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_TAG_BINARY" | grep -v "$CRON_TAG_SCRIPT" | grep -v "$CRON_SCRIPT" | grep -v "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT") || true
-    printf '%s\n' "$existing" | grep -v '^$' | crontab - 2>/dev/null || true
+    existing=$(crontab -l 2>/dev/null \
+        | grep -Fv "$CRON_TAG_BINARY" \
+        | grep -Fv "$CRON_TAG_SCRIPT" \
+        | grep -Fv "$CRON_SCRIPT" \
+        | grep -Fv "$LEGACY_SCRIPT_UPDATE_CRON_SCRIPT") || true
+    if ! printf '%s\n' "$existing" | grep -v '^$' | crontab - 2>/dev/null; then
+        log_error "Failed to update crontab"
+        return 1
+    fi
     log_info "Removed managed cron jobs"
 }
