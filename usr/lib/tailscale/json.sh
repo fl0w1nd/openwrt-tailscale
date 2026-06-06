@@ -85,12 +85,16 @@ _get_display_name() {
 # Outputs comma-separated peer JSON objects (no surrounding brackets).
 _extract_peers_jsonfilter() {
     local ts_file="$1"
-    local _tmp="/tmp/.ts-peers.$$.d"
-    local _objects="$_tmp/objects"
+    local _tmp
+    local _objects
     local first=1
     local peer_json dns host ip os online exit_n exit_opt rx tx seen
 
-    mkdir -p "$_tmp"
+    _tmp=$(mktemp -d "${TMPDIR:-/tmp}/ts-peers.XXXXXX" 2>/dev/null) \
+        || _tmp=$(mktemp -d -t "ts-peers.XXXXXX" 2>/dev/null) \
+        || return 1
+    chmod 700 "$_tmp" 2>/dev/null || true
+    _objects="$_tmp/objects"
 
     jsonfilter -i "$ts_file" -e '@.Peer[*]' > "$_objects" 2>/dev/null || true
 
@@ -205,7 +209,14 @@ cmd_json_status() {
         ts_json=$(tailscale status --json 2>/dev/null) || true
 
         if [ -n "$ts_json" ]; then
-            local ts_file="/tmp/.ts-status.$$.json"
+            local ts_tmp=""
+            local ts_file=""
+            ts_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ts-status.XXXXXX" 2>/dev/null) \
+                || ts_tmp=$(mktemp -d -t "ts-status.XXXXXX" 2>/dev/null) \
+                || ts_tmp=""
+            [ -n "$ts_tmp" ] || return 1
+            chmod 700 "$ts_tmp" 2>/dev/null || true
+            ts_file="${ts_tmp}/status.json"
             printf '%s' "$ts_json" > "$ts_file"
 
             if command -v jsonfilter >/dev/null 2>&1; then
@@ -216,7 +227,7 @@ cmd_json_status() {
                 _parse_status_sed "$ts_file"
             fi
 
-            rm -f "$ts_file"
+            rm -rf "$ts_tmp"
         fi
     fi
 

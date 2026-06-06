@@ -7,6 +7,7 @@
 #
 # Required functions:
 #   log_info(), log_error(), log_warn()
+#   create_tailscale_temp_dir(), validate_tar_member_paths() (from download.sh)
 #   version_lt() (from version.sh)
 #   deploy_management_bundle(), managed_sync_is_current() (from deploy.sh)
 
@@ -209,52 +210,62 @@ check_script_update() {
 
 # Perform script self-update via management bundle deploy
 do_self_update() {
-    local tmp_bundle="/tmp/tailscale-mgmt.tar.gz.$$"
-    local tmp_checksum="/tmp/tailscale-mgmt.tar.gz.sha256.$$"
-    local staging_dir="/tmp/tailscale-mgmt-staging.$$"
+    local tmp_dir
+    local tmp_bundle
+    local tmp_checksum
+    local staging_dir
     local bundle_version=""
+
+    tmp_dir=$(create_tailscale_temp_dir "tailscale-mgmt") || return 1
+    tmp_bundle="${tmp_dir}/tailscale-mgmt.tar.gz"
+    tmp_checksum="${tmp_dir}/tailscale-mgmt.tar.gz.sha256"
+    staging_dir="${tmp_dir}/staging"
 
     echo ""
     log_info "Downloading management bundle..."
 
-    download_management_bundle_file "$MGMT_BUNDLE_URL" "$tmp_bundle" || return 1
+    download_management_bundle_file "$MGMT_BUNDLE_URL" "$tmp_bundle" || {
+        rm -rf "$tmp_dir"
+        return 1
+    }
     download_management_bundle_file "$MGMT_BUNDLE_SHA256_URL" "$tmp_checksum" || {
-        rm -f "$tmp_bundle"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     verify_management_bundle_checksum "$tmp_bundle" "$tmp_checksum" || {
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     mkdir -p "$staging_dir" || {
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         log_error "Failed to create management bundle staging directory"
         return 1
     }
 
+    if ! validate_tar_member_paths "$tmp_bundle" "${tmp_dir}/archive-members.list"; then
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
     if ! tar xzf "$tmp_bundle" -C "$staging_dir" 2>/dev/null; then
-        rm -rf "$staging_dir"
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         log_error "Failed to unpack management bundle"
         return 1
     fi
 
     bundle_version=$(validate_management_bundle "$staging_dir") || {
-        rm -rf "$staging_dir"
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     deploy_management_bundle "$staging_dir" "$bundle_version" || {
-        rm -rf "$staging_dir"
-        rm -f "$tmp_bundle" "$tmp_checksum"
+        rm -rf "$tmp_dir"
         return 1
     }
 
-    rm -rf "$staging_dir"
-    rm -f "$tmp_bundle" "$tmp_checksum"
+    rm -rf "$tmp_dir"
 
     log_info "Script updated to v${bundle_version}"
     echo ""

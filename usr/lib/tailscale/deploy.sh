@@ -242,9 +242,13 @@ managed_sync_is_current() {
 }
 
 mark_managed_sync_version() {
-    local tmp_file="${MANAGED_SYNC_VERSION_FILE}.tmp.$$"
+    local sync_dir sync_name tmp_file
 
-    mkdir -p "$(dirname "$MANAGED_SYNC_VERSION_FILE")" || return 1
+    sync_dir=$(dirname "$MANAGED_SYNC_VERSION_FILE")
+    sync_name=$(basename "$MANAGED_SYNC_VERSION_FILE")
+
+    mkdir -p "$sync_dir" || return 1
+    tmp_file=$(mktemp "${sync_dir}/.${sync_name}.XXXXXX" 2>/dev/null) || return 1
     printf '%s\n' "$VERSION" > "$tmp_file" || {
         rm -f "$tmp_file"
         return 1

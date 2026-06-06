@@ -9,6 +9,95 @@
 # Required functions (from entry script):
 #   log_info(), log_error(), log_warn(), download_repo_file()
 
+create_tailscale_temp_dir() {
+    local prefix="${1:-tailscale}"
+    local base="${TMPDIR:-/tmp}"
+    local tmp_dir=""
+
+    tmp_dir=$(mktemp -d "${base%/}/${prefix}.XXXXXX" 2>/dev/null) \
+        || tmp_dir=$(mktemp -d -t "${prefix}.XXXXXX" 2>/dev/null) \
+        || {
+            log_error "Failed to create private temporary directory"
+            return 1
+        }
+
+    chmod 700 "$tmp_dir" 2>/dev/null || true
+    printf '%s\n' "$tmp_dir"
+}
+
+checksum_emergency_override_enabled() {
+    case "${TAILSCALE_ALLOW_UNVERIFIED_DOWNLOAD:-}" in
+        1|true|TRUE|yes|YES) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+is_safe_tar_path() {
+    local path="$1"
+
+    case "$path" in
+        ""|/*|../*|*/../*|*/..|..)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+validate_tar_member_paths() {
+    local tarball="$1"
+    local list_file="$2"
+    local verbose_file="${list_file}.verbose"
+    local member line target
+
+    if ! tar tzf "$tarball" > "$list_file" 2>/dev/null; then
+        log_error "Failed to list archive contents"
+        return 1
+    fi
+
+    while IFS= read -r member; do
+        if ! is_safe_tar_path "$member"; then
+            log_error "Archive contains unsafe path: ${member}"
+            return 1
+        fi
+    done < "$list_file"
+
+    if ! tar tvzf "$tarball" > "$verbose_file" 2>/dev/null; then
+        log_error "Failed to list archive details"
+        return 1
+    fi
+
+    while IFS= read -r line; do
+        case "$line" in
+            l*" -> "*)
+                target=${line##* -> }
+                if ! is_safe_tar_path "$target"; then
+                    log_error "Archive contains unsafe link target: ${target}"
+                    return 1
+                fi
+                ;;
+            l*)
+                log_error "Failed to parse archive symlink target"
+                return 1
+                ;;
+            h*" link to "*)
+                target=${line##* link to }
+                if ! is_safe_tar_path "$target"; then
+                    log_error "Archive contains unsafe link target: ${target}"
+                    return 1
+                fi
+                ;;
+            h*)
+                log_error "Failed to parse archive hardlink target"
+                return 1
+                ;;
+        esac
+    done < "$verbose_file"
+
+    return 0
+}
+
 # Compute SHA-256 hash of a file
 # Uses sha256sum (coreutils/busybox) or openssl as fallback
 compute_sha256() {
@@ -31,8 +120,12 @@ verify_checksum() {
 
     local actual
     actual=$(compute_sha256 "$file") || {
-        log_warn "sha256 verification skipped: no sha256sum or openssl available"
-        return 0
+        if checksum_emergency_override_enabled; then
+            log_warn "Emergency checksum override enabled: sha256 tool is unavailable"
+            return 0
+        fi
+        log_error "sha256 verification requires sha256sum or openssl"
+        return 1
     }
 
     if [ "$actual" != "$expected" ]; then
@@ -273,37 +366,48 @@ download_tailscale_official() {
 
     local filename="tailscale_${version}_${official_arch}.tgz"
     local url="${DOWNLOAD_BASE}/${filename}"
-    local tmp_dir="/tmp/tailscale_download_$$"
-    local tarball="/tmp/${filename}"
+    local tmp_dir
+    local tarball
+
+    tmp_dir=$(create_tailscale_temp_dir "tailscale-download") || return 1
+    tarball="${tmp_dir}/${filename}"
 
     log_info "Downloading Tailscale v${version} for ${arch} (official)..."
     log_info "URL: $url"
 
     local expected_checksum
     expected_checksum=$(get_official_checksum "$url") || {
-        log_warn "Could not fetch checksum from ${url}.sha256"
+        if checksum_emergency_override_enabled; then
+            log_warn "Emergency checksum override enabled: could not fetch ${url}.sha256"
+            expected_checksum=""
+        else
+            log_error "Could not fetch checksum from ${url}.sha256"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
     }
 
     local wget_progress
     wget_progress=$(get_wget_progress_option)
     if ! wget "$wget_progress" -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
-        rm -f "$tarball"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
-    if [ -n "$expected_checksum" ]; then
-        if ! verify_checksum "$tarball" "$expected_checksum"; then
-            rm -f "$tarball"
-            return 1
-        fi
+    if [ -n "$expected_checksum" ] && ! verify_checksum "$tarball" "$expected_checksum"; then
+        rm -rf "$tmp_dir"
+        return 1
     fi
 
     log_info "Extracting..."
-    mkdir -p "$tmp_dir"
+    if ! validate_tar_member_paths "$tarball" "${tmp_dir}/archive-members.list"; then
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
     if ! tar xzf "$tarball" -C "$tmp_dir" 2>&1; then
         log_error "Extraction failed"
-        rm -f "$tarball"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -311,7 +415,6 @@ download_tailscale_official() {
     local extracted_dir="${tmp_dir}/tailscale_${version}_${official_arch}"
     if [ ! -f "${extracted_dir}/tailscaled" ] || [ ! -f "${extracted_dir}/tailscale" ]; then
         log_error "Required binaries not found in archive"
-        rm -f "$tarball"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -325,7 +428,6 @@ download_tailscale_official() {
     echo "$version" > "${target_dir}/version"
     echo "official" > "${target_dir}/source"
 
-    rm -f "$tarball"
     rm -rf "$tmp_dir"
 
     log_info "Successfully installed Tailscale v${version}"
@@ -340,37 +442,48 @@ download_tailscale_small() {
 
     local filename="tailscale-small_${version}_${arch}.tgz"
     local url="${SMALL_DOWNLOAD_BASE}/v${version}/${filename}"
-    local tmp_dir="/tmp/tailscale_download_$$"
-    local tarball="/tmp/${filename}"
+    local tmp_dir
+    local tarball
+
+    tmp_dir=$(create_tailscale_temp_dir "tailscale-download") || return 1
+    tarball="${tmp_dir}/${filename}"
 
     log_info "Downloading Tailscale v${version} for ${arch} (small/compressed)..."
     log_info "URL: $url"
 
     local expected_checksum
     expected_checksum=$(get_small_checksum "$version" "$filename") || {
-        log_warn "Could not fetch checksum from GitHub API"
+        if checksum_emergency_override_enabled; then
+            log_warn "Emergency checksum override enabled: could not fetch checksum from GitHub API"
+            expected_checksum=""
+        else
+            log_error "Could not fetch checksum from GitHub API"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
     }
 
     local wget_progress
     wget_progress=$(get_wget_progress_option)
     if ! wget "$wget_progress" -O "$tarball" "$url" 2>&1; then
         log_error "Download failed"
-        rm -f "$tarball"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
-    if [ -n "$expected_checksum" ]; then
-        if ! verify_checksum "$tarball" "$expected_checksum"; then
-            rm -f "$tarball"
-            return 1
-        fi
+    if [ -n "$expected_checksum" ] && ! verify_checksum "$tarball" "$expected_checksum"; then
+        rm -rf "$tmp_dir"
+        return 1
     fi
 
     log_info "Extracting..."
-    mkdir -p "$tmp_dir"
+    if ! validate_tar_member_paths "$tarball" "${tmp_dir}/archive-members.list"; then
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
     if ! tar xzf "$tarball" -C "$tmp_dir" 2>&1; then
         log_error "Extraction failed"
-        rm -f "$tarball"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -379,7 +492,6 @@ download_tailscale_small() {
 
     if [ ! -f "${extracted_dir}/tailscale.combined" ]; then
         log_error "Combined binary not found in archive"
-        rm -f "$tarball"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -396,13 +508,13 @@ download_tailscale_small() {
         ln -sf "tailscale.combined" "tailscaled"
     ) || {
         log_error "Failed to enter ${target_dir} to create symlinks"
+        rm -rf "$tmp_dir"
         return 1
     }
 
     echo "$version" > "${target_dir}/version"
     echo "small" > "${target_dir}/source"
 
-    rm -f "$tarball"
     rm -rf "$tmp_dir"
 
     log_info "Successfully installed Tailscale v${version} (small)"
