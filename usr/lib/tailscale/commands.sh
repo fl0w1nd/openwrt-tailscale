@@ -35,7 +35,7 @@ require_absolute_path() {
 
     case "$normalized" in
         /|/bin|/sbin|/usr|/usr/bin|/usr/sbin|/usr/lib|/usr/local|/lib|/lib64|\
-/etc|/dev|/proc|/sys|/root|/boot|/var|/tmp|/mnt|/opt|/home)
+/etc|/dev|/proc|/sys|/root|/boot|/var|/tmp|/mnt|/opt|/home|/www)
             log_error "${label} '${path}' is a reserved system directory; pick a sub-path like ${normalized%/}/tailscale"
             return 1
             ;;
@@ -537,6 +537,7 @@ do_rollback() {
 
 do_uninstall() {
     local force="${1:-}"
+    local cleanup_failed=0
 
     if [ "$force" != "--yes" ]; then
         echo ""
@@ -583,32 +584,32 @@ do_uninstall() {
     remove_symlinks "$PERSISTENT_DIR" "$RAM_DIR" "$uci_bin_dir"
 
     if [ "$PERSISTENT_DIR" = "${MANAGED_PERSISTENT_DIR:-/opt/tailscale}" ]; then
-        safe_rm_tree "$PERSISTENT_DIR" "PERSISTENT_DIR" "${MANAGED_PERSISTENT_DIR:-/opt/tailscale}" || return 1
+        safe_rm_tree "$PERSISTENT_DIR" "PERSISTENT_DIR" "${MANAGED_PERSISTENT_DIR:-/opt/tailscale}" || cleanup_failed=1
     else
-        safe_rm_managed_bin_dir_files "$PERSISTENT_DIR" || return 1
+        safe_rm_managed_bin_dir_files "$PERSISTENT_DIR" || cleanup_failed=1
     fi
-    safe_rm_tree "$RAM_DIR" "RAM_DIR" "${MANAGED_RAM_DIR:-/tmp/tailscale}" || return 1
+    safe_rm_tree "$RAM_DIR" "RAM_DIR" "${MANAGED_RAM_DIR:-/tmp/tailscale}" || cleanup_failed=1
     # For a user-configured bin_dir (which may point at an external mount),
     # only remove the specific files this script installs, then try rmdir.
     # This avoids rm -rf wiping unrelated content if bin_dir was misconfigured.
     if [ -n "$uci_bin_dir" ] && [ "$uci_bin_dir" != "$PERSISTENT_DIR" ] && [ "$uci_bin_dir" != "$RAM_DIR" ]; then
-        safe_rm_managed_bin_dir_files "$uci_bin_dir" || return 1
+        safe_rm_managed_bin_dir_files "$uci_bin_dir" || cleanup_failed=1
     fi
 
     rm -f "$INIT_SCRIPT"
     rm -f "$CRON_SCRIPT"
     rm -f /usr/bin/tailscale-script-update
     if [ "$LIB_DIR" = "${MANAGED_LIB_DIR:-/usr/lib/tailscale}" ]; then
-        safe_rm_tree "$LIB_DIR" "LIB_DIR" "${MANAGED_LIB_DIR:-/usr/lib/tailscale}" || return 1
+        safe_rm_tree "$LIB_DIR" "LIB_DIR" "${MANAGED_LIB_DIR:-/usr/lib/tailscale}" || cleanup_failed=1
     else
-        safe_rm_managed_lib_dir_files "$LIB_DIR" || return 1
+        safe_rm_managed_lib_dir_files "$LIB_DIR" || cleanup_failed=1
     fi
     rm -f /usr/bin/tailscale_update_check
 
     if [ "$LUCI_VIEW_DIR" = "${MANAGED_LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}" ]; then
-        safe_rm_tree "$LUCI_VIEW_DIR" "LUCI_VIEW_DIR" "${MANAGED_LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}" || return 1
+        safe_rm_tree "$LUCI_VIEW_DIR" "LUCI_VIEW_DIR" "${MANAGED_LUCI_VIEW_DIR:-/www/luci-static/resources/view/tailscale}" || cleanup_failed=1
     else
-        safe_rm_managed_luci_view_files "$LUCI_VIEW_DIR" || return 1
+        safe_rm_managed_luci_view_files "$LUCI_VIEW_DIR" || cleanup_failed=1
     fi
     rm -f "$LUCI_RPC_DEST"
     rm -f "$LUCI_MENU_DEST"
@@ -622,6 +623,10 @@ do_uninstall() {
     rm -f "$CONFIG_FILE"
 
     remove_subnet_routing_config
+
+    if [ "$cleanup_failed" = "1" ]; then
+        log_warn "Some managed directories were skipped because they failed safety checks"
+    fi
 
     echo ""
     echo "============================================="

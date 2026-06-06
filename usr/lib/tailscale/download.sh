@@ -413,15 +413,16 @@ create_symlinks() {
 
 # Remove /usr/bin symlinks
 remove_symlinks() {
-    local dirs="$*"
     local tailscale_link tailscaled_link dir removed=0
 
     tailscale_link=$(_user_bin_path tailscale)
     tailscaled_link=$(_user_bin_path tailscaled)
 
-    [ -n "$dirs" ] || dirs="${PERSISTENT_DIR:-/opt/tailscale} ${RAM_DIR:-/tmp/tailscale}"
+    if [ "$#" -eq 0 ]; then
+        set -- "${PERSISTENT_DIR:-/opt/tailscale}" "${RAM_DIR:-/tmp/tailscale}"
+    fi
 
-    for dir in $dirs; do
+    for dir in "$@"; do
         [ -n "$dir" ] || continue
         if _is_managed_bin_link "$tailscale_link" "${dir}/tailscale"; then
             rm -f "$tailscale_link"
