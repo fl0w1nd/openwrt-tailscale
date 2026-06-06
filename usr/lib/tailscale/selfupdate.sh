@@ -202,7 +202,8 @@ check_script_update() {
     case "$?" in
         10) return 10 ;;
         *)
-            echo "[WARN] Failed to sync managed files for v${VERSION}"
+            echo "[WARN] Could not sync managed files for v${VERSION} (LuCI app and helper libraries may be outdated)."
+            echo "[WARN] Retry with 'tailscale-manager sync-scripts'. If it keeps failing, check free disk space and network access to GitHub."
             return 20
             ;;
     esac

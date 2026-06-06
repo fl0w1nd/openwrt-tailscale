@@ -764,9 +764,10 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")"
     local reexeced="${TAILSCALE_MANAGER_REEXEC:-0}"
 
-    # Bootstrap: ensure module libraries are available for commands that need them
+    # Bootstrap: ensure module libraries are available for commands that need them.
+    # Informational commands (help/version) stay offline and need no libraries.
     case "${1:-}" in
-        -h|--help|help) ;;
+        -h|--help|help|-v|--version) ;;
         *)
             _ensure_libraries || {
                 log_error "Failed to initialize runtime libraries from ${REPO_BASE_URL}/usr/lib/tailscale"
@@ -782,7 +783,7 @@ main() {
     if [ "$reexeced" != "1" ] \
         && type check_script_update >/dev/null 2>&1; then
         case "${1:-}" in
-            self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
+            -h|--help|help|-v|--version|self-update|sync-scripts|install-quiet|install-version|list-versions|list-official-versions|json-*) ;;
             *) check_script_update "$@" || true ;;
         esac
     fi
@@ -918,6 +919,9 @@ main() {
         json-script-info)
             cmd_json_script_info
             ;;
+        -v|--version)
+            echo "${VERSION}"
+            ;;
         -h|--help|help)
             echo "OpenWRT Tailscale Manager v${VERSION}"
             echo ""
@@ -940,6 +944,7 @@ main() {
             echo "  auto-update      Configure auto-update (on/off/status)"
             echo "  net-mode         Configure networking mode (auto/tun/userspace/status)"
             echo "  help             Show this help"
+            echo "  --version        Print the manager version and exit"
             echo ""
             echo "Environment variables:"
             echo "  TAILSCALE_SOURCE=official|small"

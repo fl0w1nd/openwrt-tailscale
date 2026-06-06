@@ -97,6 +97,43 @@ esac
     assert_success
 }
 
+@test "cmd_json_install_info: detects manual install without version sentinel" {
+    mkdir -p "${TEST_DIR}/opt/tailscale"
+    # A manually installed binary: executable present, but no manager-written
+    # "version"/"source" sentinel files.
+    cat > "${TEST_DIR}/opt/tailscale/tailscale" <<'EOF'
+#!/bin/sh
+[ "$1" = version ] && echo "1.98.3"
+EOF
+    chmod +x "${TEST_DIR}/opt/tailscale/tailscale"
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+PERSISTENT_DIR='${TEST_DIR}/opt/tailscale'
+RAM_DIR='${TEST_DIR}/ram/tailscale'
+
+bin_dir=\$(_find_bin_dir)
+[ \"\$bin_dir\" = '${TEST_DIR}/opt/tailscale' ] || { echo \"expected ${TEST_DIR}/opt/tailscale, got \$bin_dir\"; exit 1; }
+
+output=\$(cmd_json_install_info)
+case \"\$output\" in
+    *'\"installed\":true'*'\"version\":\"1.98.3\"'*)
+        ;;
+    *)
+        echo \"unexpected output: \$output\"
+        exit 1
+        ;;
+esac
+"
+    assert_success
+}
+
 @test "_find_bin_dir: uses configured persistent dir" {
     mkdir -p "${TEST_DIR}/custom/tailscale"
     printf '1.76.1\n' > "${TEST_DIR}/custom/tailscale/version"

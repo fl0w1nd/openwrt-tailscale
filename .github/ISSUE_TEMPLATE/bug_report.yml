@@ -18,7 +18,7 @@ body:
           required: true
         - label: I have read the relevant section of the [documentation](https://fl0w1nd.github.io/openwrt-tailscale/).
           required: true
-        - label: I am running the latest `tailscale-manager` (`tailscale-manager update-script`).
+        - label: I am running the latest `tailscale-manager` (`tailscale-manager self-update`).
           required: false
 
   - type: input

@@ -25,10 +25,25 @@
 # Internal Helpers
 # ============================================================================
 
+# Return 0 if the directory holds an executable Tailscale binary, even when the
+# manager's "version" sentinel is absent (e.g. a manually installed binary).
+_dir_has_tailscale_binary() {
+    local d="$1"
+    [ -n "$d" ] || return 1
+
+    local f
+    for f in tailscale tailscaled tailscale.combined; do
+        [ -x "$d/$f" ] && return 0
+    done
+    return 1
+}
+
 _find_bin_dir() {
     local d
     local uci_dir
     uci_dir=$(uci -q get tailscale.settings.bin_dir 2>/dev/null) || uci_dir=""
+
+    # Prefer directories carrying the manager's "version" sentinel file.
     if [ -n "$uci_dir" ] && [ -f "$uci_dir/version" ]; then
         echo "$uci_dir"
         return 0
@@ -36,7 +51,39 @@ _find_bin_dir() {
     for d in "$PERSISTENT_DIR" "$RAM_DIR"; do
         [ -f "$d/version" ] && { echo "$d"; return 0; }
     done
+
+    # Fall back to a Tailscale binary installed outside the manager (no
+    # sentinel). This lets the LuCI UI recognise manual installs, e.g. a
+    # binary placed under /opt/tailscale on external storage.
+    for d in "$uci_dir" "$PERSISTENT_DIR" "$RAM_DIR"; do
+        [ -n "$d" ] || continue
+        _dir_has_tailscale_binary "$d" && { echo "$d"; return 0; }
+    done
+
     return 1
+}
+
+# Resolve the installed Tailscale version for a bin_dir. Prefer the manager's
+# "version" sentinel; otherwise query the binary directly so manually installed
+# Tailscale (without the sentinel) still reports a version.
+_get_installed_version() {
+    local bin_dir="$1"
+    [ -n "$bin_dir" ] || return 1
+
+    if [ -f "$bin_dir/version" ]; then
+        cat "$bin_dir/version" 2>/dev/null
+        return 0
+    fi
+
+    local bin=""
+    if [ -x "$bin_dir/tailscale" ]; then
+        bin="$bin_dir/tailscale"
+    elif command -v tailscale >/dev/null 2>&1; then
+        bin="tailscale"
+    fi
+    [ -n "$bin" ] || return 1
+
+    "$bin" version 2>/dev/null | head -n1
 }
 
 _get_installed_source() {
@@ -183,7 +230,7 @@ cmd_json_status() {
     fi
 
     local version="" source_type=""
-    version=$(cat "$bin_dir/version" 2>/dev/null) || true
+    version=$(_get_installed_version "$bin_dir") || true
     source_type=$(_get_installed_source "$bin_dir") || true
 
     local pid_str="" pid="" running="false"
@@ -402,7 +449,7 @@ cmd_json_install_info() {
     fi
 
     local version="" source=""
-    version=$(cat "$bin_dir/version" 2>/dev/null) || true
+    version=$(_get_installed_version "$bin_dir") || true
     source=$(_get_installed_source "$bin_dir") || true
 
     printf '{'
