@@ -6,6 +6,8 @@
 'require uci';
 
 var _ = function(s) { return s; };
+var TASK_POLL_INTERVAL = 2000;
+var TASK_POLL_TIMEOUT = 15 * 60 * 1000;
 
 var callGetStatus = rpc.declare({
 	object: 'luci-tailscale',
@@ -61,6 +63,11 @@ var callUpgradeScripts = rpc.declare({
 	method: 'upgrade_scripts'
 });
 
+var callReconcileCron = rpc.declare({
+	object: 'luci-tailscale',
+	method: 'reconcile_cron'
+});
+
 var callDoUninstall = rpc.declare({
 	object: 'luci-tailscale',
 	method: 'do_uninstall'
@@ -80,17 +87,34 @@ function makeInfoRow(label, value) {
 	]);
 }
 
-function pollTaskStatus(task) {
+function pollTaskStatus(task, startedAt) {
+	startedAt = startedAt || Date.now();
+
+	if (Date.now() - startedAt > TASK_POLL_TIMEOUT) {
+		return Promise.resolve({
+			done: true,
+			code: -1,
+			stdout: _('Task polling timed out after 15 minutes.')
+		});
+	}
+
 	return callGetTaskStatus(task).then(function(result) {
 		if (result && result.done)
 			return result;
 
 		return new Promise(function(resolve) {
-			window.setTimeout(resolve, 2000);
+			window.setTimeout(resolve, TASK_POLL_INTERVAL);
 		}).then(function() {
-			return pollTaskStatus(task);
+			return pollTaskStatus(task, startedAt);
 		});
 	});
+}
+
+function reconcileCronAfterSave(result) {
+	if (result && result.code === 0)
+		return true;
+
+	throw new Error((result && result.stdout) || _('Failed to reconcile cron schedule.'));
 }
 
 function handleAsyncTask(title, message, request, successMessage, errorPrefix, reloadAfterSuccess) {
@@ -313,6 +337,12 @@ return view.extend({
 
 		m = new form.Map('tailscale', _('Tailscale Maintenance'),
 			_('Manage the binary update schedule, version control, and maintenance tasks.'));
+		var mapSave = m.save.bind(m);
+		m.save = function(cb, silent) {
+			return mapSave(cb, silent).then(function() {
+				return callReconcileCron().then(reconcileCronAfterSave);
+			});
+		};
 
 		s = m.section(form.NamedSection, 'settings', 'tailscale', _('Tailscale Binary Auto-Update'));
 		s.anonymous = false;

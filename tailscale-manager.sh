@@ -853,6 +853,9 @@ main() {
                 off|disable|0)
                     configure_auto_update "0"
                     ;;
+                reconcile)
+                    setup_cron
+                    ;;
                 status|"")
                     echo ""
                     echo "Auto-update status:"

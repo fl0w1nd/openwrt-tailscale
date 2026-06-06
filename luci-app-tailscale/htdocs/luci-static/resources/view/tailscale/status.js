@@ -6,6 +6,8 @@
 'require ui';
 
 var _ = function(s) { return s; };
+var TASK_POLL_INTERVAL = 2000;
+var TASK_POLL_TIMEOUT = 15 * 60 * 1000;
 
 var callGetStatus = rpc.declare({
 	object: 'luci-tailscale',
@@ -93,15 +95,25 @@ function makeInfoRow(label, value) {
 	]);
 }
 
-function pollTaskStatus(task) {
+function pollTaskStatus(task, startedAt) {
+	startedAt = startedAt || Date.now();
+
+	if (Date.now() - startedAt > TASK_POLL_TIMEOUT) {
+		return Promise.resolve({
+			done: true,
+			code: -1,
+			stdout: 'Task polling timed out after 15 minutes.'
+		});
+	}
+
 	return callGetTaskStatus(task).then(function(result) {
 		if (result && result.done)
 			return result;
 
 		return new Promise(function(resolve) {
-			window.setTimeout(resolve, 2000);
+			window.setTimeout(resolve, TASK_POLL_INTERVAL);
 		}).then(function() {
-			return pollTaskStatus(task);
+			return pollTaskStatus(task, startedAt);
 		});
 	});
 }
