@@ -2,6 +2,11 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.6.0 (2026-06-08)
+
+- 修复贪婪 `sed` 解析 JSON 的 bug：在 GitHub API 返回单行 JSON 时只提取最旧版本而非最新版本；受影响函数包括 `list-small-versions`、`get-small-latest-version`、`get-official-latest-version` 及 `tailscale-update`；改用 `grep -oE` + `sed -E` 两阶段提取 (#33)
+- 新增 API 冒烟测试 (`tests/bats/smoke/`)，对真实上游端点做可达性与解析验证；CI 单独运行，已从 `make test` 中排除
+
 ## v4.5.0 (2026-06-07)
 
 - 新增 `tailscale-manager diagnostics`（别名 `doctor`）：一键生成完整排查报告（版本、设备/系统信息、安装与运行状态、依赖与 HTTPS 连通性检查、UCI 配置、最近日志），与 issue 模板字段一一对应，提交 issue 时可直接粘贴

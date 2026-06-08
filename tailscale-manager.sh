@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.5.0"
+VERSION="4.6.0"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)

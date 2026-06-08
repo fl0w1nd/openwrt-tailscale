@@ -2,6 +2,11 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.6.0 (2026-06-08)
+
+- Fix greedy `sed` JSON parsing that extracted the oldest instead of the newest version from compact single-line GitHub API responses (`list-small-versions`, `get-small-latest-version`, `get-official-latest-version`, `tailscale-update`); replaced with `grep -oE` + `sed -E` two-stage extraction (#33)
+- Add API smoke tests (`tests/bats/smoke/`) that hit real upstream endpoints and a dedicated CI job; excluded from `make test` to keep offline runs fast
+
 ## v4.5.0 (2026-06-07)
 
 - Added `tailscale-manager diagnostics` (alias `doctor`): a one-shot troubleshooting report (versions, device/system info, install & runtime state, dependency and HTTPS-reachability checks, UCI config, recent logs) that mirrors the bug report template fields and can be pasted straight into an issue
