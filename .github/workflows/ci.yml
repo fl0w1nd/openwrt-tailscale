@@ -109,3 +109,25 @@ jobs:
             done
             echo "BusyBox 1.38 sanity OK"
           '
+
+  smoke:
+    # Smoke tests — hit real upstream API endpoints to verify reachability
+    # and response parsing. These depend on external services, so they run
+    # AFTER the offline unit/integration suite to keep fast feedback tight.
+    name: Smoke (real API)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          submodules: recursive
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Run API smoke tests
+        run: tests/bats/_deps/bats-core/bin/bats tests/bats/smoke/

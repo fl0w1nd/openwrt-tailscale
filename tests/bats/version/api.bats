@@ -87,6 +87,42 @@ fi
     assert_success
 }
 
+@test "get_official_latest_version parses single-line API response with extra fields" {
+    bin_stub wget '#!/bin/sh
+printf "%s" "{\"TarballsVersion\":\"1.76.1\",\"SomeOtherField\":\"noise\"}"'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+version=\$(get_official_latest_version)
+[ \"\$version\" = '1.76.1' ] || { echo \"expected 1.76.1, got \$version\"; exit 1; }
+"
+    assert_success
+}
+
+@test "get_small_latest_version parses single-line multi-release JSON" {
+    bin_stub wget '#!/bin/sh
+printf "%s" "[{\"tag_name\":\"v1.98.3\"},{\"tag_name\":\"v1.96.4\"}]"'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+version=\$(get_small_latest_version)
+[ \"\$version\" = '1.98.3' ] || { echo \"expected 1.98.3, got \$version\"; exit 1; }
+"
+    assert_success
+}
+
 @test "get_remote_script_version parses mgmt VERSION file" {
     bin_stub wget '#!/bin/sh
 case "$*" in

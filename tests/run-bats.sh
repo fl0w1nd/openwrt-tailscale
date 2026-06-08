@@ -33,14 +33,16 @@ fi
 
 if [ "$#" -eq 0 ]; then
     # Collect every direct subdirectory of tests/bats that isn't a helper
-    # bucket (_deps/_lib/_fixtures). bats `--recursive` will then descend
-    # into each business module without touching vendored fixtures.
+    # bucket (_deps/_lib/_fixtures) or a network-dependent smoke suite.
+    # bats `--recursive` will then descend into each business module
+    # without touching vendored fixtures or external API endpoints.
     BATS_DIR="$REPO_ROOT/tests/bats"
     set --
     for dir in "$BATS_DIR"/*/; do
         [ -d "$dir" ] || continue
         case "${dir##*/tests/bats/}" in
-            _*) continue ;;
+            _*)       continue ;;   # helper buckets
+            smoke)    continue ;;   # network-dependent; run separately in CI
         esac
         set -- "$@" "$dir"
     done
