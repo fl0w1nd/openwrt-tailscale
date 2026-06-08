@@ -90,7 +90,7 @@ retry_cmd() {
     }
 }
 
-@test "GitHub releases list extracts all versions from single-line JSON (issue #33 regression)" {
+@test "GitHub releases list extracts all versions from single-line JSON" {
     local json_data
     json_data=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=5" 2>/dev/null)
 

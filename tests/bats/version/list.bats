@@ -82,7 +82,7 @@ version=\$(get_latest_version amd64)
     assert_success
 }
 
-@test "list_small_versions extracts all versions from single-line JSON (issue #33)" {
+@test "list_small_versions extracts all versions from single-line JSON" {
     bin_stub wget '#!/bin/sh
 printf "%s" "[{\"tag_name\":\"v1.98.3\"},{\"tag_name\":\"v1.98.2\"},{\"tag_name\":\"v1.96.4\"},{\"tag_name\":\"v1.92.5\"}]"'
 
@@ -101,7 +101,7 @@ expected=\$(printf '1.98.3\n1.98.2\n1.96.4\n1.92.5\n')
     assert_success
 }
 
-@test "get_small_latest_version returns newest from single-line multi-release JSON (issue #33)" {
+@test "get_small_latest_version returns newest from single-line multi-release JSON" {
     bin_stub wget '#!/bin/sh
 printf "%s" "[{\"tag_name\":\"v1.98.3\"},{\"tag_name\":\"v1.98.2\"},{\"tag_name\":\"v1.96.4\"},{\"tag_name\":\"v1.92.5\"}]"'
 

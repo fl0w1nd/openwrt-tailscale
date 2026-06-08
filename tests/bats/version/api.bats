@@ -105,7 +105,7 @@ version=\$(get_official_latest_version)
     assert_success
 }
 
-@test "get_small_latest_version parses single-line multi-release JSON (issue #33)" {
+@test "get_small_latest_version parses single-line multi-release JSON" {
     bin_stub wget '#!/bin/sh
 printf "%s" "[{\"tag_name\":\"v1.98.3\"},{\"tag_name\":\"v1.96.4\"}]"'
 
