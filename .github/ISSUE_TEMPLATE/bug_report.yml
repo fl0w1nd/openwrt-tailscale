@@ -1,122 +1,105 @@
 name: Bug report
-description: Something is not working as expected on OpenWrt.
+description: Report a reproducible problem on OpenWrt.
 labels: ["bug", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file a bug report!
-        Please go through the following sections — they help us reproduce the issue
-        much faster, especially on uncommon devices and OpenWrt builds.
+        Before opening a bug report, update the manager and collect a masked diagnostic report:
+
+        ```sh
+        tailscale-manager self-update
+        tailscale-manager diagnostics --maskinfo
+        ```
+
+        Add custom masks for router names, hostnames, or tailnet-specific labels:
+
+        ```sh
+        tailscale-manager diagnostics --maskinfo='my-router' --maskinfo='my-tailnet-label'
+        ```
+
+        For LuCI issues, also include:
+
+        ```sh
+        ubus call luci-tailscale get_install_info
+        ubus call luci-tailscale get_status
+        ```
 
   - type: checkboxes
-    id: prereq
+    id: self-check
     attributes:
-      label: Prerequisites
+      label: Self-check
       options:
-        - label: I have searched existing issues and discussions.
+        - label: I searched existing issues and discussions.
           required: true
-        - label: I have read the relevant section of the [documentation](https://fl0w1nd.github.io/openwrt-tailscale/).
+        - label: I read the relevant documentation section.
           required: true
-        - label: I am running the latest `tailscale-manager` (`tailscale-manager self-update`).
-          required: false
-
-  - type: input
-    id: manager-version
-    attributes:
-      label: tailscale-manager version
-      description: Output of `tailscale-manager --version` (or `head -50 /usr/bin/tailscale-manager | grep VERSION`).
-      placeholder: "4.1.1"
-    validations:
-      required: true
-
-  - type: input
-    id: tailscale-version
-    attributes:
-      label: Installed Tailscale binary version
-      description: Output of `tailscale version` (first line is enough).
-      placeholder: "1.96.5"
-    validations:
-      required: true
+        - label: I updated the manager with `tailscale-manager self-update`, or I explain the blocker below.
+          required: true
+        - label: I included `tailscale-manager diagnostics --maskinfo` output, or I explain the blocker below.
+          required: true
 
   - type: dropdown
-    id: source
+    id: area
     attributes:
-      label: Download source
+      label: Affected area
+      multiple: true
       options:
-        - official
-        - small
-        - unknown
-    validations:
-      required: true
-
-  - type: dropdown
-    id: net-mode
-    attributes:
-      label: Networking mode
-      options:
-        - tun (kernel)
-        - userspace
-        - auto
-        - unknown
-    validations:
-      required: true
-
-  - type: input
-    id: openwrt-release
-    attributes:
-      label: OpenWrt release / derivative
-      description: Contents of `/etc/openwrt_release` (`DISTRIB_RELEASE`, `DISTRIB_TARGET`, `DISTRIB_ARCH`). Mention iStoreOS / ImmortalWrt if applicable.
-      placeholder: |
-        DISTRIB_RELEASE='23.05.5'
-        DISTRIB_TARGET='ramips/mt7621'
-        DISTRIB_ARCH='mipsel_24kc'
-    validations:
-      required: true
-
-  - type: input
-    id: device
-    attributes:
-      label: Device model
-      placeholder: "Xiaomi AX3000 / Raspberry Pi 4 / x86_64 VM / ..."
+        - Installation / update
+        - Service start / stop
+        - LuCI app
+        - Networking / subnet routing
+        - Download source / version list
+        - Logs / diagnostics
+        - Documentation
+        - Other
     validations:
       required: true
 
   - type: textarea
-    id: what-happened
+    id: summary
     attributes:
-      label: What happened?
-      description: A clear description of the bug. Include exact commands run.
+      label: Problem summary
+      description: Describe the visible failure and where it appears.
+      placeholder: "Example: LuCI status page shows the install screen while Tailscale is installed and running."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include exact commands, LuCI page paths, selected options, and timing.
+      placeholder: |
+        1. Run ...
+        2. Open LuCI path ...
+        3. Observe ...
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: What did you expect to happen?
+      label: Expected behavior
+      placeholder: "Describe the result you expected."
     validations:
       required: true
 
   - type: textarea
-    id: logs
+    id: diagnostics
     attributes:
-      label: Relevant logs / diagnostics
+      label: Diagnostics
       description: |
-        The fastest way to give us everything we need is one command:
-
-        - `tailscale-manager diagnostics` — full report (versions, platform, install/runtime state, dependency checks, and recent logs). Paste the whole output.
-
-        Or, if you only need the raw logs:
-
-        - `tailscale-manager logs` — last 200 lines of the manager, service, and system logs at once
-        - `logread -e tailscale | tail -200`
-        - `tail -200 /var/log/tailscale-manager.log`
+        Paste `tailscale-manager diagnostics --maskinfo` output here.
+        For LuCI issues, also paste the two `ubus call luci-tailscale ...` outputs.
       render: shell
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: extra
     attributes:
-      label: Anything else?
-      description: Screenshots, network topology, custom firewall rules, etc.
+      label: Additional context
+      description: Screenshots, topology notes, custom UCI settings, firewall changes, or reasons a self-check command failed.
+    validations:
+      required: false
