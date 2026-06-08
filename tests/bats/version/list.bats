@@ -82,6 +82,43 @@ version=\$(get_latest_version amd64)
     assert_success
 }
 
+@test "list_small_versions extracts all versions from single-line JSON (issue #33)" {
+    bin_stub wget '#!/bin/sh
+printf "%s" "[{\"tag_name\":\"v1.98.3\"},{\"tag_name\":\"v1.98.2\"},{\"tag_name\":\"v1.96.4\"},{\"tag_name\":\"v1.92.5\"}]"'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+output=\$(list_small_versions 10)
+expected=\$(printf '1.98.3\n1.98.2\n1.96.4\n1.92.5\n')
+[ \"\$output\" = \"\$expected\" ] || { echo \"unexpected: \$output\"; exit 1; }
+"
+    assert_success
+}
+
+@test "get_small_latest_version returns newest from single-line multi-release JSON (issue #33)" {
+    bin_stub wget '#!/bin/sh
+printf "%s" "[{\"tag_name\":\"v1.98.3\"},{\"tag_name\":\"v1.98.2\"},{\"tag_name\":\"v1.96.4\"},{\"tag_name\":\"v1.92.5\"}]"'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+version=\$(get_small_latest_version)
+[ \"\$version\" = '1.98.3' ] || { echo \"expected 1.98.3, got \$version\"; exit 1; }
+"
+    assert_success
+}
+
 @test "small latest version falls back to available arch build" {
     bin_stub wget '#!/bin/sh
 case "$*" in

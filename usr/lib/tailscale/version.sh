@@ -21,7 +21,7 @@ get_official_latest_version() {
         return 1
     }
 
-    version=$(echo "$json_data" | sed -n 's/.*"TarballsVersion"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+    version=$(echo "$json_data" | grep -oE '"TarballsVersion"[: ]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)".*/\1/')
 
     if [ -z "$version" ]; then
         log_error "Failed to parse version from Tailscale API"
@@ -95,8 +95,7 @@ get_small_latest_version() {
         return 1
     fi
 
-    version=$(echo "$json_data" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
-    version="${version#v}"
+    version=$(echo "$json_data" | grep -oE '"tag_name"[: ]*"[^"]*"' | head -1 | sed -E 's/.*"v?([^"]*)".*/\1/')
 
     if [ -z "$version" ]; then
         log_error "Failed to parse version from GitHub API"
@@ -177,7 +176,7 @@ list_small_versions() {
         return 1
     }
 
-    echo "$json_data" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | sed 's/^v//'
+    echo "$json_data" | grep -oE '"tag_name"[: ]*"[^"]*"' | sed -E 's/.*"v?([^"]*)".*/\1/'
 }
 
 # List available versions from the official static packages page
