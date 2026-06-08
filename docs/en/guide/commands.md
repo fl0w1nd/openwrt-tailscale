@@ -33,12 +33,14 @@ They are completely independent: updating Tailscale never touches the manager, a
 
 | Command | Description |
 |---------|-------------|
-| `logs [n]` | Show the last n lines of the manager, service, and system logs at once (default 200) |
-| `diagnostics` | Print a full troubleshooting report (versions, platform, install/runtime state, dependency checks, UCI config, and recent logs) ready to paste into an issue (alias: `doctor`) |
+| `logs [n] [--maskinfo]` | Show the last n lines of the manager, service, and system logs at once (default 200). `--maskinfo` hides addresses, MagicDNS names, emails, and optional custom regex matches |
+| `diagnostics [--maskinfo]` | Print a full troubleshooting report (versions, platform, install/runtime state, dependency checks, UCI config, and recent logs) ready to paste into an issue (alias: `doctor`) |
 
 ```sh
 tailscale-manager diagnostics        # run this before opening an issue
+tailscale-manager diagnostics --maskinfo
 tailscale-manager logs 500           # show the last 500 log lines
+tailscale-manager logs 500 --maskinfo='my-router-name'
 ```
 
 ### Installation Variants

@@ -15,7 +15,7 @@ LIB_DIR="${LIB_DIR:-/usr/lib/tailscale}"
 _RPC_LOG_FILE="/var/log/tailscale-manager.log"
 
 log_info() {
-    echo "[INFO] $1"
+    echo "[INFO] $1" >&2
     logger -t "tailscale-manager" -p daemon.info "$1" 2>/dev/null || true
     printf '[%s] [INFO] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$_RPC_LOG_FILE" 2>/dev/null || true
 }
@@ -27,7 +27,7 @@ log_error() {
 }
 
 log_warn() {
-    echo "[WARN] $1"
+    echo "[WARN] $1" >&2
     logger -t "tailscale-manager" -p daemon.warn "$1" 2>/dev/null || true
     printf '[%s] [WARN] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$_RPC_LOG_FILE" 2>/dev/null || true
 }

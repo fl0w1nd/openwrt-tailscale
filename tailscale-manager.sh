@@ -836,10 +836,12 @@ main() {
             do_status
             ;;
         logs)
-            do_logs "$2"
+            shift
+            do_logs "$@"
             ;;
         diagnostics|doctor)
-            do_diagnostics "$2"
+            shift
+            do_diagnostics "$@"
             ;;
         download-only)
             do_download_only
@@ -977,8 +979,8 @@ main() {
             echo "  uninstall [--yes]            Remove Tailscale"
             echo ""
             echo "Diagnostics & troubleshooting:"
-            echo "  logs [n]                     Show recent manager/service/system logs (default ${TS_LOG_DEFAULT_LINES:-200} lines)"
-            echo "  diagnostics                  Print a full troubleshooting report to paste into a bug report"
+            echo "  logs [n] [--maskinfo]        Show recent manager/service/system logs (default ${TS_LOG_DEFAULT_LINES:-200} lines)"
+            echo "  diagnostics [--maskinfo]     Print a full troubleshooting report to paste into a bug report"
             echo "                               (alias: doctor)"
             echo ""
             echo "Manager command (manages this tool itself, NOT the Tailscale binary):"

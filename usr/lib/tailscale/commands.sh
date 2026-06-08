@@ -804,6 +804,45 @@ do_status() {
 # Matches the amount the bug report template asks contributors to paste.
 TS_LOG_DEFAULT_LINES=200
 
+_append_mask_pattern() {
+    local current="$1"
+    local pattern="$2"
+
+    [ -n "$pattern" ] || {
+        printf '%s' "$current"
+        return 0
+    }
+
+    if [ -n "$current" ]; then
+        printf '%s\n%s' "$current" "$pattern"
+    else
+        printf '%s' "$pattern"
+    fi
+}
+
+_mask_private_info() {
+    local custom_patterns="${1:-}"
+
+    awk -v custom="$custom_patterns" '
+        BEGIN {
+            custom_count = split(custom, custom_patterns, "\n")
+        }
+        {
+            gsub(/[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/, "xxx.xxx.xxx.xxx")
+            gsub(/[0-9A-Fa-f][0-9A-Fa-f:]*::[0-9A-Fa-f:]*[0-9A-Fa-f]*/, "xxxx:xxxx::xxxx")
+            gsub(/[Ff][Dd][0-9A-Fa-f:][0-9A-Fa-f:]*/, "xxxx:xxxx::xxxx")
+            gsub(/[A-Za-z0-9._%+-][A-Za-z0-9._%+-]*@[A-Za-z0-9.-][A-Za-z0-9.-]*\.[A-Za-z][A-Za-z]*/, "user@example.invalid")
+            gsub(/[A-Za-z0-9_-][A-Za-z0-9._-]*\.ts\.net\.?/, "tailnet.ts.net.")
+
+            for (i = 1; i <= custom_count; i++) {
+                if (custom_patterns[i] != "")
+                    gsub(custom_patterns[i], "***")
+            }
+            print
+        }
+    '
+}
+
 # Print the tail of a single log file under a labelled header.
 _print_log_section() {
     local label="$1"
@@ -836,15 +875,8 @@ _print_logread_section() {
     echo ""
 }
 
-# `logs [n]` — show the last n lines of every Tailscale log source at once.
-# Bundles the three files plus logread so users no longer have to remember the
-# individual paths/commands listed in the issue template.
-do_logs() {
-    local lines="${1:-$TS_LOG_DEFAULT_LINES}"
-    case "$lines" in
-        '' | *[!0-9]*) lines="$TS_LOG_DEFAULT_LINES" ;;
-    esac
-
+_do_logs_report() {
+    local lines="$1"
     echo ""
     echo "============================================="
     echo "  Tailscale Logs (last ${lines} lines)"
@@ -854,6 +886,51 @@ do_logs() {
     _print_log_section "Service log" "/var/log/tailscale.log" "$lines"
     _print_log_section "Auto-update log" "/var/log/tailscale-update.log" "$lines"
     _print_logread_section "$lines"
+}
+
+# `logs [n] [--maskinfo[=REGEX]]` — show the last n lines of every Tailscale
+# log source at once. The optional mask keeps shared troubleshooting output
+# pasteable by hiding addresses, MagicDNS names, emails, and custom regexes.
+do_logs() {
+    local lines="$TS_LOG_DEFAULT_LINES"
+    local mask_info=0
+    local mask_patterns=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --maskinfo)
+                mask_info=1
+                shift
+                ;;
+            --maskinfo=*)
+                mask_info=1
+                mask_patterns=$(_append_mask_pattern "$mask_patterns" "${1#--maskinfo=}")
+                shift
+                ;;
+            --mask-regex)
+                mask_info=1
+                if [ -n "${2:-}" ]; then
+                    mask_patterns=$(_append_mask_pattern "$mask_patterns" "$2")
+                    shift 2
+                else
+                    shift
+                fi
+                ;;
+            *)
+                case "$1" in
+                    '' | *[!0-9]*) ;;
+                    *) lines="$1" ;;
+                esac
+                shift
+                ;;
+        esac
+    done
+
+    if [ "$mask_info" = "1" ]; then
+        _do_logs_report "$lines" | _mask_private_info "$mask_patterns"
+    else
+        _do_logs_report "$lines"
+    fi
 }
 
 # Best-effort device model string for diagnostics output.
@@ -882,12 +959,8 @@ _diag_check_cmd() {
 # Collects everything the bug report template asks for (versions, platform,
 # install/runtime state, dependency checks, UCI config) plus recent log
 # excerpts, so a user can paste a single block into a GitHub issue.
-do_diagnostics() {
-    local log_lines="${1:-100}"
-    case "$log_lines" in
-        '' | *[!0-9]*) log_lines=100 ;;
-    esac
-
+_do_diagnostics_report() {
+    local log_lines="$1"
     local now arch raw_arch
     now=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) || now="unknown"
     raw_arch=$(uname -m 2>/dev/null) || raw_arch="unknown"
@@ -1030,6 +1103,48 @@ do_diagnostics() {
     echo "============================================="
     echo "  End of diagnostics"
     echo "============================================="
+}
+
+do_diagnostics() {
+    local log_lines=100
+    local mask_info=0
+    local mask_patterns=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --maskinfo)
+                mask_info=1
+                shift
+                ;;
+            --maskinfo=*)
+                mask_info=1
+                mask_patterns=$(_append_mask_pattern "$mask_patterns" "${1#--maskinfo=}")
+                shift
+                ;;
+            --mask-regex)
+                mask_info=1
+                if [ -n "${2:-}" ]; then
+                    mask_patterns=$(_append_mask_pattern "$mask_patterns" "$2")
+                    shift 2
+                else
+                    shift
+                fi
+                ;;
+            *)
+                case "$1" in
+                    '' | *[!0-9]*) ;;
+                    *) log_lines="$1" ;;
+                esac
+                shift
+                ;;
+        esac
+    done
+
+    if [ "$mask_info" = "1" ]; then
+        _do_diagnostics_report "$log_lines" | _mask_private_info "$mask_patterns"
+    else
+        _do_diagnostics_report "$log_lines"
+    fi
 }
 
 do_install_version() {

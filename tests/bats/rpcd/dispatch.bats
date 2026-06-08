@@ -35,6 +35,24 @@ grep -Fq 'json-status' '${TEST_DIR}/manager-call' || { echo 'manager not called 
     assert_success
 }
 
+@test "rpcd bridge sends info and warning logs to stderr" {
+    run bash -c "
+awk '
+    /^log_info\\(\\)/ { in_info = 1 }
+    /^log_warn\\(\\)/ { in_warn = 1 }
+    in_info && /echo \\\"\\[INFO\\]/ {
+        if (\$0 !~ />&2/) { print \"log_info stdout\"; exit 1 }
+    }
+    in_warn && /echo \\\"\\[WARN\\]/ {
+        if (\$0 !~ />&2/) { print \"log_warn stdout\"; exit 1 }
+    }
+    in_info && /^}/ { in_info = 0 }
+    in_warn && /^}/ { in_warn = 0 }
+' '${BRIDGE}'
+"
+    assert_success
+}
+
 @test "rpcd bridge passes install params to manager" {
     local TASK_DIR="${TEST_DIR}/tasks"
 

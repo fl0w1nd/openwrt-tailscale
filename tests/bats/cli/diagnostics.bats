@@ -53,6 +53,25 @@ run_manager() {
     refute_output --partial "ROW-1"
 }
 
+@test "logs --maskinfo redacts private troubleshooting data" {
+    MANAGER_LOG="${TEST_DIR}/manager.log"
+    printf 'peer 100.64.0.1 fd7a:115c:a1e0::1 router.tailabcd.ts.net. admin@example.com Archer-AT-Master\n' > "${MANAGER_LOG}"
+
+    run_manager logs --maskinfo=Archer-AT-Master
+
+    assert_success
+    assert_output --partial "xxx.xxx.xxx.xxx"
+    assert_output --partial "xxxx:xxxx::xxxx"
+    assert_output --partial "tailnet.ts.net."
+    assert_output --partial "user@example.invalid"
+    assert_output --partial "***"
+    refute_output --partial "100.64.0.1"
+    refute_output --partial "fd7a:115c:a1e0::1"
+    refute_output --partial "router.tailabcd.ts.net"
+    refute_output --partial "admin@example.com"
+    refute_output --partial "Archer-AT-Master"
+}
+
 @test "diagnostics prints a full report with the expected sections" {
     MANAGER_LOG="${TEST_DIR}/manager.log"
     : > "${MANAGER_LOG}"
