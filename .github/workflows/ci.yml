@@ -130,4 +130,8 @@ jobs:
           sudo apt-get install -y bats
 
       - name: Run API smoke tests
+        env:
+          # Authenticate GitHub API requests (1000 req/h vs 60 req/h
+          # unauthenticated) to avoid rate-limit flakes on shared runners.
+          SMOKE_GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tests/bats/_deps/bats-core/bin/bats tests/bats/smoke/

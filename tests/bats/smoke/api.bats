@@ -4,12 +4,36 @@
 # response shape, and version-parsing correctness. These are network-
 # dependent and should run AFTER the offline unit suite so that transient
 # API flakes don't block fast local feedback.
+#
+# When running in GitHub Actions, set SMOKE_GH_TOKEN to the workflow
+# GITHUB_TOKEN so that GitHub API requests are authenticated (1000 req/h
+# vs. 60 req/h for unauthenticated). Unauthenticated mode still works
+# for local runs.
 
 load ../_lib/load
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Fetch a URL via wget, optionally adding GitHub auth for api.github.com.
+# Usage: _wget_fetch <url> [extra_wget_args...]
+_wget_fetch() {
+    local url="$1"; shift
+
+    case "$url" in
+        https://api.github.com/*)
+            if [ -n "${SMOKE_GH_TOKEN:-}" ]; then
+                wget -qO- --header="Authorization: Bearer ${SMOKE_GH_TOKEN}" "$@" "$url" 2>/dev/null
+            else
+                wget -qO- "$@" "$url" 2>/dev/null
+            fi
+            ;;
+        *)
+            wget -qO- "$@" "$url" 2>/dev/null
+            ;;
+    esac
+}
 
 # Retry a command up to N times with a short delay between attempts.
 # Usage: retry_cmd <attempts> <delay_secs> <cmd> [args...]
@@ -32,7 +56,7 @@ retry_cmd() {
 # ---------------------------------------------------------------------------
 
 @test "official API is reachable and returns TarballsVersion" {
-    retry_cmd 3 5 wget -qO- "https://pkgs.tailscale.com/stable/?mode=json" 2>/dev/null \
+    retry_cmd 3 5 _wget_fetch "https://pkgs.tailscale.com/stable/?mode=json" \
         | grep -oE '"TarballsVersion"[: ]*"[^"]*"' \
         | head -1 \
         | grep -qE '"TarballsVersion"[: ]*"[0-9]+\.[0-9]+'
@@ -40,7 +64,7 @@ retry_cmd() {
 
 @test "official API TarballsVersion parses to a valid semver-like string" {
     local json_data
-    json_data=$(retry_cmd 3 5 wget -qO- "https://pkgs.tailscale.com/stable/?mode=json" 2>/dev/null)
+    json_data=$(retry_cmd 3 5 _wget_fetch "https://pkgs.tailscale.com/stable/?mode=json")
 
     local version
     version=$(echo "$json_data" | grep -oE '"TarballsVersion"[: ]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)".*/\1/')
@@ -51,7 +75,7 @@ retry_cmd() {
 }
 
 @test "official static versions page is reachable and contains option values" {
-    retry_cmd 3 5 wget -T 10 -qO- "https://pkgs.tailscale.com/stable/#static" 2>/dev/null \
+    retry_cmd 3 5 _wget_fetch "https://pkgs.tailscale.com/stable/#static" -T 10 \
         | grep -q 'option value="[0-9]'
 }
 
@@ -60,7 +84,7 @@ retry_cmd() {
 # ---------------------------------------------------------------------------
 
 @test "GitHub releases/latest API is reachable and returns tag_name" {
-    retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest" 2>/dev/null \
+    retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest" \
         | grep -oE '"tag_name"[: ]*"[^"]*"' \
         | head -1 \
         | grep -qE '"tag_name"[: ]*"v[0-9]+\.[0-9]+'
@@ -68,7 +92,7 @@ retry_cmd() {
 
 @test "GitHub releases/latest tag_name parses to a valid version" {
     local json_data
-    json_data=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest" 2>/dev/null)
+    json_data=$(retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest")
 
     local version
     version=$(echo "$json_data" | grep -oE '"tag_name"[: ]*"[^"]*"' | head -1 | sed -E 's/.*"v?([^"]*)".*/\1/')
@@ -79,7 +103,7 @@ retry_cmd() {
 
 @test "GitHub releases list API is reachable and returns multiple tag_names" {
     local json_data
-    json_data=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=5" 2>/dev/null)
+    json_data=$(retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=5")
 
     local count
     count=$(echo "$json_data" | grep -oE '"tag_name"[: ]*"[^"]*"' | wc -l | tr -d ' ')
@@ -92,7 +116,7 @@ retry_cmd() {
 
 @test "GitHub releases list extracts all versions from single-line JSON" {
     local json_data
-    json_data=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=5" 2>/dev/null)
+    json_data=$(retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=5")
 
     # The real API returns compact single-line JSON. Verify every tag_name
     # is extracted — not just the last (greedy) one.
@@ -110,13 +134,13 @@ retry_cmd() {
 @test "GitHub releases/tags API returns asset list for a known version" {
     # First get a known version from the releases list
     local json_data version
-    json_data=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=1" 2>/dev/null)
+    json_data=$(retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases?per_page=1")
     version=$(echo "$json_data" | grep -oE '"tag_name"[: ]*"[^"]*"' | head -1 | sed -E 's/.*"v?([^"]*)".*/\1/')
 
     [ -n "$version" ] || return 1
 
     local tag_data
-    tag_data=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/tags/v${version}" 2>/dev/null)
+    tag_data=$(retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/tags/v${version}")
 
     # Must contain at least one asset with a digest
     echo "$tag_data" | grep -qE '"digest"[[:space:]]*:[[:space:]]*"sha256:[0-9a-f]{64}"'
@@ -128,7 +152,7 @@ retry_cmd() {
 
 @test "mgmt VERSION endpoint is reachable and returns a version string" {
     local version
-    version=$(retry_cmd 3 5 wget -qO- "https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/mgmt/latest/VERSION" 2>/dev/null | head -1)
+    version=$(retry_cmd 3 5 _wget_fetch "https://raw.githubusercontent.com/fl0w1nd/openwrt-tailscale/mgmt/latest/VERSION" | head -1)
 
     [ -n "$version" ] || return 1
     echo "$version" | grep -qE '^[0-9]+\.[0-9]+'
@@ -140,7 +164,7 @@ retry_cmd() {
 
 @test "tailscale-update small mode fetches a valid latest version" {
     local version
-    version=$(retry_cmd 3 5 wget -qO- "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest" 2>/dev/null \
+    version=$(retry_cmd 3 5 _wget_fetch "https://api.github.com/repos/fl0w1nd/openwrt-tailscale/releases/latest" \
         | grep -oE '"tag_name"[: ]*"[^"]*"' \
         | head -1 \
         | sed -E 's/.*"v?([^"]*)".*/\1/')
@@ -151,7 +175,7 @@ retry_cmd() {
 
 @test "tailscale-update official mode fetches a valid latest version" {
     local version
-    version=$(retry_cmd 3 5 wget -qO- "https://pkgs.tailscale.com/stable/?mode=json" 2>/dev/null \
+    version=$(retry_cmd 3 5 _wget_fetch "https://pkgs.tailscale.com/stable/?mode=json" \
         | grep -oE '"TarballsVersion"[: ]*"[^"]*"' \
         | head -1 \
         | sed -E 's/.*"([^"]*)".*/\1/')
