@@ -1,6 +1,6 @@
 # 自动更新
 
-管理器仅对 Tailscale 二进制文件提供定时自动更新；管理脚本和 LuCI 界面**只能手动更新**，不会自动升级。
+管理器仅对 Tailscale 二进制文件提供定时自动更新；管理层文件通过 `self-update` 手动更新。
 
 ## Tailscale 二进制自动更新
 
@@ -25,7 +25,7 @@ tailscale-manager auto-update status   # 查看状态
 
 ## 管理层自更新
 
-`self-update` 会从 GitHub 上的版本化快照一步重装整个管理层：管理脚本、模块库、init/cron 脚本以及 LuCI 界面。你的设置（UCI 配置）、Tailscale 状态以及已安装的二进制都不会被改动。
+`self-update` 会从 GitHub 上的版本化快照一步重装管理层：管理脚本、模块库以及 init/cron 脚本。已安装 LuCI 或 UCI 中 `luci_enabled=1` 的设备会同步刷新 LuCI 文件。你的设置（UCI 配置）、Tailscale 状态以及已安装的二进制保持原样。
 
 ```sh
 tailscale-manager self-update

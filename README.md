@@ -31,13 +31,13 @@ Then follow the interactive prompts.
 
 - **One-command install** — interactive menu handles dependency detection, download, and service setup
 - **Small binary** — UPX-compressed Tailscale (~8-10 MB), 80% smaller than official packages
-- **Auto-updates** — daily cron for the Tailscale binary; management script/LuCI updates are manual only
+- **Auto-updates** — daily cron for the Tailscale binary; management updates are manual only
 - **Dual download source** — choose between official full binaries or compressed small binaries
 - **Subnet routing** — one-click network interface and firewall configuration
 - **Full OpenWrt integration** — UCI config, procd service, optional LuCI web UI
 - **Userspace fallback** — works even without kernel TUN support
 - **RAM mode** — run entirely from `/tmp` for devices with minimal flash storage
-- **LuCI management UI** — status monitoring, service control, version management, and log viewer
+- **Optional LuCI management UI** — status monitoring, service control, version management, and log viewer
 - **One-command diagnostics** — `tailscale-manager diagnostics` gathers everything a bug report needs in a single paste-ready block
 
 ## Documentation

@@ -1,6 +1,6 @@
 # Auto-Update
 
-The manager auto-updates the Tailscale binary on a schedule. The management script and LuCI interface are **manual-only** and never upgrade themselves.
+The manager auto-updates the Tailscale binary on a schedule. Management files are **manual-only** and upgrade through `self-update`.
 
 ## Tailscale Binary Auto-Update
 
@@ -25,7 +25,7 @@ tailscale-manager auto-update status   # Check status
 
 ## Management-Layer Self-Update
 
-`self-update` reinstalls the whole management layer in one step from the versioned snapshot on GitHub: the manager script, the library modules, the init/cron scripts, and the LuCI app. Your settings (UCI config), the Tailscale state, and the installed binary are left untouched.
+`self-update` reinstalls the management layer in one step from the versioned snapshot on GitHub: the manager script, the library modules, and the init/cron scripts. LuCI files are refreshed on devices where the LuCI UI is installed or `luci_enabled=1` is set in UCI. Your settings (UCI config), the Tailscale state, and the installed binary are left untouched.
 
 ```sh
 tailscale-manager self-update

@@ -17,6 +17,7 @@ config tailscale 'settings'
     option net_mode 'auto'          # Networking mode: auto | tun | userspace
     option proxy_listen 'localhost' # Proxy listen: localhost | lan
     option auto_update '0'          # Auto-update: 0 | 1
+    option luci_enabled '0'         # Optional LuCI UI: 0 | 1
 
     # Advanced (optional): custom procd env vars and tailscaled CLI args.
     # These list entries are preserved across manager upgrades.
@@ -53,6 +54,7 @@ If the [LuCI interface](/en/guide/luci) is installed, use **Services → Tailsca
 | `net_mode` | `auto` / `tun` / `userspace` | `auto` | Network mode |
 | `proxy_listen` | `localhost` / `lan` | `localhost` | Proxy listen address (userspace only) |
 | `auto_update` | `0` / `1` | `0` | Enable daily auto-update cron job |
+| `luci_enabled` | `0` / `1` | `0` | Track whether the optional LuCI web UI should be refreshed by `self-update` |
 | `extra_env` | `list KEY=VALUE` | empty | Extra procd environment variables — see [Advanced: Custom env and CLI arguments](#advanced-custom-env-and-cli-arguments) below |
 | `extra_args` | `list --flag=...` | empty | Extra `tailscaled` command-line arguments — see [Advanced: Custom env and CLI arguments](#advanced-custom-env-and-cli-arguments) below |
 

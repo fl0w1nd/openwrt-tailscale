@@ -35,7 +35,7 @@ derive_small_api_base_url() {
 # Configuration
 # ============================================================================
 
-VERSION="4.6.1"
+VERSION="4.6.2"
 
 # Download source: "official" or "small"
 # - official: Full binaries from pkgs.tailscale.com (~30-35MB)
@@ -773,7 +773,7 @@ main() {
     # any unrecognised argument fell through to check_script_update first, which
     # made bogus commands look like they "did something".
     case "${1:-}" in
-        install|update|rollback|uninstall|status|logs|diagnostics|doctor|download-only|install-version|list-small-versions|list-official-versions|setup-subnet-routing|self-update|auto-update|net-mode|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
+        install|update|rollback|uninstall|status|logs|diagnostics|doctor|download-only|install-version|list-small-versions|list-official-versions|setup-subnet-routing|self-update|auto-update|net-mode|luci|json-status|json-install-info|json-latest-versions|json-latest-version|json-script-local-info|json-script-info|-h|--help|help|-v|--version|"") ;;
         *)
             echo "Unknown command: $1"
             echo "Run '$0 help' for usage"
@@ -803,7 +803,7 @@ main() {
     # file-only (no console/syslog noise) and skips read-only/JSON commands so
     # frequent LuCI polling never floods the log.
     case "${1:-}" in
-        install|update|rollback|uninstall|install-version|download-only|setup-subnet-routing|self-update|auto-update|net-mode)
+        install|update|rollback|uninstall|install-version|download-only|setup-subnet-routing|self-update|auto-update|net-mode|luci)
             log_file "INFO" "Command invoked: $0 $*"
             ;;
     esac
@@ -935,6 +935,10 @@ main() {
                     ;;
             esac
             ;;
+        luci)
+            shift
+            do_luci "$@"
+            ;;
         json-status)
             cmd_json_status
             ;;
@@ -964,6 +968,7 @@ main() {
             echo "Tailscale commands (manage the Tailscale binary this tool installs):"
             echo "  install                      Install Tailscale (interactive)"
             echo "  install --yes [options]      Install Tailscale (non-interactive, for LuCI/automation)"
+            echo "                               Add --luci 1 to install the optional LuCI UI"
             echo "  install-version <ver>        Install a specific Tailscale version (non-interactive)"
             echo "  update [--yes]               Update the Tailscale binary to the latest version"
             echo "  rollback                     Roll back the Tailscale binary to the previous version"
@@ -976,6 +981,7 @@ main() {
             echo "  setup-subnet-routing         Configure interface/firewall for subnet routing"
             echo "  net-mode <auto|tun|userspace|status>"
             echo "                               Configure Tailscale networking mode"
+            echo "  luci <install|remove|status> Manage the optional LuCI web UI"
             echo "  uninstall [--yes]            Remove Tailscale"
             echo ""
             echo "Diagnostics & troubleshooting:"
@@ -984,7 +990,7 @@ main() {
             echo "                               (alias: doctor)"
             echo ""
             echo "Manager command (manages this tool itself, NOT the Tailscale binary):"
-            echo "  self-update [--yes]          Reinstall this manager (scripts + LuCI) to the latest version"
+            echo "  self-update [--yes]          Reinstall this manager (scripts and enabled LuCI) to the latest version"
             echo ""
             echo "Other:"
             echo "  help                         Show this help"

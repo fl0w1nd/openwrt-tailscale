@@ -105,6 +105,18 @@ validate_auto_update_flag() {
     esac
 }
 
+validate_luci_flag() {
+    local value="$1"
+
+    case "$value" in
+        0|1) ;;
+        *)
+            log_error "Invalid LuCI value: ${value}. Expected 0 or 1"
+            return 1
+            ;;
+    esac
+}
+
 safe_rm_tree() {
     local path="$1"
     local label="$2"
@@ -178,10 +190,15 @@ safe_rm_managed_luci_view_files() {
 # to start so callers can decide whether to abort or continue.
 _finalize_install() {
     local auto_update="${1:-0}"
+    local luci_enabled="${2:-0}"
 
     install_runtime_scripts || return 1
     install_update_script || return 1
-    install_luci_app || return 1
+    if [ "$luci_enabled" = "1" ]; then
+        install_luci_app || return 1
+    else
+        remove_luci_app || return 1
+    fi
     if [ "$auto_update" = "1" ]; then
         setup_cron
     else
@@ -365,11 +382,28 @@ do_install() {
         *) auto_update="0" ;;
     esac
 
-    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+    local luci_enabled="0"
+    local luci_prompt="Install LuCI web UI? [y/N]: "
+    if luci_app_is_installed || [ "$(get_luci_enabled_config)" = "1" ]; then
+        luci_enabled="1"
+        luci_prompt="Install LuCI web UI? [Y/n]: "
+    fi
+    echo ""
+    echo "LuCI web UI is optional."
+    echo "Memory note: on routers with only a few dozen MB of RAM, LuCI status"
+    echo "queries can run tailscale status --json through rpcd and trigger OOM."
+    printf "%s" "$luci_prompt"
+    read -r luci_answer
+    case "$luci_answer" in
+        [Yy]*) luci_enabled="1" ;;
+        [Nn]*) luci_enabled="0" ;;
+    esac
+
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update" "$luci_enabled"
 
     echo ""
     echo "Enabling and starting Tailscale service..."
-    _finalize_install "$auto_update" || return 1
+    _finalize_install "$auto_update" "$luci_enabled" || return 1
 
     echo ""
     local configured_net_mode
@@ -758,6 +792,10 @@ do_status() {
     else
         echo "  Disabled"
     fi
+
+    echo ""
+    echo "LuCI:"
+    echo "  Status: $(get_luci_app_status)"
 
     echo ""
     echo "Service status:"
@@ -1301,12 +1339,17 @@ do_install_version() {
     if download_tailscale "$selected_version" "$arch" "$bin_dir"; then
         create_symlinks "$bin_dir"
         mkdir -p "$STATE_DIR"
-        create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+        local luci_enabled
+        luci_enabled="$(get_luci_enabled_config)"
+        if [ "$luci_enabled" != "1" ] && luci_app_is_installed; then
+            luci_enabled="1"
+        fi
+        create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update" "$luci_enabled"
 
         echo ""
         echo "Installation success!"
         echo "Starting service..."
-        _finalize_install "$auto_update" || return 1
+        _finalize_install "$auto_update" "$luci_enabled" || return 1
     else
         echo "Installation failed."
         return 1
@@ -1336,8 +1379,56 @@ do_download_only() {
     download_tailscale "$version" "$arch" "$bin_dir"
 }
 
+do_luci() {
+    local action="status"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            install|remove|status)
+                action="$1"
+                shift
+                ;;
+            --yes|-y)
+                shift
+                ;;
+            *)
+                echo "Usage: $0 luci [install|remove|status] [--yes]"
+                return 1
+                ;;
+        esac
+    done
+
+    case "$action" in
+        install)
+            echo ""
+            echo "LuCI web UI memory note:"
+            echo "  Routers with only a few dozen MB of RAM can OOM when LuCI"
+            echo "  queries tailscale status --json through rpcd."
+            install_luci_app || return 1
+            if luci_app_is_installed; then
+                log_info "LuCI status: installed"
+            else
+                log_error "LuCI app install incomplete"
+                return 1
+            fi
+            ;;
+        remove)
+            remove_luci_app
+            ;;
+        status|"")
+            echo ""
+            echo "LuCI status: $(get_luci_app_status)"
+            echo ""
+            ;;
+        *)
+            echo "Usage: $0 luci [install|remove|status] [--yes]"
+            return 1
+            ;;
+    esac
+}
+
 cmd_install() {
-    local opt_source="" opt_storage="" opt_auto_update="" opt_bin_dir=""
+    local opt_source="" opt_storage="" opt_auto_update="" opt_bin_dir="" opt_luci=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -1361,6 +1452,11 @@ cmd_install() {
                 opt_bin_dir="$2"
                 shift 2
                 ;;
+            --luci)
+                require_option_value "$1" "${2:-}" || return 1
+                opt_luci="$2"
+                shift 2
+                ;;
             *) log_error "Unknown option: $1"; return 1 ;;
         esac
     done
@@ -1368,6 +1464,7 @@ cmd_install() {
     local download_source="${opt_source:-small}"
     local storage_mode="${opt_storage:-persistent}"
     local auto_update="${opt_auto_update:-0}"
+    local luci_enabled="${opt_luci:-0}"
     local persistent_bin_dir="$PERSISTENT_DIR"
     local bin_dir="$PERSISTENT_DIR"
 
@@ -1375,6 +1472,7 @@ cmd_install() {
     validate_download_source "$download_source" || return 1
     validate_storage_mode "$storage_mode" || return 1
     validate_auto_update_flag "$auto_update" || return 1
+    validate_luci_flag "$luci_enabled" || return 1
 
     if [ -r /lib/functions.sh ] && [ -f "$CONFIG_FILE" ]; then
         . /lib/functions.sh
@@ -1383,12 +1481,17 @@ cmd_install() {
         [ -z "$opt_storage" ] && config_get storage_mode settings storage_mode "$storage_mode"
         [ -z "$opt_auto_update" ] && config_get auto_update settings auto_update "$auto_update"
         [ -z "$opt_bin_dir" ] && config_get persistent_bin_dir settings bin_dir "$persistent_bin_dir"
+        [ -z "$opt_luci" ] && config_get luci_enabled settings luci_enabled "$luci_enabled"
+    fi
+    if [ -z "$opt_luci" ] && luci_app_is_installed; then
+        luci_enabled="1"
     fi
 
     # Re-validate after UCI config may have overridden values
     validate_download_source "$download_source" || return 1
     validate_storage_mode "$storage_mode" || return 1
     validate_auto_update_flag "$auto_update" || return 1
+    validate_luci_flag "$luci_enabled" || return 1
 
     if [ -n "$opt_bin_dir" ]; then
         require_absolute_path "$opt_bin_dir" "--bin-dir" || return 1
@@ -1436,9 +1539,9 @@ cmd_install() {
 
     create_symlinks "$bin_dir"
     mkdir -p "$STATE_DIR"
-    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update"
+    create_uci_config "$storage_mode" "$bin_dir" "$DOWNLOAD_SOURCE" "$auto_update" "$luci_enabled"
 
-    _finalize_install "$auto_update" || return 1
+    _finalize_install "$auto_update" "$luci_enabled" || return 1
     log_info "Installation complete"
 }
 

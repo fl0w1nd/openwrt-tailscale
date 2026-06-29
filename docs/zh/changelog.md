@@ -2,6 +2,15 @@
 
 tailscale-manager 脚本的所有重要变更记录于此。版本号以 `tailscale-manager.sh` 中的 `VERSION` 字段为准。
 
+## v4.6.2 (2026-06-29)
+
+- LuCI 改为可选安装，新增 `tailscale-manager luci install|remove|status` 与 `install --yes --luci 1`
+- 统一 install、reinstall、self-update 流程中的 LuCI 状态处理
+
+## v4.6.1 (2026-06-09)
+
+- 为 `logs` 和 `diagnostics` 增加 `--maskinfo`，用于隐藏自定义敏感字符串
+
 ## v4.6.0 (2026-06-08)
 
 - 修复贪婪 `sed` 解析 JSON 的 bug：在 GitHub API 返回单行 JSON 时只提取最旧版本而非最新版本；受影响函数包括 `list-small-versions`、`get-small-latest-version`、`get-official-latest-version` 及 `tailscale-update`；改用 `grep -oE` + `sed -E` 两阶段提取 (#33)

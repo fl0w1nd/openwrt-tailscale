@@ -35,10 +35,35 @@ The LuCI app is organized into four tabs:
 
 ## Installation
 
-The LuCI interface is automatically installed when you run `tailscale-manager install` (and refreshed by `tailscale-manager self-update`). It requires:
+The LuCI interface is optional. The first `tailscale-manager install` keeps it disabled by default. It requires:
 
 - LuCI (included in most OpenWrt firmware)
 - rpcd (for RPC communication)
+
+Install it after the CLI setup:
+
+```sh
+tailscale-manager luci install
+```
+
+Or include it in a non-interactive install:
+
+```sh
+tailscale-manager install --yes --luci 1
+```
+
+Check or remove the UI:
+
+```sh
+tailscale-manager luci status
+tailscale-manager luci remove
+```
+
+`tailscale-manager self-update` refreshes LuCI files on devices where LuCI is installed or `luci_enabled=1` is set in UCI.
+
+::: warning Low-memory devices
+The Status page can call `tailscale status --json` through rpcd. Routers with only a few dozen MB of RAM can run out of memory during that query. Use CLI commands on very low-memory devices.
+:::
 
 ## Accessing
 

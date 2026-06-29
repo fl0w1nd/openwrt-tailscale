@@ -28,8 +28,13 @@ wget -O /usr/bin/tailscale-manager https://raw.githubusercontent.com/fl0w1nd/ope
 2. **存储模式** — 持久化（`/opt/tailscale`）或内存（`/tmp/tailscale`）
 3. **二进制目录**（仅持久化模式）— 接受默认值，或输入绝对路径（如 `/mnt/sda1/tailscale`）把二进制装到外置挂载点；详见[自定义二进制目录](/zh/guide/storage-modes#自定义二进制目录)
 4. **自动更新** — 可选的每日定时拉取新版本（默认关闭）
-5. **下载安装** — 自动获取适配你设备架构的二进制文件
-6. **启动服务** — 通过 procd 初始化系统启动 Tailscale
+5. **LuCI Web 界面** — 可选的网页管理界面（默认关闭）
+6. **下载安装** — 自动获取适配你设备架构的二进制文件
+7. **启动服务** — 通过 procd 初始化系统启动 Tailscale
+
+::: warning LuCI 内存占用
+LuCI 状态页会通过 rpcd 调用管理器，管理器可能执行 `tailscale status --json` 收集设备信息。只有几十 MB 内存的路由器可能在这类查询中 OOM。低内存设备推荐使用 CLI 命令管理。
+:::
 
 ## 依赖管理
 
@@ -56,6 +61,26 @@ tailscale up
 ```
 
 然后在 [Tailscale 管理控制台](https://login.tailscale.com/admin/machines) 中批准该设备。
+
+## 可选 LuCI 界面
+
+首次安装默认关闭 LuCI 界面。之后可通过以下命令安装：
+
+```sh
+tailscale-manager luci install
+```
+
+脚本化安装可使用：
+
+```sh
+tailscale-manager install --yes --luci 1
+```
+
+仅移除 LuCI 界面：
+
+```sh
+tailscale-manager luci remove
+```
 
 ## 下一步
 

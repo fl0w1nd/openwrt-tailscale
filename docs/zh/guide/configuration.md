@@ -17,6 +17,7 @@ config tailscale 'settings'
     option net_mode 'auto'          # 网络模式：auto | tun | userspace
     option proxy_listen 'localhost' # 代理监听：localhost | lan
     option auto_update '0'          # 自动更新：0 | 1
+    option luci_enabled '0'         # 可选 LuCI 界面：0 | 1
 
     # 高级（可选）：自定义 procd 环境变量与 tailscaled 命令行参数
     # 这些 list 项不会被脚本升级覆盖
@@ -53,6 +54,7 @@ uci commit tailscale
 | `net_mode` | `auto` / `tun` / `userspace` | `auto` | 网络模式 |
 | `proxy_listen` | `localhost` / `lan` | `localhost` | 代理监听地址（仅用户空间模式） |
 | `auto_update` | `0` / `1` | `0` | 启用每日自动更新定时任务 |
+| `luci_enabled` | `0` / `1` | `0` | 标记可选 LuCI Web 界面是否跟随 `self-update` 刷新 |
 | `extra_env` | `list KEY=VALUE` | 空 | 额外的 procd 环境变量，详见下方[高级：自定义 env 和 CLI 参数](#高级-自定义-env-和-cli-参数) |
 | `extra_args` | `list --flag=...` | 空 | 额外的 `tailscaled` 命令行参数，详见下方[高级：自定义 env 和 CLI 参数](#高级-自定义-env-和-cli-参数) |
 

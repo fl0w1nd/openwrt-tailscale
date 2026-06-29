@@ -2,6 +2,15 @@
 
 All notable changes to the tailscale-manager script are documented here. Versions are determined by the `VERSION` field in `tailscale-manager.sh`.
 
+## v4.6.2 (2026-06-29)
+
+- Make LuCI an opt-in install with `tailscale-manager luci install|remove|status` and `install --yes --luci 1`
+- Keep LuCI state consistent across install, reinstall, and self-update flows
+
+## v4.6.1 (2026-06-09)
+
+- Add `--maskinfo` support to `logs` and `diagnostics` for masking custom sensitive strings
+
 ## v4.6.0 (2026-06-08)
 
 - Fix greedy `sed` JSON parsing that extracted the oldest instead of the newest version from compact single-line GitHub API responses (`list-small-versions`, `get-small-latest-version`, `get-official-latest-version`, `tailscale-update`); replaced with `grep -oE` + `sed -E` two-stage extraction (#33)

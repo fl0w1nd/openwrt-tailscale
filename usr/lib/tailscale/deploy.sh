@@ -33,6 +33,7 @@ create_uci_config() {
     local bin_dir="$2"
     local download_source="${3:-official}"
     local auto_update="${4:-0}"
+    local luci_enabled="${5:-0}"
 
     if ! command -v uci >/dev/null 2>&1; then
         log_error "uci not found, cannot create config"
@@ -68,6 +69,7 @@ create_uci_config() {
     uci_set_value statedir "$STATE_DIR" || return 1
     uci_set_value download_source "$download_source" || return 1
     uci_set_value auto_update "$auto_update" || return 1
+    uci_set_value luci_enabled "$luci_enabled" || return 1
 
     uci_set_default port '41641' || return 1
     uci_set_default update_cron '30 3 * * *' || return 1
@@ -82,6 +84,84 @@ create_uci_config() {
     fi
 
     log_info "Created UCI config at ${CONFIG_FILE}"
+}
+
+get_luci_enabled_config() {
+    local luci_enabled="0"
+
+    if [ -f "$CONFIG_FILE" ] && [ -r /lib/functions.sh ]; then
+        if ! type config_load >/dev/null 2>&1; then
+            . /lib/functions.sh
+        fi
+        config_load tailscale 2>/dev/null || true
+        config_get luci_enabled settings luci_enabled "0"
+    elif command -v uci >/dev/null 2>&1; then
+        luci_enabled=$(uci -q get tailscale.settings.luci_enabled 2>/dev/null) || luci_enabled="0"
+    fi
+
+    case "$luci_enabled" in
+        1) printf '1' ;;
+        *) printf '0' ;;
+    esac
+}
+
+set_luci_enabled_config() {
+    local value="$1"
+
+    [ -f "$CONFIG_FILE" ] || return 0
+    command -v uci >/dev/null 2>&1 || return 0
+
+    uci set tailscale.settings.luci_enabled="$value" 2>/dev/null || {
+        log_error "Failed to set luci_enabled in UCI"
+        return 1
+    }
+    uci commit tailscale 2>/dev/null || {
+        log_error "Failed to commit UCI config"
+        return 1
+    }
+}
+
+luci_app_is_installed() {
+    [ -f "${LUCI_VIEW_DIR}/config.js" ] || return 1
+    [ -f "${LUCI_VIEW_DIR}/status.js" ] || return 1
+    [ -f "${LUCI_VIEW_DIR}/maintenance.js" ] || return 1
+    [ -f "${LUCI_VIEW_DIR}/log.js" ] || return 1
+    [ -x "$LUCI_RPC_DEST" ] || return 1
+    [ -f "$LUCI_MENU_DEST" ] || return 1
+    [ -f "$LUCI_ACL_DEST" ] || return 1
+}
+
+get_luci_app_status() {
+    if luci_app_is_installed; then
+        printf 'installed'
+    elif [ "$(get_luci_enabled_config)" = "1" ]; then
+        printf 'available'
+    else
+        printf 'disabled'
+    fi
+}
+
+should_refresh_luci_app() {
+    [ "$(get_luci_enabled_config)" = "1" ] && return 0
+    luci_app_is_installed
+}
+
+remove_luci_app() {
+    rm -f "${LUCI_VIEW_DIR}/config.js" \
+          "${LUCI_VIEW_DIR}/status.js" \
+          "${LUCI_VIEW_DIR}/maintenance.js" \
+          "${LUCI_VIEW_DIR}/log.js" 2>/dev/null || true
+    rmdir "$LUCI_VIEW_DIR" 2>/dev/null || true
+    rm -f "$LUCI_RPC_DEST" \
+          "$LUCI_MENU_DEST" \
+          "$LUCI_ACL_DEST" \
+          /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
+    if [ -x /etc/init.d/rpcd ]; then
+        /etc/init.d/rpcd reload 2>/dev/null || true
+    fi
+    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+    set_luci_enabled_config "0" || return 1
+    log_info "Removed LuCI app files"
 }
 
 # Install common.sh shared library
@@ -121,7 +201,7 @@ deploy_management_bundle() {
         return 1
     }
 
-    local files="
+    local core_files="
 tailscale-manager.sh|${MANAGER_BIN_PATH:-/usr/bin/tailscale-manager}|755
 usr/lib/tailscale/common.sh|${COMMON_LIB_PATH}|644
 usr/lib/tailscale/jsonutil.sh|${LIB_DIR}/jsonutil.sh|644
@@ -135,6 +215,8 @@ usr/lib/tailscale/menu.sh|${LIB_DIR}/menu.sh|644
 usr/lib/tailscale/json.sh|${LIB_DIR}/json.sh|644
 usr/bin/tailscale-update|${CRON_SCRIPT}|755
 etc/init.d/tailscale|${INIT_SCRIPT}|755
+"
+    local luci_files="
 luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/config.js|${LUCI_VIEW_DIR}/config.js|644
 luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/status.js|${LUCI_VIEW_DIR}/status.js|644
 luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/maintenance.js|${LUCI_VIEW_DIR}/maintenance.js|644
@@ -143,6 +225,14 @@ luci-app-tailscale/root/usr/libexec/rpcd/luci-tailscale|${LUCI_RPC_DEST}|755
 luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json|${LUCI_MENU_DEST}|644
 luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json|${LUCI_ACL_DEST}|644
 "
+    local files="$core_files"
+    local refresh_luci=0
+
+    if should_refresh_luci_app; then
+        files="${files}
+${luci_files}"
+        refresh_luci=1
+    fi
 
     for entry in $files; do
         src="${entry%%|*}"
@@ -215,11 +305,14 @@ luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json|${LUCI_ACL_
         rm -f "${dest}${bak_suffix}" "${dest}${stag_suffix}"
     done
 
-    rm -f /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
-    if [ -x /etc/init.d/rpcd ]; then
-        /etc/init.d/rpcd reload 2>/dev/null || true
+    if [ "$refresh_luci" = "1" ]; then
+        rm -f /usr/share/rpcd/ucode/luci-tailscale.uc 2>/dev/null || true
+        if [ -x /etc/init.d/rpcd ]; then
+            /etc/init.d/rpcd reload 2>/dev/null || true
+        fi
+        rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+        set_luci_enabled_config "1" || return 1
     fi
-    rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
 
     setup_cron || return 1
 
@@ -279,8 +372,8 @@ ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
     # Stage: download all files to staging paths
     if ! download_repo_file "$_first_url" "${_first_dest}${stag}" 644; then
         rm -f "${_first_dest}${stag}"
-        log_warn "LuCI app not available yet, skipping"
-        return 0
+        log_error "LuCI app download failed: ${_first_url}"
+        return 1
     fi
 
     local _failed=0
@@ -356,6 +449,7 @@ ${LUCI_ACL_URL}|${LUCI_ACL_DEST}|644
         /etc/init.d/rpcd reload 2>/dev/null || true
     fi
     rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+    set_luci_enabled_config "1" || return 1
     log_info "Installed LuCI app files"
 }
 

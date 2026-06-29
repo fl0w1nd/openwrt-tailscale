@@ -14,7 +14,7 @@ Running without arguments opens the interactive menu.
 
 ::: tip Two independent kinds of "update"
 - `update` / `auto-update` act on the **Tailscale binary** (the VPN program this tool installs).
-- `self-update` acts on **this manager** (its scripts and the LuCI app).
+- `self-update` acts on **this manager** (scripts, libraries, init/cron scripts, and enabled LuCI files).
 
 They are completely independent: updating Tailscale never touches the manager, and `self-update` never touches Tailscale.
 :::
@@ -61,11 +61,13 @@ tailscale-manager logs 500 --maskinfo='my-router-name'
 | `--storage` | `persistent` / `ram` | Storage mode (`install --yes` only) |
 | `--auto-update` | `0` / `1` | Enable daily Tailscale auto-update cron (`install --yes` only) |
 | `--bin-dir` | absolute path | Custom binary directory for persistent mode (see [Storage Modes](/en/guide/storage-modes#custom-binary-directory)) |
+| `--luci` | `0` / `1` | Install the optional LuCI web UI (`install --yes` only; default: `0`) |
 
 Examples:
 
 ```sh
 tailscale-manager install --yes --source small --bin-dir /mnt/sda1/tailscale
+tailscale-manager install --yes --source small --luci 1
 tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 ```
 
@@ -91,11 +93,21 @@ tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 
 (`on`/`off`/`1`/`0` are still accepted as aliases for `enable`/`disable`.)
 
+### LuCI Web UI
+
+| Command | Description |
+|---------|-------------|
+| `luci install` | Install the optional LuCI web UI |
+| `luci remove` | Remove only the LuCI web UI files |
+| `luci status` | Show LuCI state: `installed`, `available`, or `disabled` |
+
+The LuCI UI is disabled by default on first install. Low-memory routers can run out of memory when LuCI calls `tailscale status --json` through rpcd.
+
 ### Manager self-update
 
 | Command | Description |
 |---------|-------------|
-| `self-update [--yes]` | Reinstall **this manager** (script, libraries, and LuCI app) to the latest version in one step. Does **not** touch the Tailscale binary. |
+| `self-update [--yes]` | Reinstall **this manager** (script, libraries, init/cron scripts, and enabled LuCI files) to the latest version in one step. Leaves the Tailscale binary unchanged. |
 
 ### Other
 

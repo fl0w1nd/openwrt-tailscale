@@ -14,7 +14,7 @@ tailscale-manager [命令] [选项]
 
 ::: tip 两种互相独立的「更新」
 - `update` / `auto-update` 作用于 **Tailscale 二进制**（本工具安装的 VPN 程序）。
-- `self-update` 作用于 **管理器本身**（管理脚本与 LuCI 界面）。
+- `self-update` 作用于 **管理器本身**（管理脚本、库文件、init/cron 脚本以及已启用的 LuCI 文件）。
 
 两者完全独立：更新 Tailscale 不会动管理器，`self-update` 也不会动 Tailscale。
 :::
@@ -61,11 +61,13 @@ tailscale-manager logs 500 --maskinfo='my-router-name'
 | `--storage` | `persistent` / `ram` | 存储模式（仅 `install --yes`） |
 | `--auto-update` | `0` / `1` | 启用每日 Tailscale 自动更新定时任务（仅 `install --yes`） |
 | `--bin-dir` | 绝对路径 | 持久化模式下的自定义二进制目录（详见[存储模式](/zh/guide/storage-modes#自定义二进制目录)） |
+| `--luci` | `0` / `1` | 安装可选 LuCI Web 界面（仅 `install --yes`，默认：`0`） |
 
 示例：
 
 ```sh
 tailscale-manager install --yes --source small --bin-dir /mnt/sda1/tailscale
+tailscale-manager install --yes --source small --luci 1
 tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 ```
 
@@ -91,11 +93,21 @@ tailscale-manager install-version 1.78.0 --bin-dir /mnt/sda1/tailscale
 
 （仍兼容旧写法 `on`/`off`/`1`/`0`，等价于 `enable`/`disable`。）
 
+### LuCI Web 界面
+
+| 命令 | 说明 |
+|------|------|
+| `luci install` | 安装可选 LuCI Web 界面 |
+| `luci remove` | 仅移除 LuCI Web 界面文件 |
+| `luci status` | 显示 LuCI 状态：`installed`、`available` 或 `disabled` |
+
+首次安装默认关闭 LuCI 界面。低内存路由器通过 LuCI/rpcd 调用 `tailscale status --json` 时可能 OOM。
+
 ### 管理器自更新
 
 | 命令 | 说明 |
 |------|------|
-| `self-update [--yes]` | 一步重装 **管理器本身**（管理脚本、库文件、LuCI 界面）到最新版本，**不会** 改动 Tailscale 二进制 |
+| `self-update [--yes]` | 一步重装 **管理器本身**（管理脚本、库文件、init/cron 脚本以及已启用的 LuCI 文件）到最新版本；Tailscale 二进制保持原样 |
 
 ### 其他
 

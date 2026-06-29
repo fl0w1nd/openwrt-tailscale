@@ -49,10 +49,12 @@ get_latest_version() { echo 1.76.1; }
 download_tailscale() { mkdir -p "\$3"; printf '%s\n' "\$1" > "\$3/version"; }
 create_symlinks() { echo symlinks >> "\$CALLS"; }
 create_uci_config() {
-    echo "uci \$1 \$2 \$3 \$4" >> "\$CALLS"
+    echo "uci \$1 \$2 \$3 \$4 \${5:-0}" >> "\$CALLS"
     mkdir -p "\$(dirname "\$CONFIG_FILE")"
     : > "\$CONFIG_FILE"
 }
+set_luci_enabled_config() { echo "luci-enabled \$1" >> "\$CALLS"; }
+remove_luci_app() { echo remove-luci >> "\$CALLS"; set_luci_enabled_config 0; }
 install_runtime_scripts() { echo runtime >> "\$CALLS"; }
 install_update_script() { echo update >> "\$CALLS"; }
 install_luci_app() { echo luci >> "\$CALLS"; }
@@ -63,14 +65,39 @@ show_service_status() { echo status >> "\$CALLS"; }
 EOF
 }
 
-@test "interactive install deploys all expected components" {
+@test "interactive install skips LuCI by default" {
     run_in_sh auto "$(_install_stubs)
 
 get_configured_net_mode() { echo userspace; }
 get_effective_net_mode() { echo userspace; }
 show_userspace_subnet_guidance() { echo userspace-guidance >> \"\$CALLS\"; }
 
-printf '\n\n\n\n' | do_install >/dev/null
+printf '\n\n\n\n\n' | do_install >/dev/null
+
+grep -Fq 'runtime' \"\$CALLS\"
+grep -Fq 'update' \"\$CALLS\"
+if grep -Fxq 'luci' \"\$CALLS\"; then
+    echo 'interactive install should skip luci by default'
+    exit 1
+fi
+grep -Fq 'luci-enabled 0' \"\$CALLS\"
+grep -Fq 'remove-luci' \"\$CALLS\"
+grep -Fq 'cron-off' \"\$CALLS\"
+grep -Fq 'init enable' \"\$INIT_CALLS_LOG\"
+grep -Fq 'init start' \"\$INIT_CALLS_LOG\"
+grep -Fq 'status' \"\$CALLS\"
+"
+    assert_success
+}
+
+@test "interactive install deploys LuCI when selected" {
+    run_in_sh auto "$(_install_stubs)
+
+get_configured_net_mode() { echo userspace; }
+get_effective_net_mode() { echo userspace; }
+show_userspace_subnet_guidance() { echo userspace-guidance >> \"\$CALLS\"; }
+
+printf '\n\n\n\ny\n' | do_install >/dev/null
 
 grep -Fq 'runtime' \"\$CALLS\"
 grep -Fq 'update' \"\$CALLS\"
@@ -79,6 +106,25 @@ grep -Fq 'cron-off' \"\$CALLS\"
 grep -Fq 'init enable' \"\$INIT_CALLS_LOG\"
 grep -Fq 'init start' \"\$INIT_CALLS_LOG\"
 grep -Fq 'status' \"\$CALLS\"
+"
+    assert_success
+}
+
+@test "interactive install keeps existing LuCI on blank answer" {
+    run_in_sh auto "$(_install_stubs)
+
+get_configured_net_mode() { echo userspace; }
+get_effective_net_mode() { echo userspace; }
+show_userspace_subnet_guidance() { echo userspace-guidance >> \"\$CALLS\"; }
+luci_app_is_installed() { return 0; }
+
+printf '\n\n\n\n\n' | do_install >/dev/null
+
+grep -Fq 'luci' \"\$CALLS\"
+if grep -Fq 'remove-luci' \"\$CALLS\"; then
+    echo 'interactive install should preserve existing luci on blank answer'
+    exit 1
+fi
 "
     assert_success
 }
@@ -95,7 +141,7 @@ get_configured_net_mode() { echo userspace; }
 get_effective_net_mode() { echo userspace; }
 show_userspace_subnet_guidance() { echo userspace-guidance >> \"\$CALLS\"; }
 
-if printf '\n\n\n\n' | do_install >/dev/null; then
+if printf '\n\n\n\n\n' | do_install >/dev/null; then
     echo 'do_install should fail when finalize step fails'
     exit 1
 fi
@@ -109,10 +155,48 @@ fi
     assert_success
 }
 
-@test "install --yes deploys LuCI app files" {
+@test "install --yes skips LuCI by default" {
     run_in_sh auto "$(_install_stubs)
 
 cmd_install --source official --storage ram --auto-update 1 >/dev/null
+
+[ -f '${RAM_DIR}/version' ]
+grep -Fq 'runtime' \"\$CALLS\"
+grep -Fq 'update' \"\$CALLS\"
+if grep -Fxq 'luci' \"\$CALLS\"; then
+    echo 'install --yes should skip luci by default'
+    exit 1
+fi
+grep -Fq 'luci-enabled 0' \"\$CALLS\"
+grep -Fq 'remove-luci' \"\$CALLS\"
+grep -Fq 'cron-on' \"\$CALLS\"
+grep -Fq 'init enable' \"\$INIT_CALLS_LOG\"
+grep -Fq 'init start' \"\$INIT_CALLS_LOG\"
+"
+    assert_success
+}
+
+@test "install --yes --luci 0 removes existing LuCI app files" {
+    run_in_sh auto "$(_install_stubs)
+
+luci_app_is_installed() { return 0; }
+
+cmd_install --source official --storage ram --auto-update 1 --luci 0 >/dev/null
+
+grep -Fq 'remove-luci' \"\$CALLS\"
+grep -Fq 'luci-enabled 0' \"\$CALLS\"
+if grep -Fxq 'luci' \"\$CALLS\"; then
+    echo 'install --yes --luci 0 should remove luci files'
+    exit 1
+fi
+"
+    assert_success
+}
+
+@test "install --yes deploys LuCI app files with --luci 1" {
+    run_in_sh auto "$(_install_stubs)
+
+cmd_install --source official --storage ram --auto-update 1 --luci 1 >/dev/null
 
 [ -f '${RAM_DIR}/version' ]
 grep -Fq 'runtime' \"\$CALLS\"
@@ -134,7 +218,7 @@ custom_dir='${custom_dir}'
 cmd_install --source official --storage persistent --bin-dir \"\$custom_dir\" >/dev/null
 
 [ -f \"\$custom_dir/version\" ] || { echo \"expected version file in \$custom_dir\"; exit 1; }
-grep -Fq \"uci persistent \$custom_dir official 0\" \"\$CALLS\" || {
+grep -Fq \"uci persistent \$custom_dir official 0 0\" \"\$CALLS\" || {
     echo 'UCI config did not record custom bin_dir'
     cat \"\$CALLS\"
     exit 1
@@ -170,7 +254,7 @@ done
 @test "install --yes rejects missing option values" {
     run_in_sh auto "$(_install_stubs)
 
-for args in '--source' '--storage' '--auto-update' '--bin-dir'; do
+for args in '--source' '--storage' '--auto-update' '--bin-dir' '--luci'; do
     # shellcheck disable=SC2086
     if cmd_install \$args >/dev/null 2>&1; then
         echo 'cmd_install should reject missing option value'
@@ -198,6 +282,10 @@ if cmd_install --storage flash >/dev/null 2>&1; then
 fi
 if cmd_install --auto-update yes >/dev/null 2>&1; then
     echo 'cmd_install should reject invalid auto-update value'
+    exit 1
+fi
+if cmd_install --luci yes >/dev/null 2>&1; then
+    echo 'cmd_install should reject invalid luci value'
     exit 1
 fi
 "

@@ -37,6 +37,26 @@ install_luci_app || rc=\$?
     assert_success
 }
 
+@test "install_luci_app: reports rc=1 when first file download fails" {
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+download_repo_file() {
+    return 1
+}
+
+rc=0
+install_luci_app || rc=\$?
+[ \"\$rc\" -eq 1 ] || { echo \"expected rc=1 for first download failure, got \$rc\"; exit 1; }
+"
+    assert_success
+}
+
 @test "install_luci_app: rollback cleans first-install files on failure" {
     local LUCI_VIEW_DIR="${TEST_DIR}/luci/view"
     local LUCI_RPC_DEST="${TEST_DIR}/luci/rpcd/luci-tailscale"
@@ -190,6 +210,141 @@ fi
 grep -Fq 'set tailscale.settings.bin_dir=/opt/tailscale' '${TEST_DIR}/uci.log'
 grep -Fq 'set tailscale.settings.download_source=small' '${TEST_DIR}/uci.log'
 grep -Fq 'set tailscale.settings.auto_update=1' '${TEST_DIR}/uci.log'
+grep -Fq 'set tailscale.settings.luci_enabled=0' '${TEST_DIR}/uci.log'
+"
+    assert_success
+}
+
+@test "luci install deploys files and enables UCI flag" {
+    local LUCI_VIEW_DIR="${TEST_DIR}/luci/view"
+    local LUCI_RPC_DEST="${TEST_DIR}/luci/rpcd/luci-tailscale"
+    local LUCI_MENU_DEST="${TEST_DIR}/luci/menu/luci-app-tailscale.json"
+    local LUCI_ACL_DEST="${TEST_DIR}/luci/acl/luci-app-tailscale.json"
+    local CONFIG_FILE="${TEST_DIR}/root/etc/config/tailscale"
+
+    mkdir -p "$(dirname "${CONFIG_FILE}")"
+    : > "${CONFIG_FILE}"
+
+    bin_stub uci '#!/bin/sh
+printf "%s\n" "$*" >> "${TEST_DIR}/uci.log"
+case "$*" in
+    set\ tailscale.settings.luci_enabled=1) exit 0 ;;
+    commit\ tailscale) exit 0 ;;
+    *) exit 0 ;;
+esac'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+LUCI_VIEW_DIR='${LUCI_VIEW_DIR}'
+LUCI_RPC_DEST='${LUCI_RPC_DEST}'
+LUCI_MENU_DEST='${LUCI_MENU_DEST}'
+LUCI_ACL_DEST='${LUCI_ACL_DEST}'
+CONFIG_FILE='${CONFIG_FILE}'
+export LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST CONFIG_FILE
+
+install_luci_app() {
+    mkdir -p \"\$LUCI_VIEW_DIR\" \"\$(dirname \"\$LUCI_RPC_DEST\")\" \
+        \"\$(dirname \"\$LUCI_MENU_DEST\")\" \"\$(dirname \"\$LUCI_ACL_DEST\")\"
+    : > \"\$LUCI_VIEW_DIR/config.js\"
+    : > \"\$LUCI_VIEW_DIR/status.js\"
+    : > \"\$LUCI_VIEW_DIR/maintenance.js\"
+    : > \"\$LUCI_VIEW_DIR/log.js\"
+    : > \"\$LUCI_RPC_DEST\"
+    chmod +x \"\$LUCI_RPC_DEST\"
+    : > \"\$LUCI_MENU_DEST\"
+    : > \"\$LUCI_ACL_DEST\"
+    set_luci_enabled_config 1
+}
+
+do_luci install --yes >/dev/null
+
+grep -Fq 'set tailscale.settings.luci_enabled=1' '${TEST_DIR}/uci.log'
+[ \"\$(get_luci_app_status)\" = 'installed' ]
+"
+    assert_success
+}
+
+@test "luci remove clears files and disables UCI flag" {
+    local LUCI_VIEW_DIR="${TEST_DIR}/luci/view"
+    local LUCI_RPC_DEST="${TEST_DIR}/luci/rpcd/luci-tailscale"
+    local LUCI_MENU_DEST="${TEST_DIR}/luci/menu/luci-app-tailscale.json"
+    local LUCI_ACL_DEST="${TEST_DIR}/luci/acl/luci-app-tailscale.json"
+    local CONFIG_FILE="${TEST_DIR}/root/etc/config/tailscale"
+
+    mkdir -p "${LUCI_VIEW_DIR}" "$(dirname "${LUCI_RPC_DEST}")" \
+        "$(dirname "${LUCI_MENU_DEST}")" "$(dirname "${LUCI_ACL_DEST}")" \
+        "$(dirname "${CONFIG_FILE}")"
+    : > "${CONFIG_FILE}"
+    for f in config.js status.js maintenance.js log.js; do
+        : > "${LUCI_VIEW_DIR}/${f}"
+    done
+    : > "${LUCI_RPC_DEST}"
+    chmod +x "${LUCI_RPC_DEST}"
+    : > "${LUCI_MENU_DEST}"
+    : > "${LUCI_ACL_DEST}"
+
+    bin_stub uci '#!/bin/sh
+printf "%s\n" "$*" >> "${TEST_DIR}/uci.log"
+case "$*" in
+    set\ tailscale.settings.luci_enabled=0) exit 0 ;;
+    commit\ tailscale) exit 0 ;;
+    *) exit 0 ;;
+esac'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+LUCI_VIEW_DIR='${LUCI_VIEW_DIR}'
+LUCI_RPC_DEST='${LUCI_RPC_DEST}'
+LUCI_MENU_DEST='${LUCI_MENU_DEST}'
+LUCI_ACL_DEST='${LUCI_ACL_DEST}'
+CONFIG_FILE='${CONFIG_FILE}'
+export LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST CONFIG_FILE
+
+do_luci remove >/dev/null
+
+[ ! -e \"\$LUCI_VIEW_DIR/config.js\" ]
+[ ! -e \"\$LUCI_RPC_DEST\" ]
+grep -Fq 'set tailscale.settings.luci_enabled=0' '${TEST_DIR}/uci.log'
+[ \"\$(get_luci_app_status)\" = 'disabled' ]
+"
+    assert_success
+}
+
+@test "luci status reports available when enabled files are absent" {
+    local CONFIG_FILE="${TEST_DIR}/root/etc/config/tailscale"
+    mkdir -p "$(dirname "${CONFIG_FILE}")"
+    : > "${CONFIG_FILE}"
+
+    bin_stub uci '#!/bin/sh
+case "$*" in
+    -q\ get\ tailscale.settings.luci_enabled) printf "1\n"; exit 0 ;;
+    *) exit 1 ;;
+esac'
+
+    run_in_sh auto "
+set -eu
+export PATH='${STUB_BIN}:${PATH}'
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+CONFIG_FILE='${CONFIG_FILE}'
+export CONFIG_FILE
+
+do_luci status > '${TEST_DIR}/status.out'
+grep -Fq 'LuCI status: available' '${TEST_DIR}/status.out'
 "
     assert_success
 }

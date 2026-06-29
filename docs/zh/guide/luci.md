@@ -35,10 +35,35 @@ LuCI 应用分为四个标签页：
 
 ## 安装
 
-运行 `tailscale-manager install` 时会自动安装 LuCI 界面（`tailscale-manager self-update` 会一并更新它）。需要：
+LuCI 界面是可选功能。首次运行 `tailscale-manager install` 默认保持关闭。需要：
 
 - LuCI（大多数 OpenWrt 固件已包含）
 - rpcd（用于 RPC 通信）
+
+CLI 安装完成后可执行：
+
+```sh
+tailscale-manager luci install
+```
+
+脚本化安装可直接带上：
+
+```sh
+tailscale-manager install --yes --luci 1
+```
+
+查看状态或移除界面：
+
+```sh
+tailscale-manager luci status
+tailscale-manager luci remove
+```
+
+`tailscale-manager self-update` 会在已安装 LuCI 或 UCI 中 `luci_enabled=1` 的设备上刷新 LuCI 文件。
+
+::: warning 低内存设备
+状态页可能通过 rpcd 调用 `tailscale status --json`。只有几十 MB 内存的路由器可能在这类查询中 OOM。低内存设备推荐使用 CLI 命令。
+:::
 
 ## 访问
 

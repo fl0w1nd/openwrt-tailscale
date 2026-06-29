@@ -12,9 +12,8 @@ teardown() {
     teardown_test_env
 }
 
-# bats test_tags=e2e
-@test "do_self_update: installs management bundle atomically" {
-    local STAGING_ROOT="${TEST_DIR}/staging"
+make_management_staging() {
+    local STAGING_ROOT="$1"
     mkdir -p "${STAGING_ROOT}/usr/lib/tailscale" \
         "${STAGING_ROOT}/usr/bin" \
         "${STAGING_ROOT}/etc/init.d" \
@@ -23,7 +22,6 @@ teardown() {
         "${STAGING_ROOT}/luci-app-tailscale/root/usr/share/luci/menu.d" \
         "${STAGING_ROOT}/luci-app-tailscale/root/usr/share/rpcd/acl.d"
 
-    # Copy repo files into staging area
     cp "${REPO_ROOT}/tailscale-manager.sh" "${STAGING_ROOT}/tailscale-manager.sh"
     for lib in common.sh jsonutil.sh version.sh download.sh firewall.sh deploy.sh selfupdate.sh commands.sh menu.sh json.sh; do
         cp "${REPO_ROOT}/usr/lib/tailscale/${lib}" "${STAGING_ROOT}/usr/lib/tailscale/${lib}"
@@ -31,7 +29,6 @@ teardown() {
     cp "${REPO_ROOT}/usr/bin/tailscale-update" "${STAGING_ROOT}/usr/bin/tailscale-update"
     cp "${REPO_ROOT}/etc/init.d/tailscale" "${STAGING_ROOT}/etc/init.d/tailscale"
     for js in config.js status.js maintenance.js log.js; do
-        [[ -f "${REPO_ROOT}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/${js}" ]] && \
         cp "${REPO_ROOT}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/${js}" \
            "${STAGING_ROOT}/luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/${js}"
     done
@@ -41,6 +38,12 @@ teardown() {
        "${STAGING_ROOT}/luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json"
     cp "${REPO_ROOT}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json" \
        "${STAGING_ROOT}/luci-app-tailscale/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
+}
+
+# bats test_tags=e2e
+@test "do_self_update: installs management bundle atomically" {
+    local STAGING_ROOT="${TEST_DIR}/staging"
+    make_management_staging "${STAGING_ROOT}"
 
     mkdir -p "${TEST_DIR}/root/usr/bin" "${TEST_DIR}/root/usr/lib/tailscale" "${TEST_DIR}/root/etc/init.d"
     cp "${REPO_ROOT}/tailscale-manager.sh" "${TEST_DIR}/root/usr/bin/tailscale-manager"
@@ -94,7 +97,61 @@ do_self_update --yes >/dev/null 2>&1 || {
     echo 'selfupdate should be installed from bundle'
     exit 1
 }
+[ ! -e '${TEST_DIR}/root/www/luci-static/resources/view/tailscale/status.js' ] || {
+    echo 'luci should be skipped for cli-only self-update'
+    exit 1
+}
 " < /dev/null
+    assert_success
+}
+
+@test "deploy_management_bundle refreshes existing LuCI files" {
+    local STAGING_ROOT="${TEST_DIR}/staging-luci"
+    make_management_staging "${STAGING_ROOT}"
+
+    local LUCI_VIEW_DIR="${TEST_DIR}/root/www/luci-static/resources/view/tailscale"
+    local LUCI_RPC_DEST="${TEST_DIR}/root/usr/libexec/rpcd/luci-tailscale"
+    local LUCI_MENU_DEST="${TEST_DIR}/root/usr/share/luci/menu.d/luci-app-tailscale.json"
+    local LUCI_ACL_DEST="${TEST_DIR}/root/usr/share/rpcd/acl.d/luci-app-tailscale.json"
+
+    mkdir -p "${TEST_DIR}/root/usr/bin" "${TEST_DIR}/root/usr/lib/tailscale" \
+        "${TEST_DIR}/root/etc/init.d" "${LUCI_VIEW_DIR}" \
+        "$(dirname "${LUCI_RPC_DEST}")" "$(dirname "${LUCI_MENU_DEST}")" \
+        "$(dirname "${LUCI_ACL_DEST}")"
+    for js in config.js status.js maintenance.js log.js; do
+        printf 'old\n' > "${LUCI_VIEW_DIR}/${js}"
+    done
+    printf 'old-rpc\n' > "${LUCI_RPC_DEST}"
+    chmod +x "${LUCI_RPC_DEST}"
+    printf 'old-menu\n' > "${LUCI_MENU_DEST}"
+    printf 'old-acl\n' > "${LUCI_ACL_DEST}"
+
+    run_in_sh auto "
+set -eu
+LIB_DIR='${REPO_ROOT}/usr/lib/tailscale'
+TAILSCALE_MANAGER_SOURCE_ONLY=1
+export LIB_DIR TAILSCALE_MANAGER_SOURCE_ONLY
+. '${REPO_ROOT}/tailscale-manager.sh'
+LOG_FILE='${TEST_DIR}/tailscale-manager.log'
+
+MANAGER_BIN_PATH='${TEST_DIR}/root/usr/bin/tailscale-manager'
+COMMON_LIB_PATH='${TEST_DIR}/root/usr/lib/tailscale/common.sh'
+LIB_DIR='${TEST_DIR}/root/usr/lib/tailscale'
+INIT_SCRIPT='${TEST_DIR}/root/etc/init.d/tailscale'
+CRON_SCRIPT='${TEST_DIR}/root/usr/bin/tailscale-update'
+LUCI_VIEW_DIR='${LUCI_VIEW_DIR}'
+LUCI_RPC_DEST='${LUCI_RPC_DEST}'
+LUCI_MENU_DEST='${LUCI_MENU_DEST}'
+LUCI_ACL_DEST='${LUCI_ACL_DEST}'
+export MANAGER_BIN_PATH COMMON_LIB_PATH LIB_DIR INIT_SCRIPT CRON_SCRIPT LUCI_VIEW_DIR LUCI_RPC_DEST LUCI_MENU_DEST LUCI_ACL_DEST
+
+setup_cron() { :; }
+
+deploy_management_bundle '${STAGING_ROOT}' 9.9.9 >/dev/null
+
+grep -Fq 'LuCI RPC bridge' \"\$LUCI_RPC_DEST\"
+grep -Fq 'view.extend' \"\$LUCI_VIEW_DIR/status.js\"
+"
     assert_success
 }
 
